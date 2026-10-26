@@ -1,96 +1,119 @@
-import { HOUSES, ITEM_BY_ID } from './catalog.ts';
+import { cleanAvatar, DEFAULT_AVATAR, type Avatar } from './avatar.ts';
+import { FOOD_BY_ID, FURN_BY_ID, POTIONS } from './catalog.ts';
+import { EGG_BY_ID, SPECIES_BY_ID } from './pets.ts';
 import { deserializeHouse, newHouse, type House } from './house.ts';
 import type { PetState } from './needs.ts';
-import { SPECIES_BY_ID } from './pets.ts';
 import { uid } from './rng.ts';
 
 export interface SaveData {
   version: 1;
   playerId: string;
-  points: number;
+  bucks: number;
+  avatar: Avatar;
+  avatarDone: boolean;
   pets: PetState[];
-  /** Bought furniture and decorations not placed in a house yet. */
+  /** Pets following the player (max MAX_EQUIPPED). */
+  equipped: string[];
+  /** Unplaced furniture. */
   inventory: Record<string, number>;
+  /** Food, drinks, eggs and potions in the backpack. */
+  bag: Record<string, number>;
   houses: House[];
   activeHouseId: string;
-  /** Pet that follows the player between screens. */
-  followerUid: string | null;
-  /** Pet uid waiting for its egg to hatch. */
-  pendingReveal: string | null;
-  starterGiven: boolean;
-  stats: { games: number; wins: number; needs: number };
+  stats: { tasks: number; hatched: number; doorWins: number };
   sound: boolean;
+  starterClaimed: boolean;
 }
 
-export const SAVE_KEY = 'petdoors-save-v1';
-export const START_POINTS = 40;
+export const SAVE_KEY = 'heddasverden-save-v1';
+export const START_BUCKS = 150;
+export const MAX_EQUIPPED = 2;
 
 export function freshSave(now = Date.now()): SaveData {
   const playerId = uid('player');
-  const house = newHouse('cottage', playerId, now);
+  const house = newHouse('hytte', playerId, now);
   return {
     version: 1,
     playerId,
-    points: START_POINTS,
+    bucks: START_BUCKS,
+    avatar: { ...DEFAULT_AVATAR },
+    avatarDone: false,
     pets: [],
-    inventory: { plant: 1, rug: 1, beanbag: 1 },
+    equipped: [],
+    inventory: { seng: 1, sofa: 1, ball: 1 },
+    bag: { eple: 2, vann: 2 },
     houses: [house],
     activeHouseId: house.id,
-    followerUid: null,
-    pendingReveal: null,
-    starterGiven: false,
-    stats: { games: 0, wins: 0, needs: 0 },
+    stats: { tasks: 0, hatched: 0, doorWins: 0 },
     sound: true,
+    starterClaimed: false,
   };
 }
 
-/** Parse and repair a stored save. Unknown pets or items are dropped instead of crashing the game. */
+const isBagId = (id: string) => !!FOOD_BY_ID[id] || !!EGG_BY_ID[id] || POTIONS.some((p) => p.id === id);
+const counts = (raw: unknown, ok: (id: string) => boolean): Record<string, number> =>
+  Object.fromEntries(
+    Object.entries(raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {})
+      .map(([k, v]) => [k, Math.floor(Number(v) || 0)] as const)
+      .filter(([k, v]) => ok(k) && v > 0),
+  );
+
+/** Parse and repair a stored save. Unknown things are dropped instead of crashing the game. */
 export function parseSave(json: string | null, now = Date.now()): SaveData {
   if (!json) return freshSave(now);
   try {
     const raw = JSON.parse(json) as Partial<SaveData>;
     if (!raw || raw.version !== 1 || typeof raw.playerId !== 'string') return freshSave(now);
     const base = freshSave(now);
-    const houses = (raw.houses ?? []).map((h) => deserializeHouse(JSON.stringify(h))).filter((h): h is House => !!h);
+    const houses = (Array.isArray(raw.houses) ? raw.houses : []).map((h) => deserializeHouse(JSON.stringify(h))).filter((h): h is House => !!h);
+    const pets: PetState[] = (Array.isArray(raw.pets) ? raw.pets : [])
+      .filter((p) => p && typeof p.uid === 'string' && SPECIES_BY_ID[p.speciesId])
+      .map((p) => ({
+        uid: p.uid,
+        speciesId: p.speciesId,
+        name: typeof p.name === 'string' ? p.name : SPECIES_BY_ID[p.speciesId].name,
+        flyable: !!p.flyable,
+        rideable: !!p.rideable,
+        obtainedAt: Number(p.obtainedAt) || now,
+        xp: Math.max(0, Math.floor(Number(p.xp) || 0)),
+        need: p.need && typeof p.need.kind === 'string' ? { kind: p.need.kind, since: Number(p.need.since) || now, progress: Number(p.need.progress) || 0 } : null,
+        nextNeedAt: Number(p.nextNeedAt) || now,
+        lastNeed: p.lastNeed ?? null,
+      }));
     const save: SaveData = {
       ...base,
-      ...raw,
-      version: 1,
-      points: Math.max(0, Math.floor(Number(raw.points) || 0)),
-      pets: (raw.pets ?? [])
-        .filter((p) => p && SPECIES_BY_ID[p.speciesId])
-        .map((p) => ({ ...p, need: p.need ?? null, growth: p.growth ?? 0, nextNeedAt: p.nextNeedAt ?? now })),
-      inventory: Object.fromEntries(Object.entries(raw.inventory ?? {}).filter(([id, n]) => ITEM_BY_ID[id] && n > 0)),
-      houses: houses.length ? houses : [newHouse('cottage', raw.playerId, now)],
+      playerId: raw.playerId,
+      bucks: Math.max(0, Math.floor(Number(raw.bucks) || 0)),
+      avatar: cleanAvatar(raw.avatar),
+      avatarDone: !!raw.avatarDone,
+      pets,
+      equipped: (Array.isArray(raw.equipped) ? raw.equipped : []).filter((id) => pets.some((p) => p.uid === id)).slice(0, MAX_EQUIPPED),
+      inventory: counts(raw.inventory, (id) => !!FURN_BY_ID[id]),
+      bag: counts(raw.bag, isBagId),
+      houses: houses.length ? houses : [newHouse('hytte', raw.playerId, now)],
+      activeHouseId: typeof raw.activeHouseId === 'string' ? raw.activeHouseId : '',
       stats: { ...base.stats, ...(raw.stats ?? {}) },
+      sound: raw.sound !== false,
+      starterClaimed: !!raw.starterClaimed,
     };
     if (!save.houses.some((h) => h.id === save.activeHouseId)) save.activeHouseId = save.houses[0].id;
-    if (save.followerUid && !save.pets.some((p) => p.uid === save.followerUid)) save.followerUid = null;
-    if (save.pendingReveal && !save.pets.some((p) => p.uid === save.pendingReveal)) save.pendingReveal = null;
     return save;
   } catch {
     return freshSave(now);
   }
 }
 
-export function ownsHouseStyle(save: SaveData, houseItemId: string): boolean {
-  const info = HOUSES.find((h) => h.id === houseItemId);
-  return !!info && save.houses.some((h) => h.style === info.style);
-}
-
 export interface StorageLike {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
 }
-
 export function loadSave(storage: StorageLike): SaveData {
   return parseSave(storage.getItem(SAVE_KEY));
 }
-
 export function writeSave(storage: StorageLike, save: SaveData): void {
   try {
     storage.setItem(SAVE_KEY, JSON.stringify(save));
   } catch {
-    /* storage full or private mode: keep playing in memory */
+    /* private mode or full: keep playing in memory */
   }
 }

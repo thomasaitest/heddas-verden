@@ -1,115 +1,126 @@
-import { pick, pickWeighted, uid, type Rng } from './rng.ts';
+import { pickWeighted, uid, type Rng } from './rng.ts';
 
-export type PetCategory = 'common' | 'insect' | 'fantasy' | 'extinct';
-export type Rarity = 'vanlig' | 'uvanlig' | 'sjelden';
+export type Rarity = 'vanlig' | 'uvanlig' | 'sjelden' | 'ultra' | 'legendarisk';
+/** Procedural 3D body used to draw the whole animal. */
+export type BodyType = 'dog' | 'cat' | 'bunny' | 'bear' | 'pig' | 'horse' | 'bird' | 'penguin' | 'dragon' | 'dino' | 'turtle' | 'bug' | 'fox';
 
 export interface PetSpecies {
   id: string;
   name: string;
-  emoji: string;
-  category: PetCategory;
-  /** Species that can become flyable with a lucky roll. */
-  canFly?: boolean;
-  /** Species that can become rideable with a lucky roll. */
-  canRide?: boolean;
-  /** Draw small wings on the emoji (winged unicorn). */
+  body: BodyType;
+  rarity: Rarity;
+  /** Main, second and accent colours. */
+  colors: [string, string, string];
+  /** Extra looks drawn on the body. */
+  horn?: boolean;
   wings?: boolean;
+  spots?: boolean;
+  mane?: boolean;
+  /** Chance that a hatched pet is born able to fly or be ridden (potions can add it later). */
+  bornFly?: number;
+  bornRide?: number;
 }
+
+export const RARITY_ORDER: Rarity[] = ['vanlig', 'uvanlig', 'sjelden', 'ultra', 'legendarisk'];
+
+export const RARITY_INFO: Record<Rarity, { label: string; color: string }> = {
+  vanlig: { label: 'Vanlig', color: '#9aa7b4' },
+  uvanlig: { label: 'Uvanlig', color: '#54c45e' },
+  sjelden: { label: 'Sjelden', color: '#3fa4ff' },
+  ultra: { label: 'Ultrasjelden', color: '#b05cff' },
+  legendarisk: { label: 'Legendarisk', color: '#ffb300' },
+};
+
+export const SPECIES: PetSpecies[] = [
+  // Vanlig
+  { id: 'hund', name: 'Hund', body: 'dog', rarity: 'vanlig', colors: ['#d9a066', '#fff1dc', '#5b3a29'] },
+  { id: 'katt', name: 'Katt', body: 'cat', rarity: 'vanlig', colors: ['#ffb36b', '#fff4e6', '#c9663a'] },
+  { id: 'kanin', name: 'Kanin', body: 'bunny', rarity: 'vanlig', colors: ['#f4f1f6', '#ffc6dc', '#c9b8d8'] },
+  { id: 'kylling', name: 'Kylling', body: 'bird', rarity: 'vanlig', colors: ['#ffe14d', '#ff9a3c', '#ff9a3c'] },
+  { id: 'gris', name: 'Gris', body: 'pig', rarity: 'vanlig', colors: ['#ffb3c7', '#ff8fb1', '#e0708f'] },
+  { id: 'skilpadde', name: 'Skilpadde', body: 'turtle', rarity: 'vanlig', colors: ['#7ccf6a', '#a0632f', '#5aa74b'] },
+  { id: 'marihone', name: 'Marihøne', body: 'bug', rarity: 'vanlig', colors: ['#ff4b4b', '#222233', '#222233'], spots: true, wings: true, bornFly: 0.1 },
+  // Uvanlig
+  { id: 'rev', name: 'Rev', body: 'fox', rarity: 'uvanlig', colors: ['#ff7a2f', '#ffffff', '#3b2a22'] },
+  { id: 'panda', name: 'Panda', body: 'bear', rarity: 'uvanlig', colors: ['#ffffff', '#2b2b38', '#2b2b38'], spots: true },
+  { id: 'pingvin', name: 'Pingvin', body: 'penguin', rarity: 'uvanlig', colors: ['#2f3550', '#ffffff', '#ffb02e'] },
+  { id: 'dalmatiner', name: 'Dalmatiner', body: 'dog', rarity: 'uvanlig', colors: ['#ffffff', '#ffffff', '#2b2b38'], spots: true },
+  { id: 'hest', name: 'Hest', body: 'horse', rarity: 'uvanlig', colors: ['#a86b3c', '#fff1dc', '#4a2e1c'], mane: true, bornRide: 0.3 },
+  { id: 'bie', name: 'Bie', body: 'bug', rarity: 'uvanlig', colors: ['#ffd23f', '#2b2b38', '#2b2b38'], wings: true, bornFly: 0.2 },
+  { id: 'koala', name: 'Koala', body: 'bear', rarity: 'uvanlig', colors: ['#a7adb8', '#f1f1f4', '#4a4a58'] },
+  // Sjelden
+  { id: 'ugle', name: 'Ugle', body: 'bird', rarity: 'sjelden', colors: ['#a0703f', '#f3d9b1', '#ffb02e'], wings: true, bornFly: 0.35 },
+  { id: 'isbjorn', name: 'Isbjørn', body: 'bear', rarity: 'sjelden', colors: ['#f6fbff', '#dfeaf5', '#2b2b38'], bornRide: 0.2 },
+  { id: 'snoleopard', name: 'Snøleopard', body: 'cat', rarity: 'sjelden', colors: ['#eef0f5', '#ffffff', '#5b5f70'], spots: true },
+  { id: 'polarrev', name: 'Polarrev', body: 'fox', rarity: 'sjelden', colors: ['#f2f6ff', '#ffffff', '#9fb4d8'] },
+  { id: 'papegoye', name: 'Papegøye', body: 'bird', rarity: 'sjelden', colors: ['#ff3d3d', '#ffd23f', '#3fa4ff'], wings: true, bornFly: 0.4 },
+  { id: 'enhjorning-baby', name: 'Ponni', body: 'horse', rarity: 'sjelden', colors: ['#ffc6e3', '#fff4fb', '#ff7fbf'], mane: true, bornRide: 0.4 },
+  // Ultrasjelden
+  { id: 'enhjorning', name: 'Enhjørning', body: 'horse', rarity: 'ultra', colors: ['#ffffff', '#fff4fb', '#c88bff'], horn: true, mane: true, bornRide: 0.5, bornFly: 0.15 },
+  { id: 'trex', name: 'T-rex', body: 'dino', rarity: 'ultra', colors: ['#6cc46a', '#d8f5b0', '#3d8a3c'], bornRide: 0.4 },
+  { id: 'kenguru', name: 'Kenguru', body: 'bunny', rarity: 'ultra', colors: ['#c98a55', '#f3d9b1', '#7a4a2a'], bornRide: 0.3 },
+  { id: 'flamingo', name: 'Flamingo', body: 'bird', rarity: 'ultra', colors: ['#ff8fc7', '#ffc6e3', '#2b2b38'], wings: true, bornFly: 0.5 },
+  { id: 'gullkatt', name: 'Gullkatt', body: 'cat', rarity: 'ultra', colors: ['#ffd23f', '#fff4c2', '#ff9a3c'] },
+  // Legendarisk
+  { id: 'drage', name: 'Drage', body: 'dragon', rarity: 'legendarisk', colors: ['#ff4b6e', '#ffd23f', '#ffd23f'], wings: true, horn: true, bornFly: 0.6, bornRide: 0.4 },
+  { id: 'isdrage', name: 'Isdrage', body: 'dragon', rarity: 'legendarisk', colors: ['#7fd8ff', '#ffffff', '#3fa4ff'], wings: true, horn: true, bornFly: 0.6, bornRide: 0.4 },
+  { id: 'pegasus', name: 'Pegasus', body: 'horse', rarity: 'legendarisk', colors: ['#ffffff', '#e6f4ff', '#7fd8ff'], wings: true, mane: true, bornFly: 0.7, bornRide: 0.5 },
+  { id: 'fenix', name: 'Føniks', body: 'bird', rarity: 'legendarisk', colors: ['#ff5a1f', '#ffd23f', '#ff2e63'], wings: true, bornFly: 0.8 },
+  { id: 'regnbuedino', name: 'Regnbue-dino', body: 'dino', rarity: 'legendarisk', colors: ['#c88bff', '#ffe14d', '#ff8fc7'], spots: true, bornRide: 0.6 },
+];
+
+export const SPECIES_BY_ID: Record<string, PetSpecies> = Object.fromEntries(SPECIES.map((s) => [s.id, s]));
+
+export interface EggType {
+  id: string;
+  name: string;
+  price: number;
+  color: string;
+  spots: string;
+  weights: Record<Rarity, number>;
+}
+
+export const EGGS: EggType[] = [
+  { id: 'egg-start', name: 'Starteregg', price: 0, color: '#bfe9ff', spots: '#ffffff', weights: { vanlig: 70, uvanlig: 30, sjelden: 0, ultra: 0, legendarisk: 0 } },
+  { id: 'egg-vanlig', name: 'Vanlig egg', price: 60, color: '#ffe8a8', spots: '#ffb84d', weights: { vanlig: 55, uvanlig: 30, sjelden: 12, ultra: 3, legendarisk: 0 } },
+  { id: 'egg-eventyr', name: 'Eventyregg', price: 180, color: '#e2c6ff', spots: '#ff8fc7', weights: { vanlig: 15, uvanlig: 30, sjelden: 30, ultra: 18, legendarisk: 7 } },
+  { id: 'egg-gull', name: 'Gullegg', price: 450, color: '#ffd23f', spots: '#fff4c2', weights: { vanlig: 0, uvanlig: 0, sjelden: 35, ultra: 40, legendarisk: 25 } },
+];
+export const EGG_BY_ID: Record<string, EggType> = Object.fromEntries(EGGS.map((e) => [e.id, e]));
 
 export interface OwnedPet {
   uid: string;
   speciesId: string;
+  name: string;
   flyable: boolean;
   rideable: boolean;
   obtainedAt: number;
 }
 
-export const CATEGORY_INFO: Record<PetCategory, { label: string; rarity: Rarity; weight: number; color: string }> = {
-  common: { label: 'Vanlige dyr', rarity: 'vanlig', weight: 56, color: '#7ccf6a' },
-  insect: { label: 'Småkryp', rarity: 'uvanlig', weight: 28, color: '#5cc3f2' },
-  fantasy: { label: 'Fantasidyr', rarity: 'sjelden', weight: 8, color: '#c88bff' },
-  extinct: { label: 'Utdødde dyr', rarity: 'sjelden', weight: 8, color: '#ffae4f' },
-};
-
-export const RARITY_LABEL: Record<Rarity, string> = {
-  vanlig: 'Vanlig',
-  uvanlig: 'Uvanlig',
-  sjelden: 'Sjelden!',
-};
-
-/** Chance that a species able to fly or be ridden actually gets that power. */
-export const LUCK_CHANCE = 0.2;
-
-export const SPECIES: PetSpecies[] = [
-  // Common animals
-  { id: 'valp', name: 'Valpen Vimse', emoji: '🐶', category: 'common' },
-  { id: 'katt', name: 'Pusen Pjokk', emoji: '🐱', category: 'common' },
-  { id: 'kanin', name: 'Kaninen Hoppsa', emoji: '🐰', category: 'common' },
-  { id: 'hamster', name: 'Hamsteren Nøtt', emoji: '🐹', category: 'common' },
-  { id: 'panda', name: 'Pandaen Bambus', emoji: '🐼', category: 'common' },
-  { id: 'koala', name: 'Koalaen Kos', emoji: '🐨', category: 'common' },
-  { id: 'rev', name: 'Reven Rufsi', emoji: '🦊', category: 'common' },
-  { id: 'gris', name: 'Grisen Rosa', emoji: '🐷', category: 'common' },
-  { id: 'pingvin', name: 'Pingvinen Vagge', emoji: '🐧', category: 'common' },
-  { id: 'skilpadde', name: 'Skilpadden Sakte', emoji: '🐢', category: 'common' },
-  { id: 'hest', name: 'Hesten Galopp', emoji: '🐴', category: 'common', canRide: true },
-  { id: 'ugle', name: 'Ugla Klokis', emoji: '🦉', category: 'common', canFly: true },
-  // Insects
-  { id: 'bie', name: 'Bien Summe', emoji: '🐝', category: 'insect', canFly: true },
-  { id: 'sommerfugl', name: 'Sommerfuglen Flagre', emoji: '🦋', category: 'insect', canFly: true },
-  { id: 'marihone', name: 'Marihøna Prikk', emoji: '🐞', category: 'insect', canFly: true },
-  { id: 'larve', name: 'Larven Lange', emoji: '🐛', category: 'insect' },
-  { id: 'gresshoppe', name: 'Gresshoppa Sprett', emoji: '🦗', category: 'insect' },
-  { id: 'maur', name: 'Mauren Sterk', emoji: '🐜', category: 'insect' },
-  { id: 'snegl', name: 'Sneglen Slim', emoji: '🐌', category: 'insect' },
-  // Fantasy animals
-  { id: 'enhjorning', name: 'Enhjørningen Glitter', emoji: '🦄', category: 'fantasy', canRide: true },
-  { id: 'vingehjorning', name: 'Vinge-enhjørningen Stjerne', emoji: '🦄', category: 'fantasy', canFly: true, wings: true },
-  { id: 'drage', name: 'Dragen Gnist', emoji: '🐲', category: 'fantasy', canFly: true },
-  { id: 'sjodrage', name: 'Sjødragen Bølge', emoji: '🐉', category: 'fantasy', canFly: true },
-  // Extinct animals
-  { id: 'trex', name: 'T-rex Brøl', emoji: '🦖', category: 'extinct', canRide: true },
-  { id: 'langhals', name: 'Langhalsen Lilla', emoji: '🦕', category: 'extinct', canRide: true },
-  { id: 'mammut', name: 'Mammuten Lodden', emoji: '🦣', category: 'extinct', canRide: true },
-  { id: 'dronte', name: 'Dronten Dodo', emoji: '🦤', category: 'extinct' },
-];
-
-export const SPECIES_BY_ID: Record<string, PetSpecies> = Object.fromEntries(SPECIES.map((s) => [s.id, s]));
-
-export function rarityOf(species: PetSpecies): Rarity {
-  return CATEGORY_INFO[species.category].rarity;
+export function rollRarity(egg: EggType, rng: Rng): Rarity {
+  return pickWeighted(RARITY_ORDER, (r) => egg.weights[r], rng);
 }
 
-/** Roll which category the next pet comes from. */
-export function rollCategory(rng: Rng, categories: readonly PetCategory[] = Object.keys(CATEGORY_INFO) as PetCategory[]): PetCategory {
-  return pickWeighted(categories, (c) => CATEGORY_INFO[c].weight, rng);
+export function speciesOfRarity(r: Rarity): PetSpecies[] {
+  return SPECIES.filter((s) => s.rarity === r);
 }
 
-/**
- * Pick a species for a new pet. Rolls a category by rarity weight, then picks a
- * species the player doesn't own yet. If every species in that category is owned,
- * re-rolls among categories that still have unowned species. Duplicates only happen
- * when the whole collection is complete.
- */
-export function rollSpecies(ownedSpeciesIds: Iterable<string>, rng: Rng, species: readonly PetSpecies[] = SPECIES): PetSpecies {
-  const owned = new Set(ownedSpeciesIds);
-  const unowned = species.filter((s) => !owned.has(s.id));
-  const pool = unowned.length > 0 ? unowned : species;
-  const categories = [...new Set(pool.map((s) => s.category))];
-  const category = rollCategory(rng, categories);
-  return pick(pool.filter((s) => s.category === category), rng);
-}
-
-/** Lucky roll: a species that can fly or be ridden gets that power with LUCK_CHANCE. */
-export function rollLuck(species: PetSpecies, rng: Rng, chance = LUCK_CHANCE): { flyable: boolean; rideable: boolean } {
+export function hatch(eggId: string, rng: Rng, now = Date.now()): OwnedPet {
+  const egg = EGG_BY_ID[eggId] ?? EGGS[0];
+  const rarity = rollRarity(egg, rng);
+  const pool = speciesOfRarity(rarity);
+  const species = pool[Math.min(pool.length - 1, Math.floor(rng() * pool.length))];
   return {
-    flyable: !!species.canFly && rng() < chance,
-    rideable: !!species.canRide && rng() < chance,
+    uid: uid('pet'),
+    speciesId: species.id,
+    name: species.name,
+    flyable: rng() < (species.bornFly ?? 0),
+    rideable: rng() < (species.bornRide ?? 0),
+    obtainedAt: now,
   };
 }
 
-export function adoptPet(ownedSpeciesIds: Iterable<string>, rng: Rng, now = Date.now()): OwnedPet {
-  const species = rollSpecies(ownedSpeciesIds, rng);
-  const luck = rollLuck(species, rng);
-  return { uid: uid('pet'), speciesId: species.id, ...luck, obtainedAt: now };
+export function cleanPetName(name: string, fallback: string): string {
+  const n = name.replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 16);
+  return n || fallback;
 }

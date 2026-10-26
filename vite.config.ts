@@ -10,6 +10,7 @@ function basePath(value: string | undefined): string {
 
 export default defineConfig({
   base: basePath(process.env.BASE_PATH),
+  build: { chunkSizeWarningLimit: 1000 },
   test: {
     environment: 'node',
     include: ['src/**/*.test.ts'],
@@ -24,14 +25,14 @@ export default defineConfig({
       includeAssets: ['favicon.svg', 'icons/*.png'],
       manifest: {
         id: './',
-        name: 'Pet Doors – Dyre-dørene',
-        short_name: 'Pet Doors',
-        description: 'Velg en dør, vinn et kjæledyr og bygg ditt eget hus. Ingen reklame, virker uten nett.',
+        name: 'Heddas Verden',
+        short_name: 'Heddas Verden',
+        description: 'Adopter kjæledyr, stell dem, lag din egen figur og bygg ditt eget hus.',
         start_url: './',
         scope: './',
         display: 'standalone',
         orientation: 'any',
-        background_color: '#ffe9f3',
+        background_color: '#9fdcff',
         theme_color: '#ff8fc7',
         lang: 'nb',
         categories: ['games', 'kids'],

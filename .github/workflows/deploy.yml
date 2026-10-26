@@ -28,7 +28,7 @@ jobs:
       - run: npm test
       - run: npm run build
         env:
-          BASE_PATH: /pet-doors/
+          BASE_PATH: /heddas-verden/
       - run: touch dist/.nojekyll
       - if: github.event_name != 'pull_request'
         uses: actions/configure-pages@v5

@@ -1,0 +1,419 @@
+import * as THREE from 'three';
+import { HOUSE_BY_STYLE, type HouseStyle } from '../logic/catalog.ts';
+import { box, cone, cyl, G, mergeStatic, part, rbox, sph, textTexture } from './kit.ts';
+
+export type ZoneKind = 'home' | 'shop' | 'vet' | 'eggs' | 'doors' | 'play';
+export interface Zone {
+  kind: ZoneKind;
+  x: number;
+  z: number;
+  r: number;
+  label: string;
+}
+export interface RectCollider {
+  x: number;
+  z: number;
+  hw: number;
+  hd: number;
+  rot: number;
+}
+export interface CircleCollider {
+  x: number;
+  z: number;
+  r: number;
+}
+
+export interface Town {
+  group: THREE.Group;
+  zones: Zone[];
+  rects: RectCollider[];
+  circles: CircleCollider[];
+  spawn: { x: number; z: number; yaw: number };
+  places: Record<ZoneKind, { x: number; z: number; yaw: number }>;
+  setHomeStyle(style: HouseStyle): void;
+  update(t: number): void;
+  size: number;
+}
+
+const GRASS = '#7fd36a';
+const ROAD = '#f2dfb8';
+const SIZE = 200;
+
+function faceCenter(x: number, z: number) {
+  return Math.atan2(-x, -z);
+}
+
+/** Put a sign with text above a building front. */
+function sign(parent: THREE.Object3D, text: string, y: number, z: number, bg: string, w = 7) {
+  const tex = textTexture(text, { bg, fg: '#ffffff', stroke: '#00000033', w: 512, h: 128 });
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, w / 4), new THREE.MeshBasicMaterial({ map: tex, transparent: true }));
+  m.position.set(0, y, z);
+  parent.add(m);
+  return m;
+}
+
+function awning(g: THREE.Group, w: number, y: number, z: number, a: string, b: string) {
+  const n = Math.round(w / 1.2);
+  for (let i = 0; i < n; i++) box(g, i % 2 ? a : b, [-w / 2 + (i + 0.5) * (w / n), y, z], [w / n, 0.25, 2.4], [0.35, 0, 0]).userData.noCast = true;
+}
+
+/** Open-front building (shop, vet, egg shop): back + side walls, roof, sign. */
+function openBuilding(w: number, d: number, h: number, wall: string, roof: string, trim: string) {
+  const g = new THREE.Group();
+  box(g, '#f4e9dc', [0, 0.1, 0], [w, 0.2, d]);
+  box(g, wall, [0, h / 2, -d / 2 + 0.3], [w, h, 0.6]);
+  for (const s of [-1, 1]) box(g, wall, [s * (w / 2 - 0.3), h / 2, 0], [0.6, h, d]);
+  for (const s of [-1, 1]) box(g, trim, [s * (w / 2 - 0.3), h / 2, d / 2 - 0.2], [0.9, h, 0.9]);
+  rbox(g, roof, [0, h + 0.4, 0], [w + 1.2, 0.8, d + 1.2]).userData.noCast = true;
+  box(g, trim, [0, h - 0.4, d / 2 - 0.1], [w, 0.8, 0.4]).userData.noCast = true;
+  return g;
+}
+
+function homeExterior(style: HouseStyle): THREE.Group {
+  const info = HOUSE_BY_STYLE[style];
+  const g = new THREE.Group();
+  const w = style === 'slott' ? 18 : style === 'gard' ? 16 : style === 'villa' ? 15 : 12;
+  const d = w * 0.75;
+  const h = style === 'slott' ? 9 : 7;
+  box(g, '#e8d8c4', [0, 0.25, 0], [w + 1, 0.5, d + 1]);
+  box(g, info.wall, [0, h / 2 + 0.5, 0], [w, h, d]);
+  box(g, '#ffffff', [0, 0.7, 0], [w + 0.2, 0.4, d + 0.2]);
+  // roof
+  if (style === 'slott') {
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+      cyl(g, info.wall, [sx * w / 2, h / 2 + 1.5, sz * d / 2], [3, h + 2, 3]);
+      cone(g, info.roof, [sx * w / 2, h + 4.2, sz * d / 2], [3.6, 3.5, 3.6]);
+    }
+    for (let i = 0; i < 7; i++) box(g, info.wall, [-w / 2 + 1 + i * ((w - 2) / 6), h + 0.9, d / 2], [1, 0.8, 0.8]);
+    part(g, G.heart(), '#ff8fb1', [0, h - 0.8, d / 2 + 0.1], [2, 2, 0.6]);
+  } else {
+    const roof = cone(g, info.roof, [0, h + 2.3, 0], [w * 0.9, 4, d * 1.05], [0, Math.PI / 4, 0]);
+    roof.scale.set(w * 1.05, 4, w * 1.05);
+    roof.geometry = new THREE.ConeGeometry(0.5, 1, 4);
+    roof.scale.set(w * 1.45, 4.2, d * 1.45);
+    if (style === 'gard') for (const s of [-1, 1]) box(g, '#ffffff', [s * 3, 3.2, d / 2 + 0.02], [2.4, 0.3, 0.1], [0, 0, s * 0.8]);
+    cyl(g, '#b46a50', [w / 4, h + 3, -d / 6], [1, 3, 1]);
+  }
+  // door + windows
+  rbox(g, '#a0632f', [0, 2.2, d / 2 + 0.05], [2.6, 3.6, 0.3]);
+  sph(g, '#ffd23f', [0.8, 2.2, d / 2 + 0.25], [0.25, 0.25, 0.2]);
+  for (const s of [-1, 1]) {
+    box(g, '#ffffff', [s * (w / 2 - 2.6), 4, d / 2 + 0.05], [2.4, 2.2, 0.2]);
+    box(g, '#bfe9ff', [s * (w / 2 - 2.6), 4, d / 2 + 0.12], [2, 1.8, 0.1], undefined, 0.3);
+    rbox(g, '#7ccf6a', [s * (w / 2 - 2.6), 2.8, d / 2 + 0.5], [2.6, 0.6, 0.7]);
+    for (let i = 0; i < 3; i++) sph(g, ['#ff8fb1', '#ffe066', '#ff6f6f'][i], [s * (w / 2 - 2.6) + (i - 1) * 0.7, 3.2, d / 2 + 0.55], [0.4, 0.4, 0.4]);
+  }
+  // path + mailbox
+  box(g, ROAD, [0, 0.03, d / 2 + 3], [3, 0.06, 5]);
+  cyl(g, '#a0632f', [3.5, 0.8, d / 2 + 3], [0.2, 1.6, 0.2]);
+  rbox(g, '#ff6f6f', [3.5, 1.8, d / 2 + 3], [0.7, 0.6, 1.0]);
+  sign(g, 'Hjem', 5.9, d / 2 + 0.12, '#ff8fb1', 3.6);
+  g.userData.size = { w: w + 1, d: d + 1 };
+  return g;
+}
+
+function tree(g: THREE.Group, x: number, z: number, s: number, kind: number) {
+  cyl(g, '#a0703f', [x, 1.2 * s, z], [0.7 * s, 2.4 * s, 0.7 * s]);
+  if (kind === 0) {
+    sph(g, '#4fbf55', [x, 3.4 * s, z], [3.6 * s, 3.2 * s, 3.6 * s]);
+    sph(g, '#66d06a', [x + 0.8 * s, 4.2 * s, z + 0.4 * s], [2.2 * s, 2 * s, 2.2 * s]);
+  } else if (kind === 1) {
+    cone(g, '#3fae5a', [x, 3.6 * s, z], [3.4 * s, 3.6 * s, 3.4 * s]);
+    cone(g, '#4fbf65', [x, 5.2 * s, z], [2.4 * s, 2.6 * s, 2.4 * s]);
+  } else {
+    sph(g, '#ff9fc8', [x, 3.4 * s, z], [3.4 * s, 3 * s, 3.4 * s]);
+    sph(g, '#ffc2dc', [x - 0.7 * s, 4.1 * s, z], [2 * s, 1.8 * s, 2 * s]);
+  }
+}
+
+export function buildTown(): Town {
+  const group = new THREE.Group();
+  const stat = new THREE.Group();
+  const zones: Zone[] = [];
+  const rects: RectCollider[] = [];
+  const circles: CircleCollider[] = [];
+
+  // ground
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(SIZE * 2, SIZE * 2), new THREE.MeshLambertMaterial({ color: GRASS }));
+  ground.rotation.x = -Math.PI / 2;
+  ground.receiveShadow = true;
+  group.add(ground);
+
+  const P = {
+    home: { x: -38, z: -34 },
+    shop: { x: 38, z: -34 },
+    eggs: { x: 0, z: -50 },
+    vet: { x: 46, z: 12 },
+    play: { x: -44, z: 16 },
+    doors: { x: 4, z: 46 },
+  };
+
+  // plaza + fountain
+  cyl(stat, ROAD, [0, 0.04, 0], [26, 0.08, 26]);
+  cyl(stat, '#e6ecff', [0, 0.6, 0], [9, 1.2, 9]);
+  cyl(stat, '#7fd8ff', [0, 1.1, 0], [8, 0.2, 8]);
+  cyl(stat, '#e6ecff', [0, 2.2, 0], [1.2, 3, 1.2]);
+  cyl(stat, '#e6ecff', [0, 3.6, 0], [4, 0.5, 4]);
+  circles.push({ x: 0, z: 0, r: 5 });
+  const water = sph(group, '#bff0ff', [0, 4.2, 0], [1.6, 1.6, 1.6], undefined, 0.3);
+
+  // roads from the plaza to each place
+  for (const p of Object.values(P)) {
+    const len = Math.hypot(p.x, p.z);
+    const ang = Math.atan2(p.x, p.z);
+    box(stat, ROAD, [p.x / 2, 0.05, p.z / 2], [6, 0.06, len], [0, ang, 0]);
+  }
+
+  const places = {} as Town['places'];
+  const front = (p: { x: number; z: number }, dist: number) => {
+    const rot = faceCenter(p.x, p.z);
+    return { x: p.x + Math.sin(rot) * dist, z: p.z + Math.cos(rot) * dist, rot };
+  };
+
+  // shop
+  {
+    const g = openBuilding(14, 10, 6, '#ffe8a8', '#ff6f6f', '#ffffff');
+    awning(g, 14, 5.4, 5.6, '#ff6f6f', '#ffffff');
+    sign(g, 'Butikk', 7.5, 5.8, '#ff6f6f');
+    rbox(g, '#ffb84d', [0, 1, 1.6], [8, 2, 1.6]);
+    rbox(g, '#ffffff', [0, 2.05, 1.6], [8.2, 0.2, 1.8]);
+    const goods = ['#ff6f6f', '#ffe066', '#7ccf6a', '#ff8fb1', '#5cc3f2', '#ffb84d'];
+    for (let r = 0; r < 3; r++) {
+      box(g, '#c98a55', [0, 1 + r * 1.4, -3.9], [12, 0.2, 1.4]);
+      for (let i = 0; i < 12; i++) rbox(g, goods[(i + r) % 6], [-5.5 + i, 1.5 + r * 1.4, -3.9], [0.7, 0.8, 0.7]);
+    }
+    sph(g, '#ff6f6f', [-2, 2.5, 1.6], [0.7, 0.7, 0.7]);
+    sph(g, '#ffe066', [-1, 2.45, 1.6], [0.6, 0.6, 0.6]);
+    cyl(g, '#7fd8ff', [2.5, 2.6, 1.6], [0.5, 0.9, 0.5]);
+    const f = front(P.shop, 0);
+    g.position.set(P.shop.x, 0, P.shop.z);
+    g.rotation.y = f.rot;
+    stat.add(g);
+    rects.push({ x: P.shop.x, z: P.shop.z, hw: 7, hd: 5, rot: f.rot });
+    const z = front(P.shop, 7.5);
+    zones.push({ kind: 'shop', x: z.x, z: z.z, r: 4, label: 'Handle mat 🛒' });
+    places.shop = { x: z.x, z: z.z, yaw: f.rot + Math.PI };
+  }
+  // vet
+  {
+    const g = openBuilding(14, 11, 6.5, '#ffffff', '#5cc3f2', '#9ad8ff');
+    sign(g, 'Dyrlege', 8, 6.2, '#3fa4ff');
+    box(g, '#ff4b4b', [0, 9.6, 0], [0.8, 2.4, 0.8]);
+    box(g, '#ff4b4b', [0, 9.6, 0], [2.4, 0.8, 0.8]);
+    rbox(g, '#e6ecff', [3.5, 1.1, -1.8], [3.2, 0.4, 2]);
+    for (const x of [2.2, 4.8]) cyl(g, '#c0c6d6', [x, 0.5, -1.8], [0.2, 1, 0.2]);
+    rbox(g, '#9ad8c8', [-4.5, 1.3, -3.8], [3, 2.6, 1.4]);
+    part(g, G.heart(), '#ff6f8f', [-4.5, 3.4, -3.6], [1, 1, 0.4]);
+    const pad = cyl(g, '#7cf08a', [0, 0.24, 1.5], [4.4, 0.12, 4.4], undefined, 0.5);
+    pad.name = 'vetpad';
+    const f = front(P.vet, 0);
+    g.position.set(P.vet.x, 0, P.vet.z);
+    g.rotation.y = f.rot;
+    stat.add(g);
+    rects.push({ x: P.vet.x, z: P.vet.z, hw: 7, hd: 5.5, rot: f.rot });
+    // the pad is inside the open front, so carve the collider smaller at the front
+    rects.pop();
+    rects.push({ x: P.vet.x - Math.sin(f.rot) * 3, z: P.vet.z - Math.cos(f.rot) * 3, hw: 7, hd: 2.5, rot: f.rot });
+    const p = front(P.vet, 1.5);
+    zones.push({ kind: 'vet', x: p.x, z: p.z, r: 3.2, label: 'Dyrlegen 🩺' });
+    places.vet = { x: front(P.vet, 9).x, z: front(P.vet, 9).z, yaw: f.rot + Math.PI };
+  }
+  // egg shop
+  {
+    const g = openBuilding(12, 9, 6, '#e2c6ff', '#ffd23f', '#ffffff');
+    awning(g, 12, 5.4, 5.1, '#c88bff', '#ffffff');
+    sign(g, 'Eggbutikk', 7.5, 5.2, '#b05cff');
+    sph(g, '#fff4c2', [0, 9.8, 0], [3, 3.8, 3]);
+    for (let i = 0; i < 5; i++) sph(g, '#ff8fc7', [Math.cos(i * 1.26) * 1.4, 9.8 + Math.sin(i * 2) * 0.8, Math.sin(i * 1.26) * 1.4], [0.7, 0.7, 0.4]);
+    rbox(g, '#ffd23f', [0, 1, 1.2], [7, 2, 1.6]);
+    const eggs = ['#bfe9ff', '#ffe8a8', '#e2c6ff', '#ffd23f'];
+    eggs.forEach((c, i) => {
+      cyl(g, '#ffffff', [-2.7 + i * 1.8, 2.1, 1.2], [1, 0.2, 1]);
+      sph(g, c, [-2.7 + i * 1.8, 2.8, 1.2], [1.0, 1.3, 1.0]);
+    });
+    const f = front(P.eggs, 0);
+    g.position.set(P.eggs.x, 0, P.eggs.z);
+    g.rotation.y = f.rot;
+    stat.add(g);
+    rects.push({ x: P.eggs.x, z: P.eggs.z, hw: 6, hd: 4.5, rot: f.rot });
+    const z = front(P.eggs, 6.8);
+    zones.push({ kind: 'eggs', x: z.x, z: z.z, r: 4, label: 'Kjøp egg 🥚' });
+    places.eggs = { x: z.x, z: z.z, yaw: f.rot + Math.PI };
+  }
+  // door game hut
+  {
+    const g = new THREE.Group();
+    rbox(g, '#c88bff', [0, 3, 0], [10, 6, 6]);
+    cone(g, '#ff8fc7', [0, 7.5, 0], [12, 3, 8], [0, Math.PI / 4, 0]).scale.set(13, 3, 9);
+    const doorCols = ['#ff6f6f', '#ffe066', '#5cc3f2'];
+    doorCols.forEach((c, i) => {
+      rbox(g, c, [-3 + i * 3, 1.8, 3.05], [2, 3.4, 0.3]);
+      sph(g, '#ffffff', [-2.5 + i * 3, 1.8, 3.25], [0.25, 0.25, 0.2]);
+      part(g, G.star(), '#ffffff', [-3 + i * 3, 4.3, 3.1], [0.6, 0.6, 0.3]);
+    });
+    sign(g, 'Dørspillet', 7.6, 3.6, '#ff4fa8', 6);
+    const f = front(P.doors, 0);
+    g.position.set(P.doors.x, 0, P.doors.z);
+    g.rotation.y = f.rot;
+    stat.add(g);
+    rects.push({ x: P.doors.x, z: P.doors.z, hw: 5, hd: 3, rot: f.rot });
+    const z = front(P.doors, 6);
+    zones.push({ kind: 'doors', x: z.x, z: z.z, r: 3.5, label: 'Spill Dørspillet 🚪' });
+    places.doors = { x: z.x, z: z.z, yaw: f.rot + Math.PI };
+  }
+  // playground
+  {
+    const g = new THREE.Group();
+    cyl(g, '#ffe8a8', [0, 0.05, 0], [22, 0.1, 22]);
+    // slide
+    for (const x of [-0.8, 0.8]) box(g, '#ff6f6f', [x - 4, 2, -3], [0.3, 4, 0.3]);
+    box(g, '#5cc3f2', [-4, 3.8, -3], [2.2, 0.3, 2]);
+    cone(g, '#ff6f6f', [-4, 5.2, -3], [3, 2, 3], [0, Math.PI / 4, 0]);
+    box(g, '#ffe066', [-4, 2, 0.2], [1.6, 0.25, 5.6], [0.62, 0, 0]);
+    // swings
+    for (const x of [1.5, 6.5]) for (const z of [-4, -2]) box(g, '#7ccf6a', [x, 2.5, z], [0.3, 5, 0.3], [z === -4 ? 0.2 : -0.2, 0, 0]);
+    box(g, '#7ccf6a', [4, 5, -3], [5.6, 0.3, 0.3]);
+    for (const x of [2.8, 5.2]) {
+      for (const s of [-0.5, 0.5]) box(g, '#c0c6d6', [x + s, 3.4, -3], [0.05, 3.2, 0.05]);
+      rbox(g, '#ff8fb1', [x, 1.8, -3], [1.3, 0.2, 0.7]);
+    }
+    // sandbox + seesaw + merry-go-round
+    rbox(g, '#c98a55', [4, 0.3, 4], [5, 0.6, 5]);
+    box(g, '#ffe0a0', [4, 0.5, 4], [4.4, 0.2, 4.4]);
+    cone(g, '#ff6f6f', [3.2, 1, 3.4], [0.8, 0.9, 0.8]);
+    box(g, '#c88bff', [-4, 0.9, 5.5], [6, 0.25, 0.8], [0, 0, 0.2]);
+    cone(g, '#555a75', [-4, 0.4, 5.5], [1, 0.8, 1]);
+    cyl(g, '#ffb84d', [0, 0.6, 7.5], [4, 0.3, 4]);
+    cyl(g, '#ff6f6f', [0, 1.6, 7.5], [0.3, 2, 0.3]);
+    // fence
+    for (let i = 0; i < 28; i++) {
+      const a = (i / 28) * Math.PI * 2;
+      if (Math.abs(Math.atan2(Math.sin(a - faceCenter(P.play.x, P.play.z) + Math.PI / 2), Math.cos(a - faceCenter(P.play.x, P.play.z) + Math.PI / 2))) < 0.35) continue;
+      rbox(g, '#ffffff', [Math.cos(a) * 11, 0.7, Math.sin(a) * 11], [0.4, 1.4, 0.4]);
+    }
+    sign(g, 'Lekeplass', 3, 11.5, '#54c45e', 6).rotation.y = 0;
+    const f = front(P.play, 0);
+    g.position.set(P.play.x, 0, P.play.z);
+    g.rotation.y = f.rot;
+    stat.add(g);
+    zones.push({ kind: 'play', x: P.play.x, z: P.play.z, r: 10.5, label: 'Lekeplassen ⚽' });
+    const pp = front(P.play, 9);
+    places.play = { x: pp.x, z: pp.z, yaw: f.rot + Math.PI };
+  }
+
+  // trees, bushes, flowers, lamps, benches (deterministic positions)
+  let seed = 7;
+  const rnd = () => {
+    seed = (seed * 16807) % 2147483647;
+    return seed / 2147483647;
+  };
+  const blocked = (x: number, z: number) =>
+    Math.hypot(x, z) < 16 ||
+    Object.values(P).some((p) => Math.hypot(x - p.x, z - p.z) < 16) ||
+    Object.values(P).some((p) => {
+      // near the road line
+      const len = Math.hypot(p.x, p.z);
+      const t = Math.max(0, Math.min(1, (x * p.x + z * p.z) / (len * len)));
+      return Math.hypot(x - p.x * t, z - p.z * t) < 6;
+    });
+  for (let i = 0; i < 140; i++) {
+    const x = (rnd() - 0.5) * SIZE * 0.95;
+    const z = (rnd() - 0.5) * SIZE * 0.95;
+    if (blocked(x, z)) continue;
+    const s = 0.8 + rnd() * 0.6;
+    tree(stat, x, z, s, Math.floor(rnd() * 3));
+    circles.push({ x, z, r: 1.0 * s });
+  }
+  // a ring of trees on the edge
+  for (let i = 0; i < 70; i++) {
+    const a = (i / 70) * Math.PI * 2;
+    const r = SIZE / 2 + 4 + (i % 3) * 3;
+    tree(stat, Math.cos(a) * r, Math.sin(a) * r, 1.3, i % 3);
+  }
+  const flowerCols = ['#ff8fb1', '#ffe066', '#ffffff', '#c88bff', '#ff6f6f'];
+  for (let i = 0; i < 160; i++) {
+    const x = (rnd() - 0.5) * SIZE * 0.9;
+    const z = (rnd() - 0.5) * SIZE * 0.9;
+    if (blocked(x, z)) continue;
+    if (i % 4 === 0) sph(stat, '#5cc36b', [x, 0.5, z], [2, 1.4, 2]);
+    else {
+      box(stat, '#3fbf5a', [x, 0.3, z], [0.08, 0.6, 0.08]);
+      sph(stat, flowerCols[i % 5], [x, 0.65, z], [0.35, 0.3, 0.35]);
+    }
+  }
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2 + 0.4;
+    const x = Math.cos(a) * 15;
+    const z = Math.sin(a) * 15;
+    cyl(stat, '#555a75', [x, 2.5, z], [0.25, 5, 0.25]);
+    sph(stat, '#fff4c2', [x, 5.2, z], [0.8, 0.8, 0.8], undefined, 0.6);
+    if (i % 2 === 0) {
+      const bx = Math.cos(a + 0.2) * 14;
+      const bz = Math.sin(a + 0.2) * 14;
+      const rot = -a + Math.PI / 2;
+      box(stat, '#c98a55', [bx, 0.9, bz], [3, 0.2, 1], [0, rot, 0]);
+      box(stat, '#c98a55', [bx - Math.cos(a) * 0.4, 1.5, bz - Math.sin(a) * 0.4], [3, 0.8, 0.15], [0, rot, 0]);
+    }
+  }
+  // hills at the edge
+  for (let i = 0; i < 10; i++) {
+    const a = (i / 10) * Math.PI * 2;
+    sph(stat, '#6cc65a', [Math.cos(a) * (SIZE / 2 + 25), 0, Math.sin(a) * (SIZE / 2 + 25)], [50, 26, 50]);
+  }
+
+  const merged = mergeStatic(stat, { cast: true, receive: true });
+  group.add(merged);
+
+  // clouds (separate so they can drift)
+  const clouds = new THREE.Group();
+  for (let i = 0; i < 12; i++) {
+    const c = new THREE.Group();
+    for (let j = 0; j < 4; j++) sph(c, '#ffffff', [j * 2.4 - 3.6, Math.sin(j) * 0.8, (j % 2) * 1.2], [4 - Math.abs(j - 1.5), 3 - Math.abs(j - 1.5) * 0.6, 3]);
+    c.position.set((rnd() - 0.5) * SIZE * 1.2, 30 + rnd() * 12, (rnd() - 0.5) * SIZE * 1.2);
+    clouds.add(c);
+  }
+  const mergedClouds = mergeStatic(clouds);
+  group.add(mergedClouds);
+
+  // home exterior (changes with the house style)
+  const homeHolder = new THREE.Group();
+  const homeRot = faceCenter(P.home.x, P.home.z);
+  homeHolder.position.set(P.home.x, 0, P.home.z);
+  homeHolder.rotation.y = homeRot;
+  group.add(homeHolder);
+  const homeRect: RectCollider = { x: P.home.x, z: P.home.z, hw: 7, hd: 5, rot: homeRot };
+  rects.push(homeRect);
+  const homeZone: Zone = { kind: 'home', x: 0, z: 0, r: 3.5, label: 'Gå inn 🏠' };
+  zones.push(homeZone);
+
+  function setHomeStyle(style: HouseStyle) {
+    homeHolder.clear();
+    const h = mergeStatic(homeExterior(style), { cast: true, receive: true });
+    const size = homeExterior(style).userData.size as { w: number; d: number };
+    homeHolder.add(h);
+    homeRect.hw = size.w / 2;
+    homeRect.hd = size.d / 2;
+    const dist = size.d / 2 + 2.2;
+    homeZone.x = P.home.x + Math.sin(homeRot) * dist;
+    homeZone.z = P.home.z + Math.cos(homeRot) * dist;
+    places.home = { x: P.home.x + Math.sin(homeRot) * (dist + 2), z: P.home.z + Math.cos(homeRot) * (dist + 2), yaw: homeRot };
+  }
+  setHomeStyle('hytte');
+
+  return {
+    group,
+    zones,
+    rects,
+    circles,
+    get spawn() {
+      return { x: places.home.x, z: places.home.z, yaw: places.home.yaw };
+    },
+    places,
+    setHomeStyle,
+    size: SIZE,
+    update(t: number) {
+      mergedClouds.position.x = Math.sin(t * 0.02) * 20;
+      water.position.y = 4.2 + Math.sin(t * 3) * 0.15;
+    },
+  };
+}
