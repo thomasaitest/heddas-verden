@@ -1,0 +1,21 @@
+{
+  "name": "pet-doors",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "~6.0.3",
+    "vite": "^8.3.4",
+    "vite-plugin-pwa": "^1.2.0",
+    "vitest": "^3.2.4"
+  },
+  "dependencies": {
+    "@fontsource/fredoka": "^5.2.8"
+  }
+}
