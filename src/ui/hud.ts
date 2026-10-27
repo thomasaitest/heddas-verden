@@ -1,5 +1,11 @@
-import { NEED_INFO, type PetState } from '../logic/needs.ts';
+import type { PetState } from '../logic/needs.ts';
+import { TasksPanel } from './tasks.ts';
 import { bucksText, button, el } from './dom.ts';
+
+/** Only touch the DOM when the text really changed (rewriting identical text restarts nothing, but costs a layout every frame). */
+const put = (e: HTMLElement, v: string) => {
+  if (e.textContent !== v) e.textContent = v;
+};
 
 export interface HudActions {
   bag(): void;
@@ -29,6 +35,7 @@ export class Hud {
   root: HTMLElement;
   bucks: HTMLElement;
   tasks: HTMLElement;
+  private tasksPanel = new TasksPanel();
   prompt: HTMLButtonElement;
   buildBtn: HTMLButtonElement;
   soundBtn: HTMLButtonElement;
@@ -39,7 +46,6 @@ export class Hud {
   jump: HTMLButtonElement;
   petBar: HTMLElement;
   private petBtns: Record<'hold' | 'ride' | 'fly' | 'feed', HTMLButtonElement>;
-  private lastTasks = '';
 
   constructor(host: HTMLElement, a: HudActions) {
     this.bucks = el('span', { class: 'bucks-n' }, '0');
@@ -52,7 +58,7 @@ export class Hud {
       this.where,
       el('div', { class: 'hud-top-right' }, this.soundBtn),
     );
-    this.tasks = el('div', { class: 'tasks' });
+    this.tasks = this.tasksPanel.root;
     this.prompt = button('', a.interact, 'btn prompt hidden');
     this.buildBtn = button(el('span', {}, '🔨', el('b', {}, 'Bygg')), a.build, 'btn dock-btn build hidden');
     const dock = el(
@@ -80,7 +86,7 @@ export class Hud {
   }
 
   setBucks(n: number) {
-    this.bucks.textContent = bucksText(n);
+    put(this.bucks, bucksText(n));
   }
   bumpBucks() {
     this.bucks.parentElement!.classList.remove('bump');
@@ -89,30 +95,7 @@ export class Hud {
   }
 
   setTasks(pets: PetState[], onTap: (uid: string) => void) {
-    const key = pets.map((p) => `${p.uid}:${p.name}:${p.need?.kind}:${Math.round((p.need?.progress ?? 0) * 20)}`).join('|');
-    if (key === this.lastTasks) return;
-    this.lastTasks = key;
-    this.tasks.replaceChildren();
-    const withNeed = pets.filter((p) => p.need);
-    if (!withNeed.length) return;
-    this.tasks.append(el('div', { class: 'tasks-title' }, 'Oppgaver'));
-    for (const p of withNeed) {
-      const info = NEED_INFO[p.need!.kind];
-      const card = el(
-        'button',
-        { class: `task ${p.need!.kind === 'syk' ? 'sick' : ''}`, type: 'button', onclick: () => onTap(p.uid) },
-        el('span', { class: 'task-emoji' }, info.emoji),
-        el(
-          'span',
-          { class: 'task-text' },
-          el('b', {}, `${p.name}: ${info.label}`),
-          el('small', {}, info.hint),
-          el('span', { class: 'bar' }, el('i', { style: { width: `${Math.round(p.need!.progress * 100)}%` } })),
-        ),
-        el('span', { class: 'task-pay' }, `+${info.reward}`),
-      );
-      this.tasks.append(card);
-    }
+    this.tasksPanel.update(pets, onTap);
   }
 
   setPrompt(label: string | null) {
@@ -126,17 +109,17 @@ export class Hud {
 
   setPetActions(s: PetActionState) {
     this.petBar.classList.toggle('hidden', !s.any);
-    this.petBtns.hold.textContent = s.holding ? '🤲 Slipp' : '🤲 Hold';
+    put(this.petBtns.hold, s.holding ? '🤲 Slipp' : '🤲 Hold');
     this.petBtns.hold.classList.toggle('hidden', s.riding);
     this.petBtns.ride.classList.toggle('hidden', !s.canRide || s.holding);
-    this.petBtns.ride.textContent = s.riding ? '🛑 Gå av' : '🐎 Ri';
+    put(this.petBtns.ride, s.riding ? '🛑 Gå av' : '🐎 Ri');
     this.petBtns.fly.classList.toggle('hidden', !s.canFly || s.holding);
-    this.petBtns.fly.textContent = s.flying ? '🛬 Land' : '🪽 Fly';
+    put(this.petBtns.fly, s.flying ? '🛬 Land' : '🪽 Fly');
     this.petBtns.feed.classList.toggle('hidden', !s.hungry);
   }
 
   setMode(mode: 'town' | 'house', label: string, canBuild: boolean) {
-    this.where.textContent = label;
+    put(this.where, label);
     this.buildBtn.classList.toggle('hidden', !(mode === 'house' && canBuild));
   }
 }
