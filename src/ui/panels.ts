@@ -431,9 +431,9 @@ export function openAvatar(game: Game, first = false, onDone?: () => void) {
     const head = field === 'hair' || field === 'face' || field === 'hat';
     const behind = field === 'accessory' && ['vinger', 'sommerfugl', 'sekk', 'kappe'].includes(id);
     const frame = head
-      ? { y: 2.2, r: 0.95 }
+      ? field === 'hat' ? { y: 2.4, r: 1.05 } : { y: 2.22, r: 0.72 }
       : field === 'accessory'
-        ? ['briller', 'solbriller', 'hodetelefoner', 'glorie'].includes(id) ? { y: 2.2, r: 0.95 } : { y: 1.35, r: 1.75 }
+        ? ['briller', 'solbriller', 'hodetelefoner', 'glorie'].includes(id) ? { y: 2.25, r: 0.75 } : { y: 1.35, r: 1.75 }
         : field === 'print' ? { y: 1.45, r: 0.95 }
           : field === 'bottom' ? { y: 0.55, r: 1.05 }
             : { y: 0.35, r: 0.95 };
