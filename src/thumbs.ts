@@ -19,7 +19,7 @@ export class Thumbs {
     this.scene.add(d);
   }
 
-  get(key: string, make: () => THREE.Object3D, opts: { yaw?: number; pitch?: number } = {}): string {
+  get(key: string, make: () => THREE.Object3D, opts: { yaw?: number; pitch?: number; /** Frame this point and radius instead of the whole model (e.g. just the head). */ focus?: { y: number; r: number } } = {}): string {
     const hit = this.cache.get(key);
     if (hit) return hit;
     const obj = make();
@@ -31,7 +31,11 @@ export class Thumbs {
     const box = new THREE.Box3().setFromObject(holder);
     const center = box.getCenter(new THREE.Vector3());
     const size = box.getSize(new THREE.Vector3());
-    const radius = Math.max(size.x, size.y, size.z) * 0.62 + 0.05;
+    let radius = Math.max(size.x, size.y, size.z) * 0.62 + 0.05;
+    if (opts.focus) {
+      center.set(0, opts.focus.y, 0);
+      radius = opts.focus.r;
+    }
     const dist = radius / Math.tan(THREE.MathUtils.degToRad(this.cam.fov / 2));
     const pitch = opts.pitch ?? 0.35;
     this.cam.position.set(center.x, center.y + Math.sin(pitch) * dist, center.z + Math.cos(pitch) * dist);

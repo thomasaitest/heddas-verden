@@ -138,6 +138,79 @@ function faceTexture(face: Avatar['face']): THREE.CanvasTexture {
         ctx.ellipse(140, 168, 14, 18, 0, 0, Math.PI * 2);
         ctx.fill();
         break;
+      case 'sovnig':
+        for (const x of [90, 166]) {
+          ctx.beginPath();
+          ctx.arc(x, 108, 18, Math.PI * 0.1, Math.PI * 0.9);
+          ctx.stroke();
+        }
+        ctx.beginPath();
+        ctx.ellipse(128, 168, 14, 10, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.font = '700 40px sans-serif';
+        ctx.fillText('z', 200, 70);
+        ctx.font = '700 28px sans-serif';
+        ctx.fillText('z', 222, 48);
+        break;
+      case 'stjerneoyne':
+        for (const x of [90, 166]) {
+          ctx.fillStyle = '#ffd23f';
+          ctx.strokeStyle = '#e0a000';
+          ctx.lineWidth = 5;
+          ctx.beginPath();
+          for (let i = 0; i < 10; i++) {
+            const r = i % 2 ? 9 : 24;
+            const a = (i / 10) * Math.PI * 2 - Math.PI / 2;
+            ctx.lineTo(x + Math.cos(a) * r, 112 + Math.sin(a) * r);
+          }
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+        }
+        ctx.strokeStyle = ink;
+        ctx.lineWidth = 12;
+        smile();
+        break;
+      case 'hjerteoyne':
+        for (const x of [90, 166]) {
+          ctx.fillStyle = '#ff3f7a';
+          ctx.beginPath();
+          ctx.moveTo(x, 134);
+          ctx.bezierCurveTo(x - 32, 108, x - 20, 84, x, 100);
+          ctx.bezierCurveTo(x + 20, 84, x + 32, 108, x, 134);
+          ctx.fill();
+        }
+        ctx.fillStyle = ink;
+        smile();
+        blush();
+        break;
+      case 'fregner':
+        eye(90, 112);
+        eye(166, 112);
+        ctx.fillStyle = '#b5703f';
+        for (const [x, y] of [[60, 146], [76, 156], [92, 146], [164, 146], [180, 156], [196, 146]]) {
+          ctx.beginPath();
+          ctx.arc(x, y, 5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.strokeStyle = ink;
+        smile();
+        break;
+      case 'sur':
+        eye(90, 118);
+        eye(166, 118);
+        ctx.lineWidth = 10;
+        ctx.beginPath();
+        ctx.moveTo(62, 78);
+        ctx.lineTo(112, 94);
+        ctx.moveTo(194, 78);
+        ctx.lineTo(144, 94);
+        ctx.stroke();
+        ctx.lineWidth = 12;
+        ctx.beginPath();
+        ctx.arc(128, 182, 28, Math.PI * 1.2, Math.PI * 1.8);
+        ctx.stroke();
+        break;
     }
   });
 }
@@ -168,6 +241,60 @@ function printTexture(print: Avatar['print']): THREE.CanvasTexture | null {
         const a = (i / 10) * Math.PI * 2 - Math.PI / 2;
         ctx.lineTo(64 + Math.cos(a) * r, 66 + Math.sin(a) * r);
       }
+      ctx.fill();
+      return;
+    }
+    if (print === 'regnbue') {
+      ctx.lineWidth = 9;
+      ['#ff4f4f', '#ffb84d', '#ffe066', '#54c45e', '#3fa4ff', '#b05cff'].forEach((c, i) => {
+        ctx.strokeStyle = c;
+        ctx.beginPath();
+        ctx.arc(64, 100, 52 - i * 8, Math.PI, 0);
+        ctx.stroke();
+      });
+      return;
+    }
+    if (print === 'blomst') {
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2;
+        ctx.fillStyle = '#ff8fc7';
+        ctx.beginPath();
+        ctx.ellipse(64 + Math.cos(a) * 24, 64 + Math.sin(a) * 24, 16, 16, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = '#ffd23f';
+      ctx.beginPath();
+      ctx.arc(64, 64, 16, 0, Math.PI * 2);
+      ctx.fill();
+      return;
+    }
+    if (print === 'smiley') {
+      ctx.fillStyle = '#ffd23f';
+      ctx.beginPath();
+      ctx.arc(64, 64, 46, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#2b2340';
+      ctx.beginPath();
+      ctx.arc(48, 52, 6, 0, Math.PI * 2);
+      ctx.arc(80, 52, 6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#2b2340';
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      ctx.arc(64, 68, 22, 0.2, Math.PI - 0.2);
+      ctx.stroke();
+      return;
+    }
+    if (print === 'lyn') {
+      ctx.fillStyle = '#ffe066';
+      ctx.beginPath();
+      ctx.moveTo(74, 10);
+      ctx.lineTo(34, 70);
+      ctx.lineTo(62, 70);
+      ctx.lineTo(48, 118);
+      ctx.lineTo(96, 52);
+      ctx.lineTo(68, 52);
+      ctx.closePath();
       ctx.fill();
       return;
     }
@@ -228,6 +355,40 @@ function hair(head: THREE.Group, a: Avatar) {
       }
       sph(head, c, [0, 0.45, 0], [0.5, 0.3, 0.5]);
       break;
+    case 'afro':
+      for (let i = 0; i < 14; i++) {
+        const ang = (i / 14) * Math.PI * 2;
+        const z = Math.sin(ang) * 0.42 - 0.08;
+        if (z > 0.2) continue; // keep the face free
+        sph(head, c, [Math.cos(ang) * 0.42, 0.26 + (i % 3) * 0.06, z], [0.42, 0.42, 0.42]);
+      }
+      for (let i = 0; i < 6; i++) sph(head, c, [Math.cos(i) * 0.2, 0.55, Math.sin(i) * 0.2 - 0.08], [0.46, 0.4, 0.46]);
+      sph(head, c, [0, 0.42, 0.12], [0.6, 0.3, 0.3]);
+      break;
+    case 'totter':
+      rbox(head, c, [0, 0.27, 0.3], [0.8, 0.14, 0.2]);
+      for (const s of [-1, 1]) {
+        sph(head, c, [s * 0.34, 0.5, -0.05], [0.34, 0.34, 0.34]);
+        sph(head, '#ff6f8f', [s * 0.3, 0.38, -0.05], [0.14, 0.1, 0.14]);
+      }
+      break;
+    case 'sidefletter':
+      rbox(head, c, [0, 0.27, 0.3], [0.8, 0.14, 0.2]);
+      for (let i = 0; i < 5; i++) sph(head, c, [0.43 + i * 0.01, 0.1 - i * 0.2, 0.05], [0.22 - i * 0.015, 0.24, 0.22 - i * 0.015]);
+      sph(head, '#ff6f8f', [0.44, -0.92, 0.05], [0.16, 0.16, 0.16]);
+      break;
+    case 'lugg':
+      rbox(head, c, [0, 0.19, 0.33], [0.8, 0.22, 0.1]);
+      for (const s of [-1, 1]) rbox(head, c, [s * 0.39, 0.0, 0.1], [0.1, 0.4, 0.5]);
+      break;
+    case 'topknott':
+      rbox(head, c, [0, 0.27, 0.3], [0.8, 0.14, 0.2]);
+      sph(head, c, [0, 0.58, -0.05], [0.36, 0.36, 0.36]);
+      cyl(head, '#ff6f8f', [0, 0.42, -0.05], [0.3, 0.06, 0.3]);
+      break;
+    case 'hanekam':
+      for (let i = 0; i < 6; i++) rbox(head, c, [0, 0.42 + (i === 0 || i === 5 ? 0 : 0.08), 0.28 - i * 0.12], [0.1, 0.22 + (i % 2) * 0.1, 0.12]);
+      break;
     case 'piggete':
       for (let i = 0; i < 6; i++) cone(head, c, [-0.28 + i * 0.11, 0.45, 0.1 - (i % 2) * 0.2], [0.18, 0.34, 0.18], [-0.3, 0, (i - 2.5) * 0.15]);
       break;
@@ -276,6 +437,38 @@ function hat(head: THREE.Group, a: Avatar) {
         sph(head, ['#ff8fb1', '#ffe066', '#c88bff', '#ffffff'][i % 4], [Math.cos(ang) * 0.42, 0.38, Math.sin(ang) * 0.42], [0.16, 0.16, 0.16]);
       }
       break;
+    case 'pirat':
+      rbox(head, '#2b2340', [0, 0.45, 0], [0.98, 0.2, 0.62]);
+      rbox(head, '#2b2340', [0, 0.58, 0], [0.7, 0.2, 0.5]);
+      sph(head, '#ffffff', [0, 0.55, 0.3], [0.16, 0.16, 0.06]);
+      box(head, '#ffffff', [0, 0.55, 0.3], [0.2, 0.04, 0.07], [0, 0, 0.7]);
+      box(head, '#ffffff', [0, 0.55, 0.3], [0.2, 0.04, 0.07], [0, 0, -0.7]);
+      break;
+    case 'prinsesse':
+      cone(head, '#ff9ccf', [0, 0.85, -0.05], [0.5, 0.95, 0.5], [-0.15, 0, 0]);
+      sph(head, '#ffe066', [0, 1.33, -0.12], [0.14, 0.14, 0.14], undefined, 0.3);
+      cyl(head, '#ffe066', [0, 0.4, -0.02], [0.52, 0.06, 0.52], undefined, 0.2);
+      box(head, '#ffd6ec', [0, 0.35, -0.5], [0.4, 0.8, 0.04], [0.15, 0, 0]).userData.noCast = true;
+      break;
+    case 'festhatt':
+      cone(head, '#ffe066', [0, 0.7, 0], [0.5, 0.75, 0.5]);
+      for (let i = 0; i < 4; i++) sph(head, ['#ff6f6f', '#5cc3f2', '#7ccf6a', '#c88bff'][i], [Math.cos(i * 1.6) * 0.15, 0.5 + i * 0.1, Math.sin(i * 1.6) * 0.15], [0.1, 0.1, 0.1]);
+      sph(head, '#ff4f7f', [0, 1.1, 0], [0.18, 0.18, 0.18]);
+      break;
+    case 'hodeband':
+      cyl(head, '#ff4f7f', [0, 0.3, -0.02], [0.8, 0.1, 0.8]);
+      sph(head, '#ff4f7f', [0.3, 0.38, 0.3], [0.2, 0.16, 0.1], [0, 0, 0.5]);
+      sph(head, '#ff4f7f', [0.42, 0.34, 0.26], [0.2, 0.16, 0.1], [0, 0, -0.5]);
+      break;
+    case 'hjelm':
+      sph(head, '#3fa4ff', [0, 0.25, 0], [0.94, 0.78, 0.94]);
+      box(head, '#ffffff', [0, 0.45, 0], [0.16, 0.1, 0.9]);
+      box(head, '#3fa4ff', [0, 0.18, 0.46], [0.6, 0.05, 0.3]);
+      break;
+    case 'kokkelue':
+      cyl(head, '#ffffff', [0, 0.45, 0], [0.74, 0.2, 0.74]);
+      sph(head, '#ffffff', [0, 0.78, 0], [0.98, 0.62, 0.98]);
+      break;
     case 'trollmann':
       cyl(head, '#6a4cff', [0, 0.38, 0], [1.1, 0.05, 1.1]);
       cone(head, '#6a4cff', [0, 0.8, 0], [0.7, 0.85, 0.7], [0.12, 0, 0]);
@@ -294,6 +487,28 @@ function accessory(body: THREE.Group, head: THREE.Group, a: Avatar) {
       for (const s of [-1, 1]) {
         sph(body, '#e9d2ff', [s * 0.35, 1.55, -0.35], [0.55, 0.7, 0.06], [0.2, s * 0.4, s * 0.5], 0.1);
         sph(body, '#ffd2ec', [s * 0.3, 1.15, -0.33], [0.35, 0.45, 0.05], [0.2, s * 0.4, s * -0.4], 0.1);
+      }
+      break;
+    case 'solbriller':
+      for (const s of [-1, 1]) box(head, '#1b1630', [s * 0.17, 0.06, 0.375], [0.28, 0.18, 0.03]);
+      box(head, '#1b1630', [0, 0.1, 0.375], [0.1, 0.03, 0.03]);
+      box(head, '#1b1630', [0, 0.1, 0.0], [0.8, 0.03, 0.03]);
+      break;
+    case 'hodetelefoner':
+      part(head, G.torus(), '#3a3a52', [0, 0.1, 0], [0.86, 0.86, 0.3], [0, 0, 0]);
+      for (const s of [-1, 1]) cyl(head, '#ff4f7f', [s * 0.43, -0.02, 0], [0.28, 0.14, 0.28], [0, 0, Math.PI / 2]);
+      break;
+    case 'halskjede':
+      for (let i = 0; i < 9; i++) {
+        const t = (i / 8) * Math.PI;
+        sph(body, i === 4 ? '#ff4f7f' : '#ffe066', [Math.cos(t) * 0.34, 1.78 - Math.sin(t) * 0.32, 0.27], [0.1, 0.1, 0.1], undefined, 0.2);
+      }
+      break;
+    case 'sommerfugl':
+      for (const s of [-1, 1]) {
+        sph(body, '#ff8fc7', [s * 0.55, 1.65, -0.35], [0.75, 0.62, 0.05], [0.1, s * 0.5, s * 0.4], 0.12);
+        sph(body, '#7ce0ff', [s * 0.45, 1.15, -0.34], [0.5, 0.45, 0.05], [0.1, s * 0.5, s * -0.3], 0.12);
+        sph(body, '#ffffff', [s * 0.6, 1.68, -0.33], [0.16, 0.14, 0.03], undefined, 0.2);
       }
       break;
     case 'sekk':
@@ -321,10 +536,22 @@ export function buildAvatar(a: Avatar): AvatarRig {
     const pivot = new THREE.Object3D();
     pivot.position.set(s * 0.24, 0.9, 0);
     body.add(pivot);
-    box(pivot, a.pants, [0, -0.38, 0], [0.46, 0.76, 0.48]);
-    rbox(pivot, a.shoes, [0, -0.82, 0.04], [0.48, 0.18, 0.56]);
+    if (a.bottom === 'shorts') {
+      box(pivot, a.pants, [0, -0.2, 0], [0.48, 0.4, 0.5]);
+      box(pivot, a.skin, [0, -0.58, 0], [0.38, 0.36, 0.4]);
+    } else if (a.bottom === 'skjort') box(pivot, a.skin, [0, -0.38, 0], [0.38, 0.76, 0.4]);
+    else box(pivot, a.pants, [0, -0.38, 0], [0.46, 0.76, 0.48]);
+    if (a.shoeStyle === 'stovler') {
+      rbox(pivot, a.shoes, [0, -0.62, 0.01], [0.5, 0.5, 0.52]);
+      rbox(pivot, a.shoes, [0, -0.84, 0.07], [0.5, 0.14, 0.6]);
+    } else if (a.shoeStyle === 'sneakers') {
+      rbox(pivot, a.shoes, [0, -0.78, 0.04], [0.48, 0.2, 0.58]);
+      box(pivot, '#ffffff', [0, -0.9, 0.05], [0.5, 0.06, 0.62]);
+      box(pivot, '#ffffff', [0, -0.78, 0.2], [0.34, 0.05, 0.1]);
+    } else rbox(pivot, a.shoes, [0, -0.82, 0.04], [0.48, 0.18, 0.56]);
     return pivot;
   });
+  if (a.bottom === 'skjort') cyl(body, a.pants, [0, 0.78, 0], [1.15, 0.5, 0.78]);
   box(body, a.pants, [0, 0.98, 0], [0.96, 0.18, 0.5]);
   rbox(body, a.shirt, [0, 1.42, 0], [0.98, 0.8, 0.5]);
   const pt = printTexture(a.print);

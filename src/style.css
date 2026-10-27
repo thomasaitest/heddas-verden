@@ -239,3 +239,12 @@ body.building .joy-zone, body.building .jump, body.building .pet-bar, body.build
   .jump { width: 76px; height: 76px; bottom: calc(90px + env(safe-area-inset-bottom)); }
   .prompt { bottom: calc(190px + env(safe-area-inset-bottom)); }
 }
+
+/* avatar option cards with pictures */
+.opts { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 8px; }
+.opt { all: unset; box-sizing: border-box; cursor: pointer; background: #f6f0ff; border: 3px solid #e3d6f5; border-radius: 18px; padding: 4px 4px 6px; text-align: center; touch-action: manipulation; }
+.opt:active { transform: scale(0.96); }
+.opt.on { border-color: #ff4fa8; background: #ffe6f3; box-shadow: 0 0 0 3px rgba(255, 79, 168, 0.25); }
+.opt-in { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.opt-img { width: 72px; height: 72px; image-rendering: auto; }
+.opt b { font-size: 13px; line-height: 1.1; }
