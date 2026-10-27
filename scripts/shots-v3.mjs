@@ -126,4 +126,37 @@ if (want('build')) {
   await shot(page, 'house-furnish-walking', 800);
   await ctx.close();
 }
+
+// ---- playground equipment in use
+if (want('play')) {
+  const { page, ctx } = await start();
+  const sets = [
+    ['swing1', 'playground-swing', 1.0, 0.45, 9, 1.4],
+    ['slide', 'playground-slide', 0.8, 0.4, 11, 1.6],
+    ['seesaw', 'playground-seesaw', -0.9, 0.4, 10, 2.4],
+    ['merry', 'playground-merry-go-round', 0.7, 0.45, 10, 2.2],
+  ];
+  for (const [id, name, camYaw, pitch, dist, wait] of sets) {
+    await page.evaluate(([id]) => {
+      const g = window.__hv;
+      if (g.using) g.stopUse();
+      const e = g.town.equipment.find((q) => q.id === id);
+      g.player.pos.set(e.exitX, 0, e.exitZ);
+      g.player.yaw = e.exitYaw;
+    }, [id]);
+    await page.waitForTimeout(300);
+    const prompt = await page.evaluate(() => document.querySelector('.prompt')?.textContent ?? null);
+    console.log(id, 'prompt:', prompt);
+    await page.evaluate(([id, camYaw, pitch, dist]) => {
+      const g = window.__hv;
+      g.startUse(id);
+      const e = g.town.equipment.find((q) => q.id === id);
+      g.cam.yaw = Math.atan2(g.player.pos.x - e.wx, g.player.pos.z - e.wz) + camYaw; g.cam.pitch = pitch; g.cam.dist = dist;
+    }, [id, camYaw, pitch, dist]);
+    await shot(page, name, wait * 1000);
+    const prompt2 = await page.evaluate(() => document.querySelector('.prompt')?.textContent ?? null);
+    console.log(id, 'while on:', prompt2, await page.evaluate(() => !!window.__hv.using));
+  }
+  await ctx.close();
+}
 await browser.close();

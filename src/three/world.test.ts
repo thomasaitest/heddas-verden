@@ -320,3 +320,74 @@ describe('interior furniture colliders', () => {
     expect(furnitureColliders(h2, interior.items, door).length).toBe(0);
   });
 });
+
+describe('playground equipment in the town', () => {
+  const play = PLACES.play;
+  const rot = faceCenter(play.x, play.z);
+
+  it('lists every piece in world coordinates, inside the fence', () => {
+    expect(town.equipment.map((e) => e.id).sort()).toEqual(['merry', 'seesaw', 'slide', 'swing1', 'swing2']);
+    for (const e of town.equipment) {
+      expect(Math.hypot(e.wx - play.x, e.wz - play.z), e.id).toBeLessThan(10);
+      expect(town.zones.some((z) => z.kind === 'play' && Math.hypot(e.wx - z.x, e.wz - z.z) < z.r), `${e.id} in the play zone`).toBe(true);
+    }
+  });
+
+  it('every piece is tappable (it has meshes that carry its id)', () => {
+    const ids = new Set<string>();
+    for (const o of town.equipTargets) ids.add(o.userData.equip as string);
+    expect([...ids].sort()).toEqual(['merry', 'seesaw', 'slide', 'swing1', 'swing2']);
+  });
+
+  it('the spot where you step down is free to stand on, and can be walked to from the gate', () => {
+    // flood fill over free ground from the playground entrance
+    const cell = 0.5;
+    const key = (i: number, j: number) => `${i},${j}`;
+    const seen = new Set<string>();
+    const start = [Math.round(town.entrances.play.x / cell), Math.round(town.entrances.play.z / cell)];
+    const queue: number[][] = [start];
+    seen.add(key(start[0], start[1]));
+    while (queue.length) {
+      const [i, j] = queue.pop()!;
+      for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const ni = i + di;
+        const nj = j + dj;
+        const x = ni * cell;
+        const z = nj * cell;
+        if (seen.has(key(ni, nj)) || Math.hypot(x - play.x, z - play.z) > 16 || blocked(x, z, R, col())) continue;
+        seen.add(key(ni, nj));
+        queue.push([ni, nj]);
+      }
+    }
+    for (const e of town.equipment) {
+      expect(blocked(e.exitX, e.exitZ, R, col()), `${e.id} exit`).toBe(false);
+      expect(seen.has(key(Math.round(e.exitX / cell), Math.round(e.exitZ / cell))), `${e.id} reachable on foot`).toBe(true);
+    }
+  });
+
+  it('the pieces themselves stay solid when nobody is on them (no walking through the seesaw or the slide)', () => {
+    const at = (lx: number, lz: number) => local(play, rot, lx, lz);
+    const probes: [string, number, number][] = [['seesaw plank', -4, 5.5], ['seesaw end', -1.5, 5.5], ['merry-go-round', 0, 7.5], ['slide ramp', -4, 0.4], ['swing seat', 2.8, -3]];
+    for (const [n, lx, lz] of probes) {
+      const w = at(lx, lz);
+      expect(blocked(w.x, w.z, R, col()), n).toBe(true);
+    }
+  });
+
+  it('the avatar sits on the piece in world space (seat follows the playground rotation) and the meshes move with it', () => {
+    for (const e of town.equipment) {
+      town.setEquipUse({ id: e.id, u: 1.3 });
+      town.update(0);
+      const seat = town.seatWorld(e.id, 1.3);
+      // the seat is near the piece's middle in the world, whatever way the playground faces
+      expect(Math.hypot(seat.x - e.wx, seat.z - e.wz), e.id).toBeLessThan(4.5);
+      expect(Number.isFinite(seat.yaw)).toBe(true);
+    }
+    const sw = town.equipTargets.find((o) => o.userData.equip === 'swing1')!;
+    town.setEquipUse({ id: 'swing1', u: 1.0 });
+    town.update(0);
+    expect(Math.abs(sw.rotation.x)).toBeGreaterThan(0.1); // the swing is moving while somebody is on it
+    town.setEquipUse(null);
+    expect(sw.rotation.x).toBe(0); // and hangs still afterwards
+  });
+});

@@ -579,7 +579,7 @@ export function buildAvatar(a: Avatar): AvatarRig {
   return { root, body, head, arms, legs, extra: [] };
 }
 
-export type AvatarPose = 'idle' | 'walk' | 'jump' | 'sit' | 'hold' | 'wave' | 'fly';
+export type AvatarPose = 'idle' | 'walk' | 'jump' | 'sit' | 'hold' | 'wave' | 'fly' | 'swing' | 'slide' | 'seesaw' | 'spin';
 
 export function animateAvatar(rig: AvatarRig, t: number, pose: AvatarPose, speed = 0, holding = false): void {
   const s = pose === 'walk' ? Math.sin(t * 11) * 0.8 * Math.min(1, speed) : 0;
@@ -604,6 +604,36 @@ export function animateAvatar(rig: AvatarRig, t: number, pose: AvatarPose, speed
     rig.body.position.y = 0;
   } else if (pose === 'wave') {
     ra.rotation.set(0, 0, 2.6 + Math.sin(t * 10) * 0.35);
+  } else if (pose === 'swing') {
+    // holding the ropes, legs pumping
+    const k = Math.sin(t * 4.2);
+    l.rotation.set(-1.0 - k * 0.5, 0, 0.1);
+    r.rotation.set(-1.0 - k * 0.5, 0, -0.1);
+    la.rotation.set(-1.6, 0, -0.15);
+    ra.rotation.set(-1.6, 0, 0.15);
+    rig.body.position.y = 0;
+  } else if (pose === 'slide') {
+    // legs straight out, arms up in the air
+    l.rotation.set(-1.45, 0, 0.1);
+    r.rotation.set(-1.45, 0, -0.1);
+    la.rotation.set(0, 0, -2.5 - Math.sin(t * 9) * 0.15);
+    ra.rotation.set(0, 0, 2.5 + Math.sin(t * 9) * 0.15);
+    rig.body.position.y = 0;
+  } else if (pose === 'seesaw') {
+    // holding the handle, feet pushing off
+    const k = Math.sin(t * 3.4);
+    l.rotation.set(-1.1 - k * 0.3, 0, 0.2);
+    r.rotation.set(-1.1 + k * 0.3, 0, -0.2);
+    la.rotation.set(-1.4, 0, -0.1);
+    ra.rotation.set(-1.4, 0, 0.1);
+    rig.body.position.y = 0;
+  } else if (pose === 'spin') {
+    // one arm out, whee
+    l.rotation.set(-1.5, 0, 0.35);
+    r.rotation.set(-1.5, 0, -0.35);
+    la.rotation.set(0, 0, -1.4);
+    ra.rotation.set(-1.3, 0, 0.2);
+    rig.body.position.y = 0;
   }
   if (holding) {
     la.rotation.set(-1.3, 0, 0.25);

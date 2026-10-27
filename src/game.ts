@@ -3,6 +3,7 @@ import { sfx, setSoundEnabled } from './audio.ts';
 import { FURN_BY_ID, HOUSE_BY_STYLE } from './logic/catalog.ts';
 import { activeHouse, buyFurniture, careAt, editHouse, feed, placeFromInventory, tickSave } from './logic/economy.ts';
 import { moveItem } from './logic/house.ts';
+import { EQUIP_BY_ID, SIT_DROP, canUse, wantsOff } from './logic/playground.ts';
 import { canEdit, careItems, updateItem } from './logic/house.ts';
 import { NEED_INFO, stageOf, type CareWhere, type NeedKind, type PetState } from './logic/needs.ts';
 import { SPECIES_BY_ID } from './logic/pets.ts';
@@ -74,7 +75,11 @@ export class Game {
   /** Camera distance actually used this frame (shorter than cam.dist while a building is in the way). */
   private camShown = 15;
   avatar!: AvatarRig;
-  avatarHolder = new THREE.Group();
+  avatarHolder = (() => {
+    const g = new THREE.Group();
+    g.rotation.order = 'YXZ'; // turn first, then lean (swing, slide)
+    return g;
+  })();
   avatarShadow = blobShadow(1.8);
   actors = new Map<string, PetActor>();
   holding: string | null = null;
@@ -91,7 +96,9 @@ export class Game {
   private dirty = false;
   private lastSaveAt = 0;
   private lastTickAt = 0;
-  private nearZone: Zone | { kind: 'exit'; label: string } | null = null;
+  private nearZone: Zone | { kind: 'exit'; label: string } | { kind: 'equip'; id: string; label: string } | { kind: 'equip-off'; label: string } | null = null;
+  /** The playground piece you are sitting on (swing, slide, seesaw, merry-go-round), if any. */
+  using: { id: string; since: number } | null = null;
   private bubbleTex = new Map<string, THREE.Texture>();
   private raycaster = new THREE.Raycaster();
   private dragItem: { uid: string; dx: number; dz: number } | null = null;
@@ -383,6 +390,7 @@ export class Game {
 
   // ---------- places ----------
   enterHouse() {
+    if (this.using) this.stopUse();
     this.mode = 'house';
     this.holding = null;
     this.riding = null;
@@ -458,7 +466,51 @@ export class Game {
       case 'play':
         toast('Lek med dyrene dine her! ⚽');
         break;
+      case 'equip':
+        this.startUse(z.id);
+        break;
+      case 'equip-off':
+        this.stopUse();
+        break;
     }
+  }
+
+  // ---------- playground equipment ----------
+  /** Climb on a swing / slide / seesaw / merry-go-round. Needs you to be close to it and not busy with an animal. */
+  startUse(id: string): boolean {
+    const def = EQUIP_BY_ID[id];
+    const eq = this.town.equipment.find((e) => e.id === id);
+    if (!def || !eq || this.mode !== 'town' || this.using) return false;
+    if (!canUse({ riding: !!this.riding, holding: !!this.holding, flying: this.flying, paused: this.paused })) {
+      toast('Sett dyret ned først 🐾', 'bad');
+      return false;
+    }
+    if (Math.hypot(this.player.pos.x - eq.wx, this.player.pos.z - eq.wz) > eq.reach + 0.5) {
+      toast(`Gå litt nærmere ${def.label} 👣`);
+      return false;
+    }
+    this.using = { id, since: this.time };
+    this.player.vy = 0;
+    this.player.grounded = true;
+    sfx.pop();
+    this.updateHud();
+    return true;
+  }
+
+  /** Step off: you stand on the free spot next to it. */
+  stopUse() {
+    const u = this.using;
+    if (!u) return;
+    const eq = this.town.equipment.find((e) => e.id === u.id)!;
+    this.using = null;
+    this.town.setEquipUse(null);
+    this.player.pos.set(eq.exitX, 0, eq.exitZ);
+    this.player.yaw = eq.exitYaw;
+    this.player.vy = 0;
+    this.player.grounded = true;
+    this.collide();
+    this.avatarHolder.rotation.set(0, this.player.yaw, 0);
+    this.updateHud();
   }
 
   // ---------- building ----------
@@ -517,8 +569,21 @@ export class Game {
       if (this.selectedItem) sfx.pop();
       return;
     }
-    // tap a pet: it does a happy hop
     this.raycaster.setFromCamera(this.ndc(x, y), this.camera);
+    // tap a swing, slide, seesaw or merry-go-round: climb on (tap again to get off)
+    if (this.mode === 'town' && !this.paused) {
+      const hit = this.raycaster.intersectObjects(this.town.equipTargets, true)[0];
+      if (hit) {
+        let o: THREE.Object3D | null = hit.object;
+        while (o && !o.userData.equip) o = o.parent;
+        if (o) {
+          if (this.using) this.stopUse();
+          else this.startUse(o.userData.equip as string);
+          return;
+        }
+      }
+    }
+    // tap a pet: it does a happy hop
     for (const a of this.actors.values()) {
       if (this.raycaster.intersectObject(a.rig.root, true).length) {
         a.happyUntil = this.time + 1.2;
@@ -587,7 +652,8 @@ export class Game {
     const t = this.time;
     const now = Date.now();
     const inp = this.input.poll();
-    const frozen = this.paused || this.editingAvatar;
+    if (this.using && wantsOff(inp.move, inp.jumpPressed)) this.stopUse();
+    const frozen = this.paused || this.editingAvatar || !!this.using;
 
     // needs tick
     if (now - this.lastTickAt > 1000) {
@@ -635,8 +701,14 @@ export class Game {
       p.yaw += d * Math.min(1, dt * 12);
     }
     p.speed = mlen;
-    // jump / fly
-    if (this.flying) {
+    // jump / fly (or: sitting on a playground piece, which carries you)
+    if (this.using) {
+      const seat = this.town.seatWorld(this.using.id, this.time - this.using.since);
+      p.pos.set(seat.x, seat.y, seat.z);
+      p.yaw = seat.yaw;
+      p.vy = 0;
+      p.grounded = true;
+    } else if (this.flying) {
       if (inp.jump && !frozen) p.vy = Math.min(p.vy + 40 * dt, 9);
       else p.vy = Math.max(p.vy - 14 * dt, -4);
       p.pos.y += p.vy * dt;
@@ -664,8 +736,8 @@ export class Game {
         p.grounded = true;
       }
     }
-    this.collide();
-    const moved = Math.hypot(p.pos.x - prev.x, p.pos.z - prev.z);
+    if (!this.using) this.collide();
+    const moved = this.using ? 0 : Math.hypot(p.pos.x - prev.x, p.pos.z - prev.z);
 
     // avatar
     const ride = this.riding ? this.actors.get(this.riding) : undefined;
@@ -673,11 +745,20 @@ export class Game {
     if (ride) pose = this.flying ? 'fly' : 'sit';
     else if (!p.grounded) pose = 'jump';
     else if (mlen > 0.05) pose = 'walk';
+    const seat = this.using ? this.town.seatWorld(this.using.id, this.time - this.using.since) : null;
+    if (seat) pose = seat.pose;
     if (this.editingAvatar) pose = 'wave';
     this.avatarHolder.position.copy(p.pos);
     if (ride) this.avatarHolder.position.y += ride.rig.seatY * this.actorScale(ride) - 0.95;
-    this.avatarHolder.rotation.y = p.yaw;
-    animateAvatar(this.avatar, t, pose, mlen, !!this.holding);
+    this.avatarHolder.rotation.set(seat ? seat.tilt : 0, p.yaw, 0);
+    if (seat && seat.tilt !== 0) {
+      // lean about the hips, not the feet: shift the origin so the seat stays under the avatar
+      const hip = SIT_DROP;
+      this.avatarHolder.position.x -= Math.sin(p.yaw) * hip * Math.sin(seat.tilt);
+      this.avatarHolder.position.z -= Math.cos(p.yaw) * hip * Math.sin(seat.tilt);
+      this.avatarHolder.position.y += hip * (1 - Math.cos(seat.tilt));
+    }
+    animateAvatar(this.avatar, t, pose, seat ? 1 : mlen, !!this.holding);
     this.avatarShadow.position.set(p.pos.x, this.groundAt(p.pos.x, p.pos.y, p.pos.z) + 0.03, p.pos.z);
     this.avatarShadow.visible = !ride;
 
@@ -689,6 +770,8 @@ export class Game {
 
     // camera
     const target = new THREE.Vector3(p.pos.x, p.pos.y + (ride ? 3.5 : 2.4), p.pos.z);
+    // on a swing or the merry-go-round the camera watches the whole piece, not the (moving) rider
+    if (seat) target.set(seat.focus.x, seat.focus.y, seat.focus.z);
     // while furnishing, the panel covers the lower right: shift the picture up so you and the room stay in view
     const vw = this.renderer.domElement.clientWidth;
     const vh = this.renderer.domElement.clientHeight;
@@ -716,7 +799,10 @@ export class Game {
       this.interior.update(t);
       const room = roomAt(this.interior.layout, this.playerFloor(), p.pos.x, p.pos.z);
       this.hud.setWhere(`${HOUSE_BY_STYLE[activeHouse(this.save).style].name} · ${onStairs(this.interior.layout.stairs, p.pos.x, p.pos.z) ? 'Trapp' : room?.name ?? ''}${this.playerFloor() ? ' (oppe)' : ''}`);
-    } else this.town.update(t, p.pos.x, p.pos.z, this.camera.position.x, this.camera.position.z);
+    } else {
+      this.town.setEquipUse(this.using ? { id: this.using.id, u: this.time - this.using.since } : null);
+      this.town.update(t, p.pos.x, p.pos.z, this.camera.position.x, this.camera.position.z);
+    }
 
     // sun follows the player for crisp shadows nearby
     this.sun.position.set(p.pos.x + 20, 45, p.pos.z + 14);
@@ -917,6 +1003,18 @@ export class Game {
         if (d < z.r && d < best && z.kind !== 'play') {
           best = d;
           near = z;
+        }
+      }
+      // playground pieces: "Bruk huska", or "Gå av" while you sit on one
+      if (this.using) near = { kind: 'equip-off', label: 'Gå av ✋' };
+      else if (inPlay && canUse({ riding: !!this.riding, holding: !!this.holding, flying: this.flying, paused: this.paused })) {
+        let bestK = 1;
+        for (const e of this.town.equipment) {
+          const k = Math.hypot(p.x - e.wx, p.z - e.wz) / e.reach;
+          if (k <= bestK) {
+            bestK = k;
+            near = { kind: 'equip', id: e.id, label: `Bruk ${e.label} 🎠` };
+          }
         }
       }
     } else {

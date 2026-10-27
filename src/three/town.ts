@@ -3,7 +3,8 @@ import { HOUSE_BY_STYLE, type HouseStyle } from '../logic/catalog.ts';
 import type { CircleCollider, RectCollider } from '../logic/collision.ts';
 import { collectColliders, solid } from './colliders.ts';
 import { fillHospital, fillShop } from './buildings.ts';
-import { box, cone, cyl, G, mergeStatic, part, rbox, sph, textTexture } from './kit.ts';
+import { EQUIPMENT, MERRY, SEESAW, SLIDE, SWING_PIVOT_Y, SWING_ROPE, SWING_XS, SWING_Z, merryAngle, seatAt, seesawAngle, swingAngle, type EquipDef, type Seat } from '../logic/playground.ts';
+import { box, cone, cyl, G, mergeStatic, part, rbox, shadowAll, sph, textTexture } from './kit.ts';
 
 export type ZoneKind = 'home' | 'shop' | 'vet' | 'eggs' | 'doors' | 'play';
 export interface Zone {
@@ -15,6 +16,15 @@ export interface Zone {
 }
 export type { CircleCollider, RectCollider } from '../logic/collision.ts';
 
+export interface WorldEquip extends EquipDef {
+  /** World position of the middle and of the spot where you step down. */
+  wx: number;
+  wz: number;
+  exitX: number;
+  exitZ: number;
+  exitYaw: number;
+}
+
 export interface Town {
   group: THREE.Group;
   zones: Zone[];
@@ -25,6 +35,14 @@ export interface Town {
   /** World positions where a sick animal can lie down in the hospital. */
   vetBeds: { x: number; z: number; y: number }[];
   setHomeStyle(style: HouseStyle): void;
+  /** Playground equipment in world coordinates (you can sit on these). */
+  equipment: WorldEquip[];
+  /** The meshes you can tap to climb on (userData.equip holds the id). */
+  equipTargets: THREE.Object3D[];
+  /** Which piece is in use and for how long; it moves while someone is on it and rests otherwise. */
+  setEquipUse(use: { id: string; u: number } | null): void;
+  /** Where the avatar sits on a piece `u` seconds after climbing on (world coordinates). */
+  seatWorld(id: string, u: number): Seat;
   /** Animate; roofs of the shop and the hospital are lifted off while the player is inside. */
   update(t: number, px?: number, pz?: number, camX?: number, camZ?: number): void;
   /** Centre and radius of the walk-in building the point is inside (the camera must not be pushed in by its walls). */
@@ -301,29 +319,69 @@ export function buildTown(): Town {
     entrances.doors = { x: z.x, z: z.z, yaw: f.rot + Math.PI };
   }
   // playground
+  const equipTargets: THREE.Object3D[] = [];
+  const swingGroups: THREE.Group[] = [];
+  const seesawGroup = new THREE.Group();
+  const merryGroup = new THREE.Group();
+  let playRot = 0;
+  let equipUse: { id: string; u: number } | null = null;
   {
     const g = new THREE.Group();
     cyl(g, '#ffe8a8', [0, 0.05, 0], [22, 0.1, 22]);
-    // slide
+    // slide: tower is fixed, the ramp is a separate (tappable) piece
     for (const x of [-0.8, 0.8]) solid(box(g, '#ff6f6f', [x - 4, 2, -3], [0.3, 4, 0.3]), 'rect', 0.1);
     box(g, '#5cc3f2', [-4, 3.8, -3], [2.2, 0.3, 2]);
     cone(g, '#ff6f6f', [-4, 5.2, -3], [3, 2, 3], [0, Math.PI / 4, 0]);
-    solid(box(g, '#ffe066', [-4, 2, 0.2], [1.6, 0.25, 5.6], [0.62, 0, 0]));
-    // swings
+    // swing frame (the seats are animated pieces below)
     for (const x of [1.5, 6.5]) for (const z of [-4, -2]) solid(box(g, '#7ccf6a', [x, 2.5, z], [0.3, 5, 0.3], [z === -4 ? 0.2 : -0.2, 0, 0]), 'rect', 0.15);
-    box(g, '#7ccf6a', [4, 5, -3], [5.6, 0.3, 0.3]);
-    for (const x of [2.8, 5.2]) {
-      for (const s of [-0.5, 0.5]) box(g, '#c0c6d6', [x + s, 3.4, -3], [0.05, 3.2, 0.05]);
-      solid(rbox(g, '#ff8fb1', [x, 1.8, -3], [1.3, 0.2, 0.7]));
-    }
-    // sandbox + seesaw + merry-go-round
+    box(g, '#7ccf6a', [4, SWING_PIVOT_Y, SWING_Z], [5.6, 0.3, 0.3]);
+    // sandbox
     solid(rbox(g, '#c98a55', [4, 0.3, 4], [5, 0.6, 5]));
     box(g, '#ffe0a0', [4, 0.5, 4], [4.4, 0.2, 4.4]);
     cone(g, '#ff6f6f', [3.2, 1, 3.4], [0.8, 0.9, 0.8]);
-    solid(box(g, '#c88bff', [-4, 0.9, 5.5], [6, 0.25, 0.8], [0, 0, 0.2]));
-    cone(g, '#555a75', [-4, 0.4, 5.5], [1, 0.8, 1]);
-    solid(cyl(g, '#ffb84d', [0, 0.6, 7.5], [4, 0.3, 4]), 'circle', 0, 3);
-    cyl(g, '#ff6f6f', [0, 1.6, 7.5], [0.3, 2, 0.3]);
+    cone(g, '#555a75', [SEESAW.x, 0.4, SEESAW.z], [1, 0.8, 1]); // seesaw support
+
+    // the pieces that move while somebody is on them
+    const anim = new THREE.Group();
+    equipTargets.length = 0;
+    const tag = (o: THREE.Object3D, id: string) => {
+      o.userData.equip = id;
+      equipTargets.push(o);
+      return o;
+    };
+    const rampMesh = solid(box(anim, '#ffe066', [SLIDE.x, SLIDE.y, SLIDE.z], [1.6, SLIDE.thick, SLIDE.len], [SLIDE.tilt, 0, 0]));
+    tag(rampMesh, 'slide');
+    for (const sx of [-0.85, 0.85]) {
+      const rail = box(anim, '#ff9f4a', [SLIDE.x + sx, SLIDE.y + 0.25, SLIDE.z], [0.12, 0.3, SLIDE.len], [SLIDE.tilt, 0, 0]);
+      rail.userData.equip = 'slide';
+      equipTargets.push(rail);
+    }
+    swingGroups.length = 0;
+    SWING_XS.forEach((x, i) => {
+      const sg = new THREE.Group();
+      sg.position.set(x, SWING_PIVOT_Y, SWING_Z);
+      for (const sx of [-0.5, 0.5]) box(sg, '#c0c6d6', [sx, -SWING_ROPE / 2, 0], [0.05, SWING_ROPE, 0.05]);
+      solid(rbox(sg, '#ff8fb1', [0, -SWING_ROPE, 0], [1.3, 0.2, 0.7]));
+      anim.add(sg);
+      tag(sg, `swing${i + 1}`);
+      swingGroups.push(sg);
+    });
+    // seesaw: the plank turns about its middle
+    seesawGroup.position.set(SEESAW.x, SEESAW.y, SEESAW.z);
+    solid(box(seesawGroup, '#c88bff', [0, 0, 0], [SEESAW.len, SEESAW.thick, 0.8]));
+    for (const sx of [-1, 1]) box(seesawGroup, '#ffe066', [sx * 1.7, 0.45, 0], [0.12, 0.7, 0.5]);
+    anim.add(seesawGroup);
+    tag(seesawGroup, 'seesaw');
+    // merry-go-round: a coloured disc that spins
+    merryGroup.position.set(MERRY.x, MERRY.y, MERRY.z);
+    solid(cyl(merryGroup, '#ffb84d', [0, 0, 0], [MERRY.radius * 2, MERRY.thick, MERRY.radius * 2]), 'circle', 0, 3);
+    cyl(merryGroup, '#ff6f6f', [0, 1, 0], [0.3, 2, 0.3]);
+    ['#ff6f6f', '#5cc3f2', '#ffe066', '#7ccf6a'].forEach((c, i) => {
+      const a = (i / 4) * Math.PI * 2;
+      box(merryGroup, c, [Math.cos(a) * 1.5, 0.4, Math.sin(a) * 1.5], [0.9, 0.5, 0.9], [0, -a, 0]);
+    });
+    anim.add(merryGroup);
+    tag(merryGroup, 'merry');
     // fence: posts joined by rails, with a gap (gate) facing the plaza
     const inGate = (a: number) => Math.abs(Math.atan2(Math.sin(a - faceCenter(P.play.x, P.play.z) + Math.PI / 2), Math.cos(a - faceCenter(P.play.x, P.play.z) + Math.PI / 2))) < 0.35;
     const FENCE_N = 28;
@@ -344,10 +402,28 @@ export function buildTown(): Town {
     g.position.set(P.play.x, 0, P.play.z);
     g.rotation.y = f.rot;
     stat.add(g);
+    anim.position.copy(g.position);
+    anim.rotation.y = f.rot;
+    group.add(anim);
+    shadowAll(anim, true, true);
+    const ac = collectColliders(anim);
+    rects.push(...ac.rects);
+    circles.push(...ac.circles);
+    playRot = f.rot;
     zones.push({ kind: 'play', x: P.play.x, z: P.play.z, r: 10.5, label: 'Lekeplassen ⚽' });
     const pp = front(P.play, 0);
     entrances.play = { x: pp.x, z: pp.z, yaw: f.rot + Math.PI };
   }
+
+  const playToWorld = (lx: number, lz: number) => ({
+    x: P.play.x + lx * Math.cos(playRot) + lz * Math.sin(playRot),
+    z: P.play.z - lx * Math.sin(playRot) + lz * Math.cos(playRot),
+  });
+  const equipment: WorldEquip[] = EQUIPMENT.map((e) => {
+    const c = playToWorld(e.x, e.z);
+    const x = playToWorld(e.exit.x, e.exit.z);
+    return { ...e, wx: c.x, wz: c.z, exitX: x.x, exitZ: x.z, exitYaw: e.exit.yaw + playRot };
+  });
 
   // trees, bushes, flowers, lamps, benches (deterministic positions)
   let seed = 7;
@@ -483,6 +559,21 @@ export function buildTown(): Town {
     entrances,
     vetBeds,
     setHomeStyle,
+    equipment,
+    equipTargets,
+    setEquipUse(use) {
+      equipUse = use;
+      if (!use) {
+        swingGroups.forEach((sg) => (sg.rotation.x = 0));
+        seesawGroup.rotation.z = 0;
+      }
+    },
+    seatWorld(id, u) {
+      const l = seatAt(id, u);
+      const w = playToWorld(l.x, l.z);
+      const f = playToWorld(l.focus.x, l.focus.z);
+      return { ...l, x: w.x, z: w.z, yaw: l.yaw + playRot, focus: { x: f.x, y: l.focus.y, z: f.z } };
+    },
     insideBuilding,
     buildingAt,
     size: SIZE,
@@ -499,6 +590,12 @@ export function buildTown(): Town {
         b.shell.front.visible = !inside || lz < b.hd - 0.5;
         b.shell.left.visible = !inside || lx > -b.hw + 0.5;
         b.shell.right.visible = !inside || lx < b.hw - 0.5;
+      }
+      if (equipUse) {
+        const u = equipUse.u;
+        if (equipUse.id.startsWith('swing')) swingGroups[Number(equipUse.id.slice(5)) - 1].rotation.x = -swingAngle(u);
+        else if (equipUse.id === 'seesaw') seesawGroup.rotation.z = seesawAngle(u);
+        else if (equipUse.id === 'merry') merryGroup.rotation.y = -merryAngle(u);
       }
       mergedClouds.position.x = Math.sin(t * 0.02) * 20;
       water.position.y = 4.2 + Math.sin(t * 3) * 0.15;
