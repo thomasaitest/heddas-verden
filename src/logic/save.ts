@@ -27,7 +27,8 @@ export interface SaveData {
 
 export const SAVE_KEY = 'heddasverden-save-v1';
 export const START_BUCKS = 150;
-export const MAX_EQUIPPED = 2;
+/** Only one pet follows the player at a time; starting a new follower sends the old one home. */
+export const MAX_EQUIPPED = 1;
 
 export function freshSave(now = Date.now()): SaveData {
   const playerId = uid('player');

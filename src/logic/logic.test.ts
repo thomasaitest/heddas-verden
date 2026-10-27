@@ -242,19 +242,34 @@ describe('economy and save', () => {
     expect(s.pets[0].flyable).toBe(true);
     expect(s.bag.flygedrikk).toBeUndefined();
   });
-  it('at most two pets follow; only they get needs', () => {
+  it('only one pet follows at a time; a new follower replaces the old one; only the follower gets needs', () => {
     let s = { ...freshSave(0), bucks: 10_000 };
     const rng = seeded(10);
     s = buyAndHatch(s, 'egg-start', rng, 0).save;
     s = buyAndHatch(s, 'egg-vanlig', rng, 0).save;
     s = buyAndHatch(s, 'egg-vanlig', rng, 0).save;
-    expect(s.equipped.length).toBe(MAX_EQUIPPED);
-    const third = s.pets[2].uid;
-    s = toggleEquip(s, third).save;
-    expect(s.equipped).toContain(third);
-    expect(s.equipped.length).toBe(MAX_EQUIPPED);
+    expect(MAX_EQUIPPED).toBe(1);
+    // the first pet follows; later hatchlings do not push it out
+    expect(s.equipped).toEqual([s.pets[0].uid]);
+    const second = s.pets[1].uid;
+    s = toggleEquip(s, second).save;
+    expect(s.equipped).toEqual([second]); // the previous one stopped following
+    s = toggleEquip(s, s.pets[2].uid).save;
+    expect(s.equipped).toEqual([s.pets[2].uid]);
+    // switching it off leaves nobody following
+    s = toggleEquip(s, s.pets[2].uid).save;
+    expect(s.equipped).toEqual([]);
+    s = toggleEquip(s, second).save;
     const t = tickSave(s, 999_999, rng);
     for (const p of t.pets) expect(!!p.need).toBe(t.equipped.includes(p.uid));
+  });
+  it('an old save with two followers is repaired to one', () => {
+    let s = { ...freshSave(0), bucks: 10_000 };
+    const rng = seeded(12);
+    s = buyAndHatch(s, 'egg-start', rng, 0).save;
+    s = buyAndHatch(s, 'egg-vanlig', rng, 0).save;
+    const old = { ...s, equipped: s.pets.map((p) => p.uid) };
+    expect(parseSave(JSON.stringify(old)).equipped).toEqual([s.pets[0].uid]);
   });
   it('save round-trips and repairs broken data', () => {
     const s = buyAndHatch(freshSave(0), 'egg-start', seeded(11), 0).save;

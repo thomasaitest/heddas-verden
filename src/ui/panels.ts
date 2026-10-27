@@ -6,7 +6,6 @@ import { activeHouse, addBucks, buyAndHatch, buyFood, buyFurniture, buyHouse, bu
 import { rotateItem, updateItem } from '../logic/house.ts';
 import { NEED_INFO, stageOf, stageProgress, STAGES, type PetState } from '../logic/needs.ts';
 import { EGGS, RARITY_INFO, SPECIES_BY_ID, type EggType } from '../logic/pets.ts';
-import { MAX_EQUIPPED } from '../logic/save.ts';
 import type { Game } from '../game.ts';
 import { buildFurniture } from '../three/furniture.ts';
 import { buildPet } from '../three/petModel.ts';
@@ -235,7 +234,7 @@ export function openPets(game: Game) {
       return;
     }
     s.body.replaceChildren(
-      el('p', { class: 'lead' }, `Opptil ${MAX_EQUIPPED} dyr kan følge deg. De andre hviler hjemme.`),
+      el('p', { class: 'lead' }, 'Bare ett dyr kan følge deg om gangen. Trykk «Følg meg» på et annet dyr, så går det forrige hjem og hviler.'),
       el(
         'div',
         { class: 'pet-list' },
