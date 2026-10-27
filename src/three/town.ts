@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { HOUSE_BY_STYLE, type HouseStyle } from '../logic/catalog.ts';
 import type { CircleCollider, RectCollider } from '../logic/collision.ts';
 import { collectColliders, solid } from './colliders.ts';
+import { fillHospital, fillShop } from './buildings.ts';
 import { box, cone, cyl, G, mergeStatic, part, rbox, sph, textTexture } from './kit.ts';
 
 export type ZoneKind = 'home' | 'shop' | 'vet' | 'eggs' | 'doors' | 'play';
@@ -21,8 +22,15 @@ export interface Town {
   circles: CircleCollider[];
   spawn: { x: number; z: number; yaw: number };
   entrances: Record<ZoneKind, { x: number; z: number; yaw: number }>;
+  /** World positions where a sick animal can lie down in the hospital. */
+  vetBeds: { x: number; z: number; y: number }[];
   setHomeStyle(style: HouseStyle): void;
-  update(t: number): void;
+  /** Animate; roofs of the shop and the hospital are lifted off while the player is inside. */
+  update(t: number, px?: number, pz?: number, camX?: number, camZ?: number): void;
+  /** Centre and radius of the walk-in building the point is inside (the camera must not be pushed in by its walls). */
+  buildingAt(x: number, z: number): { kind: 'shop' | 'vet'; x: number; z: number; r: number } | null;
+  /** Which walk-in building the point is inside, if any. */
+  insideBuilding(x: number, z: number): 'shop' | 'vet' | null;
   size: number;
 }
 
@@ -48,16 +56,44 @@ function awning(g: THREE.Group, w: number, y: number, z: number, a: string, b: s
   for (let i = 0; i < n; i++) box(g, i % 2 ? a : b, [-w / 2 + (i + 0.5) * (w / n), y, z], [w / n, 0.25, 2.4], [0.35, 0, 0]).userData.noCast = true;
 }
 
-/** Open-front building (shop, vet, egg shop): back + side walls, roof, sign. */
-function openBuilding(w: number, d: number, h: number, wall: string, roof: string, trim: string, solidFloor = true) {
+/** Open-front building (shop, vet, egg shop): back + side walls, roof, sign. With `door` it gets a front wall you walk in through. */
+function openBuilding(w: number, d: number, h: number, wall: string, roof: string, trim: string, opts: { solidFloor?: boolean; door?: number; roofSeparate?: boolean } = {}) {
   const g = new THREE.Group();
-  const floor = box(g, '#f4e9dc', [0, 0.1, 0], [w, 0.2, d]);
-  if (solidFloor) solid(floor, 'rect', 0, h + 1);
-  solid(box(g, wall, [0, h / 2, -d / 2 + 0.3], [w, h, 0.6]));
-  for (const s of [-1, 1]) solid(box(g, wall, [s * (w / 2 - 0.3), h / 2, 0], [0.6, h, d]));
-  for (const s of [-1, 1]) solid(box(g, trim, [s * (w / 2 - 0.3), h / 2, d / 2 - 0.2], [0.9, h, 0.9]));
-  rbox(g, roof, [0, h + 0.4, 0], [w + 1.2, 0.8, d + 1.2]).userData.noCast = true;
-  box(g, trim, [0, h - 0.4, d / 2 - 0.1], [w, 0.8, 0.4]).userData.noCast = true;
+  const roofG = opts.roofSeparate ? new THREE.Group() : g;
+  const walkIn = opts.door !== undefined;
+  // a walk-in building keeps its walls in separate groups, so the ones between the camera and you can be hidden
+  const shell = { back: new THREE.Group(), left: new THREE.Group(), right: new THREE.Group(), front: new THREE.Group() };
+  const W = walkIn ? shell : { back: g, left: g, right: g, front: g };
+  if (walkIn) {
+    // a thin slab, so the player's feet are on it
+    box(g, '#f4e9dc', [0, 0.01, 0], [w, 0.06, d]).userData.noCast = true;
+  } else {
+    const floor = box(g, '#f4e9dc', [0, 0.1, 0], [w, 0.2, d]);
+    if (opts.solidFloor !== false) solid(floor, 'rect', 0, h + 1);
+  }
+  solid(box(W.back, wall, [0, h / 2, -d / 2 + 0.3], [w, h, 0.6]));
+  solid(box(W.left, wall, [-(w / 2 - 0.3), h / 2, 0], [0.6, h, d]));
+  solid(box(W.right, wall, [w / 2 - 0.3, h / 2, 0], [0.6, h, d]));
+  if (walkIn) {
+    const door = opts.door!;
+    const seg = (w - door) / 2;
+    for (const s of [-1, 1]) {
+      const cx = s * (door / 2 + seg / 2);
+      solid(box(W.front, wall, [cx, h / 2, d / 2 - 0.25], [seg, h, 0.5]));
+      // door frame and a window in each front segment
+      box(W.front, trim, [s * (door / 2 + 0.2), h / 2, d / 2 - 0.1], [0.4, h, 0.7]);
+      const win = new THREE.Mesh(G.box(), new THREE.MeshLambertMaterial({ color: '#bfe9ff', transparent: true, opacity: 0.45, depthWrite: false }));
+      win.position.set(cx, 3.1, d / 2 + 0.03);
+      win.scale.set(Math.min(3.4, seg - 1.4), 1.8, 0.12);
+      W.front.add(win);
+      box(W.front, '#ffffff', [cx, 3.1, d / 2 + 0.0], [Math.min(3.4, seg - 1.4) + 0.3, 2.1, 0.08]);
+      box(W.front, trim, [s * (w / 2 - 0.3), h / 2, d / 2 - 0.2], [0.9, h, 0.9]);
+    }
+    g.userData.shell = shell;
+  } else for (const s of [-1, 1]) solid(box(g, trim, [s * (w / 2 - 0.3), h / 2, d / 2 - 0.2], [0.9, h, 0.9]));
+  rbox(roofG, roof, [0, h + 0.4, 0], [w + 1.2, 0.8, d + 1.2]).userData.noCast = true;
+  box(roofG, trim, [0, h - 0.4, d / 2 - 0.1], [w, 0.8, 0.4]).userData.noCast = true;
+  g.userData.roof = roofG;
   return g;
 }
 
@@ -163,49 +199,61 @@ export function buildTown(): Town {
     return { x: p.x + Math.sin(rot) * dist, z: p.z + Math.cos(rot) * dist, rot };
   };
 
-  // shop
-  {
-    const g = openBuilding(14, 10, 6, '#ffe8a8', '#ff6f6f', '#ffffff');
-    awning(g, 14, 5.4, 5.6, '#ff6f6f', '#ffffff');
-    sign(g, 'Butikk', 7.5, 5.8, '#ff6f6f');
-    solid(rbox(g, '#ffb84d', [0, 1, 1.6], [8, 2, 1.6]));
-    rbox(g, '#ffffff', [0, 2.05, 1.6], [8.2, 0.2, 1.8]);
-    const goods = ['#ff6f6f', '#ffe066', '#7ccf6a', '#ff8fb1', '#5cc3f2', '#ffb84d'];
-    for (let r = 0; r < 3; r++) {
-      box(g, '#c98a55', [0, 1 + r * 1.4, -3.9], [12, 0.2, 1.4]);
-      for (let i = 0; i < 12; i++) rbox(g, goods[(i + r) % 6], [-5.5 + i, 1.5 + r * 1.4, -3.9], [0.7, 0.8, 0.7]);
+  // walk-in buildings: the roof lifts off while you are inside, so you can see what is there
+  type Shell = { back: THREE.Group; left: THREE.Group; right: THREE.Group; front: THREE.Group };
+  const walkIns: { kind: 'shop' | 'vet'; x: number; z: number; rot: number; hw: number; hd: number; roof: THREE.Group; shell: Shell }[] = [];
+  /** Put a walk-in building's walls and roof in the world (they are not merged, since they hide and show). */
+  const mountShell = (g: THREE.Group, roofG: THREE.Group, p: { x: number; z: number }, rot: number): Shell => {
+    const shell = g.userData.shell as Shell;
+    for (const o of [g, roofG, ...Object.values(shell)]) {
+      o.position.set(p.x, 0, p.z);
+      o.rotation.y = rot;
     }
-    sph(g, '#ff6f6f', [-2, 2.5, 1.6], [0.7, 0.7, 0.7]);
-    sph(g, '#ffe066', [-1, 2.45, 1.6], [0.6, 0.6, 0.6]);
-    cyl(g, '#7fd8ff', [2.5, 2.6, 1.6], [0.5, 0.9, 0.5]);
-    const f = front(P.shop, 0);
-    g.position.set(P.shop.x, 0, P.shop.z);
-    g.rotation.y = f.rot;
-    stat.add(g);
-    const z = front(P.shop, 7.5);
-    zones.push({ kind: 'shop', x: z.x, z: z.z, r: 4, label: 'Handle mat 🛒' });
-    entrances.shop = { x: z.x, z: z.z, yaw: f.rot + Math.PI };
-  }
-  // vet
+    for (const o of Object.values(shell)) {
+      group.add(o);
+      const c = collectColliders(o);
+      rects.push(...c.rects);
+      circles.push(...c.circles);
+    }
+    return shell;
+  };
+  const toWorld = (p: { x: number; z: number }, rot: number, lx: number, lz: number) => ({ x: p.x + lx * Math.cos(rot) + lz * Math.sin(rot), z: p.z - lx * Math.sin(rot) + lz * Math.cos(rot) });
+  const vetBeds: Town['vetBeds'] = [];
+  // shop: you walk in through the door and shop at the counter
   {
-    // the front is open and walkable (the care pad is inside), so only walls and furniture are solid
-    const g = openBuilding(14, 11, 6.5, '#ffffff', '#5cc3f2', '#9ad8ff', false);
-    sign(g, 'Dyrlege', 8, 6.2, '#3fa4ff');
-    box(g, '#ff4b4b', [0, 9.6, 0], [0.8, 2.4, 0.8]);
-    box(g, '#ff4b4b', [0, 9.6, 0], [2.4, 0.8, 0.8]);
-    solid(rbox(g, '#e6ecff', [3.5, 1.1, -1.8], [3.2, 0.4, 2]), 'rect', 0, 2);
-    for (const x of [2.2, 4.8]) cyl(g, '#c0c6d6', [x, 0.5, -1.8], [0.2, 1, 0.2]);
-    solid(rbox(g, '#9ad8c8', [-4.5, 1.3, -3.8], [3, 2.6, 1.4]));
-    part(g, G.heart(), '#ff6f8f', [-4.5, 3.4, -3.6], [1, 1, 0.4]);
-    const pad = cyl(g, '#7cf08a', [0, 0.24, 1.5], [4.4, 0.12, 4.4], undefined, 0.5);
-    pad.name = 'vetpad';
-    const f = front(P.vet, 0);
-    g.position.set(P.vet.x, 0, P.vet.z);
-    g.rotation.y = f.rot;
+    const g = openBuilding(14, 10, 6, '#ffe8a8', '#ff6f6f', '#ffffff', { door: 4.4, roofSeparate: true });
+    const roofG = g.userData.roof as THREE.Group;
+    awning(roofG, 14, 5.4, 5.6, '#ff6f6f', '#ffffff');
+    sign(roofG, 'Butikk', 7.5, 5.8, '#ff6f6f');
+    const inside = fillShop(g);
+    const f = front(P.shop, 0);
     stat.add(g);
-    const p = front(P.vet, 1.5);
+    group.add(roofG);
+    const shell = mountShell(g, roofG, P.shop, f.rot);
+    walkIns.push({ kind: 'shop', x: P.shop.x, z: P.shop.z, rot: f.rot, hw: 7, hd: 5, roof: roofG, shell });
+    const z = toWorld(P.shop, f.rot, inside.counter.x, inside.counter.z);
+    zones.push({ kind: 'shop', x: z.x, z: z.z, r: 3.2, label: 'Handle mat 🛒' });
+    const door = front(P.shop, 8.5);
+    entrances.shop = { x: door.x, z: door.z, yaw: f.rot };
+  }
+  // animal hospital: a walk-in building with beds
+  {
+    const g = openBuilding(14, 11, 6.5, '#ffffff', '#5cc3f2', '#9ad8ff', { door: 5, roofSeparate: true });
+    const roofG = g.userData.roof as THREE.Group;
+    sign(roofG, 'Dyrlegen', 8, 6.2, '#3fa4ff');
+    box(roofG, '#ff4b4b', [0, 9.6, 0], [0.8, 2.4, 0.8]);
+    box(roofG, '#ff4b4b', [0, 9.6, 0], [2.4, 0.8, 0.8]);
+    const inside = fillHospital(g);
+    const f = front(P.vet, 0);
+    stat.add(g);
+    group.add(roofG);
+    const shell = mountShell(g, roofG, P.vet, f.rot);
+    walkIns.push({ kind: 'vet', x: P.vet.x, z: P.vet.z, rot: f.rot, hw: 7, hd: 5.5, roof: roofG, shell });
+    for (const b of inside.beds) vetBeds.push({ ...toWorld(P.vet, f.rot, b.x, b.z), y: b.y });
+    const p = toWorld(P.vet, f.rot, 0, 1.0);
     zones.push({ kind: 'vet', x: p.x, z: p.z, r: 3.2, label: 'Dyrlegen 🩺' });
-    entrances.vet = { x: front(P.vet, 9).x, z: front(P.vet, 9).z, yaw: f.rot + Math.PI };
+    const door = front(P.vet, 9);
+    entrances.vet = { x: door.x, z: door.z, yaw: f.rot + Math.PI };
   }
   // egg shop
   {
@@ -408,6 +456,18 @@ export function buildTown(): Town {
   }
   setHomeStyle('hytte');
 
+  function buildingAt(x: number, z: number) {
+    for (const b of walkIns) {
+      const lx = (x - b.x) * Math.cos(b.rot) - (z - b.z) * Math.sin(b.rot);
+      const lz = (x - b.x) * Math.sin(b.rot) + (z - b.z) * Math.cos(b.rot);
+      if (Math.abs(lx) < b.hw - 0.3 && Math.abs(lz) < b.hd - 0.3) return { kind: b.kind, x: b.x, z: b.z, r: Math.hypot(b.hw, b.hd) + 1.5 };
+    }
+    return null;
+  }
+  function insideBuilding(x: number, z: number): 'shop' | 'vet' | null {
+    return buildingAt(x, z)?.kind ?? null;
+  }
+
   return {
     group,
     zones,
@@ -417,9 +477,25 @@ export function buildTown(): Town {
       return { x: entrances.home.x, z: entrances.home.z, yaw: entrances.home.yaw };
     },
     entrances,
+    vetBeds,
     setHomeStyle,
+    insideBuilding,
+    buildingAt,
     size: SIZE,
-    update(t: number) {
+    update(t: number, px?: number, pz?: number, camX?: number, camZ?: number) {
+      for (const b of walkIns) {
+        const inside = px !== undefined && pz !== undefined && insideBuilding(px, pz) === b.kind;
+        b.roof.visible = !inside;
+        // walls between the camera and the player are hidden, the others stay
+        const cx = camX ?? b.x;
+        const cz = camZ ?? b.z;
+        const lx = (cx - b.x) * Math.cos(b.rot) - (cz - b.z) * Math.sin(b.rot);
+        const lz = (cx - b.x) * Math.sin(b.rot) + (cz - b.z) * Math.cos(b.rot);
+        b.shell.back.visible = !inside || lz > -b.hd + 0.5;
+        b.shell.front.visible = !inside || lz < b.hd - 0.5;
+        b.shell.left.visible = !inside || lx > -b.hw + 0.5;
+        b.shell.right.visible = !inside || lx < b.hw - 0.5;
+      }
       mergedClouds.position.x = Math.sin(t * 0.02) * 20;
       water.position.y = 4.2 + Math.sin(t * 3) * 0.15;
     },

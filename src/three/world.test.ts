@@ -32,7 +32,7 @@ describe('town colliders', () => {
   it('has colliders for the fountain and every landmark', () => {
     expect(blocked(0, 0, R, col())).toBe(true); // fountain
     expect(blocked(3.5, 0, R, col())).toBe(true); // fountain rim
-    for (const k of ['shop', 'eggs', 'doors'] as const) {
+    for (const k of ['eggs', 'doors'] as const) {
       const p = PLACES[k];
       expect(blocked(p.x, p.z, R, col()), k).toBe(true);
     }
@@ -45,6 +45,7 @@ describe('town colliders', () => {
       const p = PLACES[k];
       const rot = faceCenter(p.x, p.z);
       for (const [lx, lz] of [[-12, 0], [12, 0], [0, -12], [0, 12], [-10, 10], [10, -10]]) {
+        if (k === 'shop' && lx === 0 && lz === 12) continue; // the shop has a door in front: you can walk in
         const s = local(p, rot, lx, lz);
         const pos = { x: s.x, y: 0, z: s.z };
         // walk straight at the building centre
@@ -54,34 +55,57 @@ describe('town colliders', () => {
     }
   });
 
-  it('vet: side walls (including the front half that used to be open to walk through) block, front stays open', () => {
-    const p = PLACES.vet;
+  it('shop: you can walk in through the door; walls, counter, shelves and displays are solid', () => {
+    const p = PLACES.shop;
     const rot = faceCenter(p.x, p.z);
-    // side walls at local x = +-6.7, any z in the building
-    for (const lz of [-4, -1, 2, 4]) {
-      for (const lx of [-6.7, 6.7]) {
-        const w = local(p, rot, lx, lz);
-        expect(blocked(w.x, w.z, R, col()), `wall ${lx},${lz}`).toBe(true);
-      }
-    }
-    const back = local(p, rot, 0, -5.2);
-    expect(blocked(back.x, back.z, R, col())).toBe(true);
-    // the open front and the care pad stay walkable
-    for (const [lx, lz] of [[0, 1.5], [0, 5], [0, 8], [-3, 3], [3, 3]]) {
-      const w = local(p, rot, lx, lz);
-      expect(blocked(w.x, w.z, R, col()), `front ${lx},${lz}`).toBe(false);
-    }
-    // vet furniture
-    const bed = local(p, rot, 3.5, -1.8);
-    expect(blocked(bed.x, bed.z, R, col())).toBe(true);
-    const cab = local(p, rot, -4.5, -3.8);
-    expect(blocked(cab.x, cab.z, R, col())).toBe(true);
-    // can walk in and stand on the pad
+    const free = (lx: number, lz: number) => blocked(local(p, rot, lx, lz).x, local(p, rot, lx, lz).z, R, col());
+    // the doorway and the way in are open, the walls either side of it are not
+    for (const [lx, lz] of [[0, 8], [0, 5], [0, 3.5], [1.5, 4.8], [-1.5, 4.8]]) expect(free(lx, lz), `door ${lx},${lz}`).toBe(false);
+    for (const lx of [-4, -3, 3, 4]) expect(free(lx, 4.75), `front wall ${lx}`).toBe(true);
+    expect(free(0, -4.4), 'back wall').toBe(true);
+    expect(free(-6.7, 0), 'side wall').toBe(true);
+    // furniture inside
+    expect(free(-2.4, 0.4), 'fruit island').toBe(true);
+    expect(free(5, -0.9), 'counter').toBe(true);
+    expect(free(0, -3.9), 'shelves').toBe(true);
+    expect(free(-5.8, -1.6), 'cooler').toBe(true);
+    // walk from outside, through the door, to the counter and shop there
+    const zone = town.zones.find((z) => z.kind === 'shop')!;
+    expect(town.insideBuilding(zone.x, zone.z)).toBe('shop');
+    expect(town.insideBuilding(local(p, rot, 0, 9).x, local(p, rot, 0, 9).z)).toBe(null);
     const s = local(p, rot, 0, 10);
     const pos = { x: s.x, y: 0, z: s.z };
-    const pad = local(p, rot, 0, 1.5);
+    for (const [lx, lz] of [[0, 3.5], [1.2, 0], [2.9, -0.8]]) {
+      const t = local(p, rot, lx, lz);
+      for (let i = 0; i < 80; i++) movePlayer(pos, (t.x - pos.x) * 0.15, (t.z - pos.z) * 0.15, R, col());
+    }
+    expect(Math.hypot(pos.x - zone.x, pos.z - zone.z)).toBeLessThan(zone.r);
+    expect(town.insideBuilding(pos.x, pos.z)).toBe('shop');
+  });
+
+  it('hospital: walk in through the door, four beds stand along the back wall, walls and furniture block', () => {
+    const p = PLACES.vet;
+    const rot = faceCenter(p.x, p.z);
+    const hit = (lx: number, lz: number) => blocked(local(p, rot, lx, lz).x, local(p, rot, lx, lz).z, R, col());
+    for (const lz of [-4, -1, 2, 4]) for (const lx of [-6.7, 6.7]) expect(hit(lx, lz), `wall ${lx},${lz}`).toBe(true);
+    expect(hit(0, -5.2)).toBe(true);
+    for (const lx of [-4.8, -1.6, 1.6, 4.8]) expect(hit(lx, -3.25), `bed ${lx}`).toBe(true);
+    expect(town.vetBeds.length).toBe(4);
+    for (const b of town.vetBeds) expect(b.y).toBeGreaterThan(0.8);
+    // front wall beside the door blocks; the door, the pad and the aisle are open
+    for (const lx of [-5, -4, 4, 5]) expect(hit(lx, 5.2), `front wall ${lx}`).toBe(true);
+    for (const [lx, lz] of [[0, 1.0], [0, 5], [0, 8], [-1, 3], [0, -1]]) expect(hit(lx, lz), `open ${lx},${lz}`).toBe(false);
+    expect(hit(4.9, 1.5), 'reception desk').toBe(true);
+    expect(hit(-5.8, 1.3), 'medicine cabinet').toBe(true);
+    // can walk in and stand on the pad, and beds are in reach of the care zone
+    const s = local(p, rot, 0, 10);
+    const pos = { x: s.x, y: 0, z: s.z };
+    const pad = local(p, rot, 0, 1.0);
     movePlayer(pos, pad.x - s.x, pad.z - s.z, R, col());
     expect(Math.hypot(pos.x - pad.x, pos.z - pad.z)).toBeLessThan(0.3);
+    expect(town.insideBuilding(pos.x, pos.z)).toBe('vet');
+    // an animal on a bed does not end up inside a wall
+    for (const b of town.vetBeds) expect(town.insideBuilding(b.x, b.z)).toBe('vet');
   });
 
   it.each(HOUSES.map((h) => h.style))('home (%s): body, porch and mailbox block; the front door zone is reachable', (style: HouseStyle) => {

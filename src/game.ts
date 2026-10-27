@@ -688,7 +688,7 @@ export class Game {
     if (this.mode === 'house') {
       this.interior.updateWalls(this.camera.position);
       this.interior.update(t);
-    } else this.town.update(t);
+    } else this.town.update(t, p.pos.x, p.pos.z, this.camera.position.x, this.camera.position.z);
 
     // sun follows the player for crisp shadows nearby
     this.sun.position.set(p.pos.x + 20, 45, p.pos.z + 14);
@@ -721,6 +721,7 @@ export class Game {
     const dz = Math.cos(this.cam.yaw) * cp;
     const dy = Math.sin(this.cam.pitch);
     const steps = 16;
+    const inside = this.town.buildingAt(target.x, target.z);
     for (let i = 1; i <= steps; i++) {
       const d = (this.cam.dist * i) / steps;
       const x = target.x + dx * d;
@@ -728,6 +729,7 @@ export class Game {
       const y = target.y + dy * d;
       for (const b of this.town.rects) {
         if ((b.h ?? 99) < 4 || y > (b.h ?? 99)) continue; // only buildings and tall walls hide the player
+        if (inside && Math.hypot(b.x - inside.x, b.z - inside.z) < inside.r) continue; // walls of the shop you are in are hidden instead
         const cos = Math.cos(b.rot);
         const sin = Math.sin(b.rot);
         const lx = (x - b.x) * cos - (z - b.z) * sin;
@@ -872,8 +874,10 @@ export class Game {
       let amount = 0;
       if (where === 'dyrlege' && inVet) {
         amount = dt;
-        const vz = this.town.zones.find((z) => z.kind === 'vet')!;
-        a.care = { x: vz.x, z: vz.z, y: 0.3, pose: 'sleep' };
+        // the sick animal lies down in the hospital bed closest to you
+        const beds = [...this.town.vetBeds].sort((b1, b2) => Math.hypot(b1.x - p.x, b1.z - p.z) - Math.hypot(b2.x - p.x, b2.z - p.z));
+        const bed = beds[0];
+        a.care = { x: bed.x, z: bed.z, y: bed.y, pose: 'sleep' };
       } else if (where === 'lek' && inPlay) {
         amount = dt;
         a.care = { x: p.x + Math.sin(this.time * 2) * 2, z: p.z + Math.cos(this.time * 2) * 2, pose: 'happy' };
