@@ -6,6 +6,8 @@ import { canEdit, careItems, updateItem } from './logic/house.ts';
 import { NEED_INFO, stageOf, type CareWhere, type NeedKind, type PetState } from './logic/needs.ts';
 import { SPECIES_BY_ID } from './logic/pets.ts';
 import { loadSave, writeSave, type SaveData } from './logic/save.ts';
+import { cameraRelative, orbit } from './logic/camera.ts';
+import { movePlayer, resolve, type Colliders } from './logic/collision.ts';
 import { Input } from './input.ts';
 import { animateAvatar, buildAvatar, type AvatarPose, type AvatarRig } from './three/avatarModel.ts';
 import { createInterior, type Interior } from './three/interior.ts';
@@ -64,6 +66,8 @@ export class Game {
   mode: 'town' | 'house' = 'town';
   player = { pos: new THREE.Vector3(), vy: 0, yaw: 0, grounded: true, speed: 0 };
   cam = { yaw: 0, pitch: 0.38, dist: 15 };
+  /** Camera distance actually used this frame (shorter than cam.dist while a building is in the way). */
+  private camShown = 15;
   avatar!: AvatarRig;
   avatarHolder = new THREE.Group();
   avatarShadow = blobShadow(1.8);
@@ -592,10 +596,8 @@ export class Game {
     }
 
     // camera input
-    this.cam.yaw -= inp.camDX * 0.006;
-    this.cam.pitch = THREE.MathUtils.clamp(this.cam.pitch + inp.camDY * 0.004, 0.05, 1.35);
     const maxDist = this.building ? 60 : this.mode === 'house' ? 22 : 34;
-    this.cam.dist = THREE.MathUtils.clamp(this.cam.dist + inp.zoom, 5, maxDist);
+    this.cam = orbit(this.cam, inp.camDX, inp.camDY, inp.zoom, maxDist);
 
     // movement
     const p = this.player;
@@ -603,17 +605,17 @@ export class Game {
     let mx = 0;
     let mz = 0;
     if (!frozen) {
-      const fx = -Math.sin(this.cam.yaw);
-      const fz = -Math.cos(this.cam.yaw);
-      // right vector is (cos yaw, -sin yaw) for a camera looking along f
-      mx = fx * -inp.move.y + Math.cos(this.cam.yaw) * inp.move.x;
-      mz = fz * -inp.move.y - Math.sin(this.cam.yaw) * inp.move.x;
+      // forward is always away from the camera
+      const m = cameraRelative(inp.move, this.cam.yaw);
+      mx = m.x;
+      mz = m.z;
     }
     const mlen = Math.hypot(mx, mz);
     const speed = this.flying ? FLY : this.riding ? RIDE : WALK;
     if (mlen > 0.05) {
-      p.pos.x += mx * speed * dt;
-      p.pos.z += mz * speed * dt;
+      // move in small steps so nothing thin can be skipped, sliding along whatever we hit
+      movePlayer(p.pos, mx * speed * dt, mz * speed * dt, this.playerRadius(), this.colliders(), this.mode === 'town' ? this.town.size / 2 - 2 : undefined);
+      if (this.mode === 'house') this.clampPlayerToRoom();
       const targetYaw = Math.atan2(mx, mz);
       let d = targetYaw - p.yaw;
       d = Math.atan2(Math.sin(d), Math.cos(d));
@@ -647,7 +649,7 @@ export class Game {
         p.grounded = true;
       }
     }
-    this.collide(p.pos, this.riding ? 1.4 : 0.8);
+    this.collide();
     const moved = Math.hypot(p.pos.x - prev.x, p.pos.z - prev.z);
 
     // avatar
@@ -679,7 +681,13 @@ export class Game {
       this.camera.lookAt(p.pos.x + Math.cos(fy) * 1.4, p.pos.y + 1.5, p.pos.z - Math.sin(fy) * 1.4);
     } else {
       const cp = Math.cos(this.cam.pitch);
-      const dist = this.mode === 'town' && !this.building ? this.cameraRoom(target, cp) : this.cam.dist;
+      let dist = this.cam.dist;
+      if (this.mode === 'town' && !this.building) {
+        // pulled in at once when a building is in the way, eased back out afterwards (no popping)
+        const room = this.cameraRoom(target, cp);
+        this.camShown = room < this.camShown ? room : this.camShown + (Math.min(room, this.cam.dist) - this.camShown) * Math.min(1, dt * 6);
+        dist = Math.min(this.camShown, this.cam.dist);
+      }
       this.camera.position.set(target.x + Math.sin(this.cam.yaw) * cp * dist, target.y + Math.sin(this.cam.pitch) * dist, target.z + Math.cos(this.cam.yaw) * cp * dist);
       if (this.camera.position.y < 0.6) this.camera.position.y = 0.6;
       this.camera.lookAt(target);
@@ -694,46 +702,24 @@ export class Game {
     this.sun.target.position.set(p.pos.x, 0, p.pos.z);
   }
 
-  private collide(pos: THREE.Vector3, r: number) {
-    if (this.mode === 'house') {
-      this.clampPlayerToRoom();
-      return;
+  /** Player body size: smaller indoors so furniture doesn't feel like a maze. */
+  private playerRadius(): number {
+    if (this.mode === 'house') return this.riding ? 1.0 : 0.45;
+    return this.riding ? 1.3 : 0.55;
+  }
+  private colliders(): Colliders {
+    return this.mode === 'house' ? this.interior : this.town;
+  }
+  /** Settle the player after jumping/teleporting/placing furniture: push out of anything solid. */
+  private collide() {
+    const pos = this.player.pos;
+    if (this.mode === 'town') {
+      const half = this.town.size / 2 - 2;
+      pos.x = THREE.MathUtils.clamp(pos.x, -half, half);
+      pos.z = THREE.MathUtils.clamp(pos.z, -half, half);
     }
-    if (pos.y > 9) return; // flying over everything
-    const half = this.town.size / 2 - 2;
-    pos.x = THREE.MathUtils.clamp(pos.x, -half, half);
-    pos.z = THREE.MathUtils.clamp(pos.z, -half, half);
-    for (const c of this.town.circles) {
-      const dx = pos.x - c.x;
-      const dz = pos.z - c.z;
-      const d = Math.hypot(dx, dz);
-      const min = c.r + r;
-      if (d < min && d > 0.0001) {
-        pos.x = c.x + (dx / d) * min;
-        pos.z = c.z + (dz / d) * min;
-      }
-    }
-    for (const b of this.town.rects) {
-      const cos = Math.cos(-b.rot);
-      const sin = Math.sin(-b.rot);
-      const lx0 = pos.x - b.x;
-      const lz0 = pos.z - b.z;
-      const lx = lx0 * cos + lz0 * sin;
-      const lz = -lx0 * sin + lz0 * cos;
-      const ex = b.hw + r;
-      const ez = b.hd + r;
-      if (Math.abs(lx) < ex && Math.abs(lz) < ez) {
-        const px = ex - Math.abs(lx);
-        const pz = ez - Math.abs(lz);
-        let nx = lx;
-        let nz = lz;
-        if (px < pz) nx = Math.sign(lx || 1) * ex;
-        else nz = Math.sign(lz || 1) * ez;
-        // back to world
-        pos.x = b.x + nx * cos - nz * sin;
-        pos.z = b.z + nx * sin + nz * cos;
-      }
-    }
+    resolve(pos, this.playerRadius(), this.colliders());
+    if (this.mode === 'house') this.clampPlayerToRoom();
   }
 
   /** Pull the camera in so it doesn't end up inside a building. */
@@ -747,12 +733,12 @@ export class Game {
       const x = target.x + dx * d;
       const z = target.z + dz * d;
       const y = target.y + dy * d;
-      if (y > 11) continue;
       for (const b of this.town.rects) {
-        const cos = Math.cos(-b.rot);
-        const sin = Math.sin(-b.rot);
-        const lx = (x - b.x) * cos + (z - b.z) * sin;
-        const lz = -(x - b.x) * sin + (z - b.z) * cos;
+        if ((b.h ?? 99) < 4 || y > (b.h ?? 99)) continue; // only buildings and tall walls hide the player
+        const cos = Math.cos(b.rot);
+        const sin = Math.sin(b.rot);
+        const lx = (x - b.x) * cos - (z - b.z) * sin;
+        const lz = (x - b.x) * sin + (z - b.z) * cos;
         if (Math.abs(lx) < b.hw + 0.6 && Math.abs(lz) < b.hd + 0.6) return Math.max(3, (this.cam.dist * (i - 1)) / steps);
       }
     }

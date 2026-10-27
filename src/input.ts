@@ -8,6 +8,10 @@ export interface InputState {
   zoom: number;
 }
 
+/** Pointer travel (px) before a press becomes a drag instead of a tap. */
+export const DRAG_THRESHOLD = 6;
+export const TOUCH_DRAG_THRESHOLD = 10;
+
 export interface TapInfo {
   x: number;
   y: number;
@@ -21,6 +25,8 @@ export class Input {
   private joyVec = { x: 0, y: 0 };
   private camPointers = new Map<number, { x: number; y: number; sx: number; sy: number; t: number; moved: boolean }>();
   private pinchDist = 0;
+  /** True once two fingers have been down in this gesture, so lifting them doesn't count as a tap. */
+  private pinched = false;
   /** Called on a short tap on the 3D view (for picking). Return true if the tap was used. */
   onTap: ((t: TapInfo) => void) | null = null;
   /** Called when a drag starts on the 3D view; return true to take over the drag (e.g. moving furniture). */
@@ -81,12 +87,17 @@ export class Input {
     jumpBtn.addEventListener('pointerup', endJump);
     jumpBtn.addEventListener('pointercancel', endJump);
 
+    // right-drag rotates too, so keep the browser menu out of the way
+    canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+    canvas.style.touchAction = 'none';
     canvas.addEventListener('pointerdown', (e) => {
       canvas.setPointerCapture(e.pointerId);
+      if (this.camPointers.size === 0) this.pinched = false;
       this.camPointers.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, t: performance.now(), moved: false });
       if (this.camPointers.size === 2) {
         const [a, b] = [...this.camPointers.values()];
         this.pinchDist = Math.hypot(a.x - b.x, a.y - b.y);
+        this.pinched = true;
       } else if (this.camPointers.size === 1) {
         this.dragOwned = this.onDragStart?.({ x: e.clientX, y: e.clientY }) ?? false;
       }
@@ -98,7 +109,7 @@ export class Input {
       const dy = e.clientY - p.y;
       p.x = e.clientX;
       p.y = e.clientY;
-      if (Math.hypot(p.x - p.sx, p.y - p.sy) > 8) p.moved = true;
+      if (Math.hypot(p.x - p.sx, p.y - p.sy) > (e.pointerType === 'mouse' ? DRAG_THRESHOLD : TOUCH_DRAG_THRESHOLD)) p.moved = true;
       if (this.camPointers.size === 2) {
         const [a, b] = [...this.camPointers.values()];
         const d = Math.hypot(a.x - b.x, a.y - b.y);
@@ -120,14 +131,15 @@ export class Input {
         this.dragOwned = false;
         this.onDragEnd?.();
       }
-      if (!p.moved && performance.now() - p.t < 450) this.onTap?.({ x: e.clientX, y: e.clientY });
+      if (!p.moved && !this.pinched && e.type === 'pointerup' && performance.now() - p.t < 450) this.onTap?.({ x: e.clientX, y: e.clientY });
     };
     canvas.addEventListener('pointerup', endCam);
     canvas.addEventListener('pointercancel', endCam);
     canvas.addEventListener(
       'wheel',
       (e) => {
-        this.state.zoom += e.deltaY * 0.01;
+        // trackpads send pixels, old mice send lines
+        this.state.zoom += e.deltaY * (e.deltaMode === 1 ? 0.3 : 0.01);
         e.preventDefault();
       },
       { passive: false },
@@ -160,6 +172,11 @@ export class Input {
     if (len > 1) {
       x /= len;
       y /= len;
+    }
+    // Q / E turn the camera from the keyboard
+    if (this.enabled) {
+      if (k.has('KeyQ')) this.state.camDX -= 6;
+      if (k.has('KeyE')) this.state.camDX += 6;
     }
     this.state.move = this.enabled ? { x, y } : { x: 0, y: 0 };
     const out = { ...this.state, move: { ...this.state.move } };

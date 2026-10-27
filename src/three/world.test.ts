@@ -1,0 +1,296 @@
+import { beforeAll, describe, expect, it } from 'vitest';
+import { HOUSES, type HouseStyle } from '../logic/catalog.ts';
+import { blocked, movePlayer, type Colliders } from '../logic/collision.ts';
+import { newHouse, type House, type PlacedItem } from '../logic/house.ts';
+import { installDomStub } from '../test/domStub.ts';
+import type { Interior } from './interior.ts';
+import type { Town } from './town.ts';
+
+const R = 0.55; // walking player radius in the town
+let town: Town;
+let mkInterior: () => Interior;
+let furnitureColliders: typeof import('./interior.ts').furnitureColliders;
+
+beforeAll(async () => {
+  installDomStub();
+  const t = await import('./town.ts');
+  const i = await import('./interior.ts');
+  town = t.buildTown();
+  mkInterior = i.createInterior;
+  furnitureColliders = i.furnitureColliders;
+});
+
+const col = (): Colliders => town;
+const local = (p: { x: number; z: number }, rot: number, lx: number, lz: number) => ({
+  x: p.x + lx * Math.cos(rot) + lz * Math.sin(rot),
+  z: p.z - lx * Math.sin(rot) + lz * Math.cos(rot),
+});
+const faceCenter = (x: number, z: number) => Math.atan2(-x, -z);
+const PLACES = { shop: { x: 38, z: -34 }, vet: { x: 46, z: 12 }, eggs: { x: 0, z: -50 }, doors: { x: 4, z: 46 }, play: { x: -44, z: 16 }, home: { x: -38, z: -34 } };
+
+describe('town colliders', () => {
+  it('has colliders for the fountain and every landmark', () => {
+    expect(blocked(0, 0, R, col())).toBe(true); // fountain
+    expect(blocked(3.5, 0, R, col())).toBe(true); // fountain rim
+    for (const k of ['shop', 'eggs', 'doors'] as const) {
+      const p = PLACES[k];
+      expect(blocked(p.x, p.z, R, col()), k).toBe(true);
+    }
+    expect(town.circles.length).toBeGreaterThan(60); // trees, bushes, lamps
+    expect(town.rects.length).toBeGreaterThan(20);
+  });
+
+  it('shop, egg shop and door hut cannot be walked through from any side', () => {
+    for (const k of ['shop', 'eggs', 'doors'] as const) {
+      const p = PLACES[k];
+      const rot = faceCenter(p.x, p.z);
+      for (const [lx, lz] of [[-12, 0], [12, 0], [0, -12], [0, 12], [-10, 10], [10, -10]]) {
+        const s = local(p, rot, lx, lz);
+        const pos = { x: s.x, y: 0, z: s.z };
+        // walk straight at the building centre
+        movePlayer(pos, p.x - s.x, p.z - s.z, R, col());
+        expect(Math.hypot(pos.x - p.x, pos.z - p.z), `${k} from ${lx},${lz}`).toBeGreaterThan(3);
+      }
+    }
+  });
+
+  it('vet: side walls (including the front half that used to be open to walk through) block, front stays open', () => {
+    const p = PLACES.vet;
+    const rot = faceCenter(p.x, p.z);
+    // side walls at local x = +-6.7, any z in the building
+    for (const lz of [-4, -1, 2, 4]) {
+      for (const lx of [-6.7, 6.7]) {
+        const w = local(p, rot, lx, lz);
+        expect(blocked(w.x, w.z, R, col()), `wall ${lx},${lz}`).toBe(true);
+      }
+    }
+    const back = local(p, rot, 0, -5.2);
+    expect(blocked(back.x, back.z, R, col())).toBe(true);
+    // the open front and the care pad stay walkable
+    for (const [lx, lz] of [[0, 1.5], [0, 5], [0, 8], [-3, 3], [3, 3]]) {
+      const w = local(p, rot, lx, lz);
+      expect(blocked(w.x, w.z, R, col()), `front ${lx},${lz}`).toBe(false);
+    }
+    // vet furniture
+    const bed = local(p, rot, 3.5, -1.8);
+    expect(blocked(bed.x, bed.z, R, col())).toBe(true);
+    const cab = local(p, rot, -4.5, -3.8);
+    expect(blocked(cab.x, cab.z, R, col())).toBe(true);
+    // can walk in and stand on the pad
+    const s = local(p, rot, 0, 10);
+    const pos = { x: s.x, y: 0, z: s.z };
+    const pad = local(p, rot, 0, 1.5);
+    movePlayer(pos, pad.x - s.x, pad.z - s.z, R, col());
+    expect(Math.hypot(pos.x - pad.x, pos.z - pad.z)).toBeLessThan(0.3);
+  });
+
+  it.each(HOUSES.map((h) => h.style))('home (%s): body, porch and mailbox block; the front door zone is reachable', (style: HouseStyle) => {
+    town.setHomeStyle(style);
+    const p = PLACES.home;
+    const rot = faceCenter(p.x, p.z);
+    expect(blocked(p.x, p.z, R, col())).toBe(true);
+    for (const [lx, lz] of [[-5, 0], [5, 0], [0, -3], [0, 3]]) {
+      const w = local(p, rot, lx, lz);
+      expect(blocked(w.x, w.z, R, col()), `${lx},${lz}`).toBe(true);
+    }
+    const w = style === 'slott' ? 18 : style === 'gard' ? 16 : style === 'villa' ? 15 : 12;
+    const d = w * 0.75;
+    const mail = local(p, rot, 3.5, d / 2 + 3);
+    expect(blocked(mail.x, mail.z, R, col()), 'mailbox').toBe(true);
+    if (style === 'slott') {
+      // the round corner towers stick out past the walls
+      const tower = local(p, rot, w / 2 + 1, d / 2 + 1);
+      expect(blocked(tower.x, tower.z, R, col()), 'tower').toBe(true);
+    }
+    const zone = town.zones.find((z) => z.kind === 'home')!;
+    expect(blocked(zone.x, zone.z, R, col())).toBe(false);
+    // actually walk from the plaza to the door
+    const pos = { x: 0, y: 0, z: 0 };
+    town.setHomeStyle(style);
+    const start = { x: zone.x * 0.5 + 0, y: 0, z: zone.z * 0.5 };
+    Object.assign(pos, start);
+    for (let i = 0; i < 400; i++) movePlayer(pos, (zone.x - pos.x) * 0.1, (zone.z - pos.z) * 0.1, R, col());
+    expect(Math.hypot(pos.x - zone.x, pos.z - zone.z)).toBeLessThan(zone.r);
+    town.setHomeStyle('hytte');
+  });
+
+  it('switching house style replaces (and does not leak) house colliders', () => {
+    town.setHomeStyle('hytte');
+    const n = town.rects.length + town.circles.length;
+    for (const s of ['slott', 'villa', 'hytte'] as const) town.setHomeStyle(s);
+    expect(town.rects.length + town.circles.length).toBe(n);
+  });
+
+  it('playground: equipment and fence block, the gate is open', () => {
+    const p = PLACES.play;
+    const rot = faceCenter(p.x, p.z);
+    const items: [string, number, number][] = [
+      ['slide ladder', -4.8, -3],
+      ['swing leg', 1.5, -4],
+      ['sandbox', 4, 4],
+      ['seesaw', -4, 5.5],
+      ['merry-go-round', 0, 7.5],
+    ];
+    for (const [name, lx, lz] of items) {
+      const w = local(p, rot, lx, lz);
+      expect(blocked(w.x, w.z, R, col()), name).toBe(true);
+    }
+    // the fence is a closed ring with exactly one gap (the gate), which faces the plaza
+    const steps = 720;
+    const open: number[] = [];
+    for (let i = 0; i < steps; i++) {
+      const a = (i / steps) * Math.PI * 2;
+      const w = local(p, rot, Math.cos(a) * 11, Math.sin(a) * 11);
+      if (!blocked(w.x, w.z, 0.3, col())) open.push(a);
+    }
+    // all open angles are contiguous (mod 2pi) = one gate
+    let breaks = 0;
+    for (let i = 0; i < open.length; i++) {
+      const next = open[(i + 1) % open.length];
+      const gap = (next - open[i] + Math.PI * 2) % (Math.PI * 2);
+      if (gap > (Math.PI * 2) / steps * 1.5) breaks++;
+    }
+    expect(open.length).toBeGreaterThan(30);
+    expect(breaks).toBeLessThanOrEqual(1);
+    // and nothing walks in anywhere else (sliding along the rail into the gate is fine, so skip angles near it)
+    const gateAngle = Math.atan2(open.reduce((t, a) => t + Math.sin(a), 0), open.reduce((t, a) => t + Math.cos(a), 0));
+    for (let i = 0; i < 48; i++) {
+      const a = (i / 48) * Math.PI * 2 + 0.05;
+      const out = local(p, rot, Math.cos(a) * 15, Math.sin(a) * 15);
+      if (Math.abs(Math.atan2(Math.sin(a - gateAngle), Math.cos(a - gateAngle))) < 1.0) continue;
+      const pos = { x: out.x, y: 0, z: out.z };
+      movePlayer(pos, p.x - out.x, p.z - out.z, R, col());
+      expect(Math.hypot(pos.x - p.x, pos.z - p.z), `fence angle ${a.toFixed(2)}`).toBeGreaterThan(10.3);
+    }
+  });
+
+  it('trees and bushes block', () => {
+    // every tree-sized circle must stop a walker
+    const trunks = town.circles.filter((c) => c.r > 0.6 && c.r < 2);
+    expect(trunks.length).toBeGreaterThan(50);
+    for (const c of trunks.slice(0, 80)) {
+      const pos = { x: c.x + c.r + 4, y: 0, z: c.z };
+      movePlayer(pos, -(c.r + 4), 0, R, col());
+      expect(Math.hypot(pos.x - c.x, pos.z - c.z)).toBeGreaterThanOrEqual(c.r + R - 0.01);
+    }
+  });
+
+  it('walking randomly never leaves the player inside anything', () => {
+    let seed = 12345;
+    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    for (let n = 0; n < 150; n++) {
+      const pos = { x: (rnd() - 0.5) * 180, y: 0, z: (rnd() - 0.5) * 180 };
+      if (blocked(pos.x, pos.z, R, col())) continue;
+      let a = rnd() * Math.PI * 2;
+      for (let i = 0; i < 250; i++) {
+        if (i % 40 === 0) a += (rnd() - 0.5) * 3;
+        movePlayer(pos, Math.cos(a) * 15 * 0.016, Math.sin(a) * 15 * 0.016, R, col(), 98);
+        expect(blocked(pos.x, pos.z, R - 0.05, col())).toBe(false);
+      }
+    }
+  });
+
+  it('every place you can teleport to or interact with is reachable from the spawn', () => {
+    const cell = 0.8;
+    const half = 98;
+    const N = Math.round((half * 2) / cell);
+    const open = new Uint8Array(N * N);
+    const idx = (ix: number, iz: number) => iz * N + ix;
+    const pt = (i: number) => -half + i * cell;
+    for (let iz = 0; iz < N; iz++) for (let ix = 0; ix < N; ix++) open[idx(ix, iz)] = blocked(pt(ix), pt(iz), R, col()) ? 0 : 1;
+    const toCell = (v: number) => Math.round((v + half) / cell);
+    const seen = new Uint8Array(N * N);
+    const sp = town.spawn;
+    const stack = [idx(toCell(sp.x), toCell(sp.z))];
+    expect(open[stack[0]]).toBe(1);
+    seen[stack[0]] = 1;
+    while (stack.length) {
+      const i = stack.pop()!;
+      const ix = i % N;
+      const iz = (i / N) | 0;
+      for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const jx = ix + dx;
+        const jz = iz + dz;
+        if (jx < 0 || jz < 0 || jx >= N || jz >= N) continue;
+        const j = idx(jx, jz);
+        if (open[j] && !seen[j]) {
+          seen[j] = 1;
+          stack.push(j);
+        }
+      }
+    }
+    for (const z of town.zones) {
+      // any open cell inside the zone radius must be reachable
+      let ok = false;
+      for (let iz = 0; iz < N && !ok; iz++) for (let ix = 0; ix < N && !ok; ix++) if (Math.hypot(pt(ix) - z.x, pt(iz) - z.z) < Math.min(z.r, 3) && seen[idx(ix, iz)]) ok = true;
+      expect(ok, `zone ${z.kind}`).toBe(true);
+    }
+    for (const [k, p] of Object.entries(town.places)) {
+      expect(blocked(p.x, p.z, R, col()), `place ${k}`).toBe(false);
+      expect(seen[idx(toCell(p.x), toCell(p.z))], `place ${k} reachable`).toBe(1);
+    }
+  });
+});
+
+describe('interior furniture colliders', () => {
+  const base = (style: HouseStyle, items: Omit<PlacedItem, 'uid' | 'scale' | 'color'>[]): House => {
+    const h = newHouse(style, 'me', 0);
+    return { ...h, items: items.map((i, n) => ({ uid: `u${n}`, scale: 1, color: '#ffffff', ...i })) };
+  };
+  const build = (items: Omit<PlacedItem, 'uid' | 'scale' | 'color'>[]) => {
+    const interior = mkInterior();
+    const house = base('villa', items);
+    interior.build(house);
+    return { interior, house };
+  };
+
+  it('solid furniture blocks, flat things and wall decor do not', () => {
+    const { interior } = build([
+      { itemId: 'sofa', x: -4, z: -2, rot: 0 },
+      { itemId: 'rundtteppe', x: 4, z: -2, rot: 0 },
+      { itemId: 'maleri', x: 0, z: -7.8, rot: 0 },
+      { itemId: 'ball', x: 6, z: 2, rot: 0 },
+      { itemId: 'matskal', x: 7, z: 2, rot: 0 },
+    ]);
+    const c: Colliders = { rects: interior.rects, circles: [] };
+    expect(interior.rects.length).toBe(1);
+    expect(blocked(-4, -2, 0.45, c)).toBe(true);
+    expect(blocked(4, -2, 0.45, c)).toBe(false);
+    expect(blocked(6, 2, 0.45, c)).toBe(false);
+  });
+
+  it('a rotated sofa has a rotated footprint', () => {
+    const { interior } = build([{ itemId: 'sofa', x: 0, z: 0, rot: Math.PI / 2 }]);
+    const c: Colliders = { rects: interior.rects, circles: [] };
+    // sofa is ~3.2 wide (local x) and 1.5 deep; turned 90 degrees it is long along z
+    expect(blocked(0, 1.4, 0.3, c)).toBe(true);
+    expect(blocked(1.4, 0, 0.3, c)).toBe(false);
+  });
+
+  it('you cannot walk through a bed, table or bathtub', () => {
+    const { interior } = build([
+      { itemId: 'seng', x: -5, z: -4, rot: 0 },
+      { itemId: 'spisebord', x: 3, z: -4, rot: 0.5 },
+      { itemId: 'badekar', x: 6, z: 3, rot: 0 },
+    ]);
+    const c: Colliders = { rects: interior.rects, circles: [] };
+    for (const [x, z] of [[-5, -4], [3, -4], [6, 3]]) {
+      const pos = { x: x + 5, y: 0, z: z + 0.3 };
+      movePlayer(pos, -10, 0, 0.45, c);
+      expect(blocked(pos.x, pos.z, 0.45, c)).toBe(false);
+      expect(Math.abs(pos.x - x) > 0.9 || Math.abs(pos.z - z) > 0.9).toBe(true);
+    }
+  });
+
+  it('furniture on the door mat never locks you in', () => {
+    const interior = mkInterior();
+    const house = base('hytte', []);
+    interior.build(house);
+    const { door } = interior;
+    const sofa: PlacedItem = { uid: 'x', itemId: 'sofa', x: door.x, z: door.z, rot: 0, scale: 1, color: '#fff' };
+    const h2 = { ...house, items: [sofa] };
+    interior.syncItems(h2);
+    expect(interior.rects.length).toBe(0);
+    expect(furnitureColliders(h2, interior.items, door).length).toBe(0);
+  });
+});

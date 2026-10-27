@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { FURN_BY_ID } from '../logic/catalog.ts';
 import { roomSize, type House } from '../logic/house.ts';
+import { blocked, type CircleCollider, type RectCollider } from '../logic/collision.ts';
+import { footprintOf } from './colliders.ts';
 import { buildFurniture } from './furniture.ts';
 import { box, G, mat, rbox, textTexture } from './kit.ts';
 
@@ -12,6 +14,9 @@ export interface Interior {
   d: number;
   door: { x: number; z: number };
   items: Map<string, THREE.Group>;
+  /** Solid furniture, rebuilt whenever the items change. */
+  rects: RectCollider[];
+  circles: CircleCollider[];
   build(house: House): void;
   syncItems(house: House): void;
   updateWalls(cam: THREE.Vector3): void;
@@ -39,6 +44,8 @@ export function createInterior(): Interior {
     d: 13,
     door: { x: 0, z: 6 },
     items,
+    rects: [],
+    circles: [],
     build(house) {
       shell.clear();
       const { w, d } = roomSize(house.style);
@@ -135,6 +142,7 @@ export function createInterior(): Interior {
         }
       }
       api.select(selected);
+      api.rects = furnitureColliders(house, items, api.door);
     },
     updateWalls(cam) {
       for (const wl of walls) {
@@ -164,4 +172,27 @@ function shade(hex: string, amt: number): string {
   c.getHSL(hsl);
   c.setHSL(hsl.h, hsl.s, Math.max(0, Math.min(1, hsl.l + amt)));
   return `#${c.getHexString()}`;
+}
+
+/** Soft things you can step over; everything else that stands on the floor is solid. */
+const WALK_THROUGH = new Set(['ball', 'teddy', 'heart', 'gift']);
+/** Floor items must be at least this tall to count as solid (rugs, mats and bowls are flat). */
+const MIN_SOLID_HEIGHT = 0.4;
+/** Furniture this close to the front door never blocks, so a room can't be built shut. */
+const DOOR_CLEAR = 1.9;
+
+export function furnitureColliders(house: House, items: Map<string, THREE.Group>, door: { x: number; z: number }): RectCollider[] {
+  const out: RectCollider[] = [];
+  for (const it of house.items) {
+    const def = FURN_BY_ID[it.itemId];
+    const g = items.get(it.uid);
+    if (!def || !g || def.wall || def.cat === 'gulv' || WALK_THROUGH.has(def.model)) continue;
+    const fp = footprintOf(g);
+    if (fp.top < MIN_SOLID_HEIGHT) continue;
+    const rect: RectCollider = { x: fp.x, z: fp.z, hw: fp.hw, hd: fp.hd, rot: fp.rot, h: fp.top };
+    // keep the doorway open: skip anything touching the door mat
+    if (blocked(door.x, door.z, DOOR_CLEAR, { rects: [rect], circles: [] })) continue;
+    out.push(rect);
+  }
+  return out;
 }
