@@ -156,10 +156,10 @@ export const POTIONS: Potion[] = [
 
 export type HouseStyle = 'hytte' | 'villa' | 'gard' | 'slott';
 export const HOUSES: { style: HouseStyle; name: string; price: number; w: number; d: number; wall: string; roof: string; text: string }[] = [
-  { style: 'hytte', name: 'Koselig hytte', price: 0, w: 16, d: 13, wall: '#ffe0b8', roof: '#ff7a7a', text: 'Ditt første hjem' },
-  { style: 'villa', name: 'Rosa villa', price: 600, w: 20, d: 16, wall: '#ffd1e8', roof: '#b05cff', text: 'Stor og rosa!' },
-  { style: 'gard', name: 'Gårdshus', price: 900, w: 24, d: 18, wall: '#ff7f6e', roof: '#fff4e0', text: 'Plass til masse dyr' },
-  { style: 'slott', name: 'Eventyrslott', price: 1800, w: 28, d: 22, wall: '#e6ecff', roof: '#3fa4ff', text: 'Et ekte slott' },
+  { style: 'hytte', name: 'Koselig hytte', price: 0, w: 22, d: 18, wall: '#ffe0b8', roof: '#ff7a7a', text: 'Ditt første hjem: 2 etasjer og 6 rom' },
+  { style: 'villa', name: 'Rosa villa', price: 600, w: 26, d: 20, wall: '#ffd1e8', roof: '#b05cff', text: 'Stor og rosa! 2 etasjer' },
+  { style: 'gard', name: 'Gårdshus', price: 900, w: 30, d: 22, wall: '#ff7f6e', roof: '#fff4e0', text: 'Plass til masse dyr, 2 etasjer' },
+  { style: 'slott', name: 'Eventyrslott', price: 1800, w: 34, d: 26, wall: '#e6ecff', roof: '#3fa4ff', text: 'Et ekte slott med trapper' },
 ];
 export const HOUSE_BY_STYLE = Object.fromEntries(HOUSES.map((h) => [h.style, h])) as Record<HouseStyle, (typeof HOUSES)[number]>;
 

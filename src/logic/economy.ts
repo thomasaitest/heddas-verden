@@ -99,11 +99,11 @@ export function renamePet(save: SaveData, petUid: string, name: string): SaveDat
   return pet ? setPet(save, { ...pet, name: cleanPetName(name, pet.name) }) : save;
 }
 
-export function placeFromInventory(save: SaveData, itemId: string, x: number, z: number): Result {
+export function placeFromInventory(save: SaveData, itemId: string, x: number, z: number, floor = 0): Result {
   const house = activeHouse(save);
   if (!canEdit(house, save.playerId)) return fail(save, 'no-access');
   if (!save.inventory[itemId]) return fail(save, 'empty');
-  return { ok: true, save: { ...setHouse(save, placeItem(house, itemId, x, z)), inventory: add(save.inventory, itemId, -1) } };
+  return { ok: true, save: { ...setHouse(save, placeItem(house, itemId, x, z, undefined, floor)), inventory: add(save.inventory, itemId, -1) } };
 }
 
 export function storeItem(save: SaveData, itemUid: string): Result {

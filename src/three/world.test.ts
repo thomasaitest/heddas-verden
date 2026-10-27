@@ -117,7 +117,7 @@ describe('town colliders', () => {
       const w = local(p, rot, lx, lz);
       expect(blocked(w.x, w.z, R, col()), `${lx},${lz}`).toBe(true);
     }
-    const w = style === 'slott' ? 18 : style === 'gard' ? 16 : style === 'villa' ? 15 : 12;
+    const w = style === 'slott' ? 22 : style === 'gard' ? 19 : style === 'villa' ? 17 : 14;
     const d = w * 0.75;
     const mail = local(p, rot, 3.5, d / 2 + 3);
     expect(blocked(mail.x, mail.z, R, col()), 'mailbox').toBe(true);
@@ -256,12 +256,14 @@ describe('town colliders', () => {
   });
 });
 
+type TestItem = Omit<PlacedItem, 'uid' | 'scale' | 'color' | 'floor'> & { floor?: number };
+
 describe('interior furniture colliders', () => {
-  const base = (style: HouseStyle, items: Omit<PlacedItem, 'uid' | 'scale' | 'color'>[]): House => {
+  const base = (style: HouseStyle, items: TestItem[]): House => {
     const h = newHouse(style, 'me', 0);
-    return { ...h, items: items.map((i, n) => ({ uid: `u${n}`, scale: 1, color: '#ffffff', ...i })) };
+    return { ...h, items: items.map((i, n) => ({ uid: `u${n}`, scale: 1, color: '#ffffff', floor: 0, ...i })) };
   };
-  const build = (items: Omit<PlacedItem, 'uid' | 'scale' | 'color'>[]) => {
+  const build = (items: TestItem[]) => {
     const interior = mkInterior();
     const house = base('villa', items);
     interior.build(house);
@@ -311,7 +313,7 @@ describe('interior furniture colliders', () => {
     const house = base('hytte', []);
     interior.build(house);
     const { door } = interior;
-    const sofa: PlacedItem = { uid: 'x', itemId: 'sofa', x: door.x, z: door.z, rot: 0, scale: 1, color: '#fff' };
+    const sofa: PlacedItem = { uid: 'x', itemId: 'sofa', x: door.x, z: door.z, rot: 0, scale: 1, color: '#fff', floor: 0 };
     const h2 = { ...house, items: [sofa] };
     interior.syncItems(h2);
     expect(interior.rects.length).toBe(0);

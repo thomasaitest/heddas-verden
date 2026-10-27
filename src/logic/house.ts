@@ -1,5 +1,6 @@
 import { FURN_BY_ID, HOUSE_BY_STYLE, type HouseStyle } from './catalog.ts';
 import type { CareWhere } from './needs.ts';
+import { FLOORS, houseLayout, itemRadius, moveInLayout, placeInLayout } from './layout.ts';
 import { uid } from './rng.ts';
 
 export interface PlacedItem {
@@ -12,6 +13,8 @@ export interface PlacedItem {
   rot: number;
   scale: number;
   color: string;
+  /** Which floor it stands on (0 = ground floor). */
+  floor: number;
 }
 
 export interface House {
@@ -39,10 +42,10 @@ export function roomSize(style: HouseStyle): { w: number; d: number } {
 export function newHouse(style: HouseStyle, ownerId: string, now = Date.now()): House {
   const { w, d } = roomSize(style);
   const items: PlacedItem[] = [
-    { uid: uid('it'), itemId: 'dyreseng', x: -w / 2 + 2, z: -d / 2 + 2, rot: 0, scale: 1, color: '#ffb84d' },
-    { uid: uid('it'), itemId: 'badekar', x: w / 2 - 2.2, z: -d / 2 + 1.6, rot: 0, scale: 1, color: '#ffffff' },
-    { uid: uid('it'), itemId: 'rundtteppe', x: 0, z: 0, rot: 0, scale: 1, color: '#ff9ccf' },
-    { uid: uid('it'), itemId: 'potteplante', x: w / 2 - 1, z: d / 2 - 1.2, rot: 0, scale: 1, color: '#5cc36b' },
+    { uid: uid('it'), itemId: 'dyreseng', x: -w / 2 + 2, z: -d / 2 + 2, rot: 0, scale: 1, color: '#ffb84d', floor: 0 },
+    { uid: uid('it'), itemId: 'badekar', x: w / 2 - 2.2, z: -d / 2 + 1.6, rot: 0, scale: 1, color: '#ffffff', floor: 0 },
+    { uid: uid('it'), itemId: 'rundtteppe', x: 0, z: d / 2 - 5, rot: 0, scale: 1, color: '#ff9ccf', floor: 0 },
+    { uid: uid('it'), itemId: 'potteplante', x: w / 2 - 1, z: d / 2 - 1.2, rot: 0, scale: 1, color: '#5cc36b', floor: 0 },
   ];
   return { id: uid('house'), style, ownerId, editors: [], editRequests: [], wallColor: '#fff1e0', floorColor: '#d9a066', items, createdAt: now };
 }
@@ -86,21 +89,40 @@ export function snapToWall(style: HouseStyle, x: number, z: number): { x: number
   return { x: sx, z: sz, rot };
 }
 
+const floorOf = (n: unknown): number => Math.max(0, Math.min(FLOORS - 1, Math.floor(Number(n) || 0)));
+
+/** Make an item legal: scale in range, on a real floor, and not inside a wall or the staircase. */
 function fit(style: HouseStyle, item: PlacedItem): PlacedItem {
   const scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, Number.isFinite(item.scale) ? item.scale : 1));
-  if (FURN_BY_ID[item.itemId]?.wall) return { ...item, scale, ...snapToWall(style, item.x, item.z) };
-  return { ...item, scale, ...clampToRoom(style, item.x, item.z) };
+  const floor = floorOf(item.floor);
+  const def = FURN_BY_ID[item.itemId];
+  if (def?.wall) return { ...item, scale, floor, ...snapToWall(style, item.x, item.z) };
+  const p = placeInLayout(houseLayout(style), floor, item.x, item.z, itemRadius(def?.size ?? 1, scale));
+  return { ...item, scale, floor, x: p.x, z: p.z };
 }
 
-export function placeItem(house: House, itemId: string, x = 0, z = 0, color?: string): House {
+export function placeItem(house: House, itemId: string, x = 0, z = 0, color?: string, floor = 0): House {
   const def = FURN_BY_ID[itemId];
   if (!def) return house;
-  const item = fit(house.style, { uid: uid('it'), itemId, x, z, rot: 0, scale: 1, color: color ?? def.color });
+  const item = fit(house.style, { uid: uid('it'), itemId, x, z, rot: 0, scale: 1, color: color ?? def.color, floor });
   return { ...house, items: [...house.items, item] };
 }
 
 export function updateItem(house: House, itemUid: string, patch: Partial<Omit<PlacedItem, 'uid' | 'itemId'>>): House {
   return { ...house, items: house.items.map((it) => (it.uid === itemUid ? fit(house.style, { ...it, ...patch }) : it)) };
+}
+
+/**
+ * Drag an item to a new spot. It slides along walls and stops at them, so furniture can never be pushed
+ * through a wall into another room (only through a doorway). Wall decorations just snap to the nearest outer wall.
+ */
+export function moveItem(house: House, itemUid: string, x: number, z: number): House {
+  const it = house.items.find((i) => i.uid === itemUid);
+  if (!it) return house;
+  const def = FURN_BY_ID[it.itemId];
+  if (def?.wall) return updateItem(house, itemUid, { x, z });
+  const p = moveInLayout(houseLayout(house.style), it.floor, it, { x, z }, itemRadius(def?.size ?? 1, it.scale));
+  return { ...house, items: house.items.map((i) => (i.uid === itemUid ? { ...i, x: p.x, z: p.z } : i)) };
 }
 
 export function rotateItem(house: House, itemUid: string): House {
@@ -132,7 +154,7 @@ export function deserializeHouse(json: string): House | null {
     const style = raw.style;
     const items = (Array.isArray(raw.items) ? raw.items : [])
       .filter((i) => i && FURN_BY_ID[i.itemId] && typeof i.uid === 'string')
-      .map((i) => fit(style, { uid: i.uid, itemId: i.itemId, x: Number(i.x) || 0, z: Number(i.z) || 0, rot: Number(i.rot) || 0, scale: Number(i.scale) || 1, color: typeof i.color === 'string' ? i.color : FURN_BY_ID[i.itemId].color }));
+      .map((i) => fit(style, { uid: i.uid, itemId: i.itemId, x: Number(i.x) || 0, z: Number(i.z) || 0, rot: Number(i.rot) || 0, scale: Number(i.scale) || 1, floor: floorOf((i as PlacedItem).floor), color: typeof i.color === 'string' ? i.color : FURN_BY_ID[i.itemId].color }));
     return {
       id: raw.id,
       style,
