@@ -20,7 +20,7 @@ export interface Town {
   rects: RectCollider[];
   circles: CircleCollider[];
   spawn: { x: number; z: number; yaw: number };
-  places: Record<ZoneKind, { x: number; z: number; yaw: number }>;
+  entrances: Record<ZoneKind, { x: number; z: number; yaw: number }>;
   setHomeStyle(style: HouseStyle): void;
   update(t: number): void;
   size: number;
@@ -157,7 +157,7 @@ export function buildTown(): Town {
     box(stat, ROAD, [p.x / 2, 0.05, p.z / 2], [6, 0.06, len], [0, ang, 0]);
   }
 
-  const places = {} as Town['places'];
+  const entrances = {} as Town["entrances"];
   const front = (p: { x: number; z: number }, dist: number) => {
     const rot = faceCenter(p.x, p.z);
     return { x: p.x + Math.sin(rot) * dist, z: p.z + Math.cos(rot) * dist, rot };
@@ -184,7 +184,7 @@ export function buildTown(): Town {
     stat.add(g);
     const z = front(P.shop, 7.5);
     zones.push({ kind: 'shop', x: z.x, z: z.z, r: 4, label: 'Handle mat 🛒' });
-    places.shop = { x: z.x, z: z.z, yaw: f.rot + Math.PI };
+    entrances.shop = { x: z.x, z: z.z, yaw: f.rot + Math.PI };
   }
   // vet
   {
@@ -205,7 +205,7 @@ export function buildTown(): Town {
     stat.add(g);
     const p = front(P.vet, 1.5);
     zones.push({ kind: 'vet', x: p.x, z: p.z, r: 3.2, label: 'Dyrlegen 🩺' });
-    places.vet = { x: front(P.vet, 9).x, z: front(P.vet, 9).z, yaw: f.rot + Math.PI };
+    entrances.vet = { x: front(P.vet, 9).x, z: front(P.vet, 9).z, yaw: f.rot + Math.PI };
   }
   // egg shop
   {
@@ -226,7 +226,7 @@ export function buildTown(): Town {
     stat.add(g);
     const z = front(P.eggs, 6.8);
     zones.push({ kind: 'eggs', x: z.x, z: z.z, r: 4, label: 'Kjøp egg 🥚' });
-    places.eggs = { x: z.x, z: z.z, yaw: f.rot + Math.PI };
+    entrances.eggs = { x: z.x, z: z.z, yaw: f.rot + Math.PI };
   }
   // door game hut
   {
@@ -246,7 +246,7 @@ export function buildTown(): Town {
     stat.add(g);
     const z = front(P.doors, 6);
     zones.push({ kind: 'doors', x: z.x, z: z.z, r: 3.5, label: 'Spill Dørspillet 🚪' });
-    places.doors = { x: z.x, z: z.z, yaw: f.rot + Math.PI };
+    entrances.doors = { x: z.x, z: z.z, yaw: f.rot + Math.PI };
   }
   // playground
   {
@@ -294,7 +294,7 @@ export function buildTown(): Town {
     stat.add(g);
     zones.push({ kind: 'play', x: P.play.x, z: P.play.z, r: 10.5, label: 'Lekeplassen ⚽' });
     const pp = front(P.play, 0);
-    places.play = { x: pp.x, z: pp.z, yaw: f.rot + Math.PI };
+    entrances.play = { x: pp.x, z: pp.z, yaw: f.rot + Math.PI };
   }
 
   // trees, bushes, flowers, lamps, benches (deterministic positions)
@@ -404,7 +404,7 @@ export function buildTown(): Town {
     const dist = size.d / 2 + 2.2;
     homeZone.x = P.home.x + Math.sin(homeRot) * dist;
     homeZone.z = P.home.z + Math.cos(homeRot) * dist;
-    places.home = { x: P.home.x + Math.sin(homeRot) * (dist + 2), z: P.home.z + Math.cos(homeRot) * (dist + 2), yaw: homeRot };
+    entrances.home = { x: P.home.x + Math.sin(homeRot) * (dist + 2), z: P.home.z + Math.cos(homeRot) * (dist + 2), yaw: homeRot };
   }
   setHomeStyle('hytte');
 
@@ -414,9 +414,9 @@ export function buildTown(): Town {
     rects,
     circles,
     get spawn() {
-      return { x: places.home.x, z: places.home.z, yaw: places.home.yaw };
+      return { x: entrances.home.x, z: entrances.home.z, yaw: entrances.home.yaw };
     },
-    places,
+    entrances,
     setHomeStyle,
     size: SIZE,
     update(t: number) {

@@ -190,7 +190,7 @@ describe('town colliders', () => {
     }
   });
 
-  it('every place you can teleport to or interact with is reachable from the spawn', () => {
+  it('every entrance and interaction zone is reachable on foot from the spawn', () => {
     const cell = 0.8;
     const half = 98;
     const N = Math.round((half * 2) / cell);
@@ -225,7 +225,7 @@ describe('town colliders', () => {
       for (let iz = 0; iz < N && !ok; iz++) for (let ix = 0; ix < N && !ok; ix++) if (Math.hypot(pt(ix) - z.x, pt(iz) - z.z) < Math.min(z.r, 3) && seen[idx(ix, iz)]) ok = true;
       expect(ok, `zone ${z.kind}`).toBe(true);
     }
-    for (const [k, p] of Object.entries(town.places)) {
+    for (const [k, p] of Object.entries(town.entrances)) {
       expect(blocked(p.x, p.z, R, col()), `place ${k}`).toBe(false);
       expect(seen[idx(toCell(p.x), toCell(p.z))], `place ${k} reachable`).toBe(1);
     }

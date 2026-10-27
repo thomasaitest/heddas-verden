@@ -206,9 +206,9 @@ export function feedMenu(game: Game, uid: string) {
               }, 'card mini tap'),
             ),
           )
-        : el('div', {}, el('p', { class: 'empty' }, want === 'mat' ? 'Du har ikke mat.' : 'Du har ikke drikke.'), button('Gå til Butikken 🛒', () => {
+        : el('div', {}, el('p', { class: 'empty' }, want === 'mat' ? 'Du har ikke mat.' : 'Du har ikke drikke.'), el('p', { class: 'hint' }, 'Gå inn i Butikken i byen og handle 🛒 (se Kart)'), button('Åpne kartet 🗺️', () => {
             s.close();
-            game.teleport('shop');
+            game.panels.openMap();
           }, 'btn big')),
     );
   };
@@ -227,9 +227,9 @@ export function openPets(game: Game) {
   const render = () => {
     const pets = game.save.pets;
     if (!pets.length) {
-      s.body.replaceChildren(el('p', { class: 'lead' }, 'Du har ingen dyr ennå. Gå til Eggbutikken!'), button('Til Eggbutikken 🥚', () => {
+      s.body.replaceChildren(el('p', { class: 'lead' }, 'Du har ingen dyr ennå. Gå til Eggbutikken i byen!'), button('Vis på kartet 🗺️', () => {
         s.close();
-        game.teleport('eggs');
+        game.panels.openMap();
       }, 'btn big'));
       return;
     }
@@ -291,21 +291,72 @@ export function openPets(game: Game) {
 // ---------- Kart ----------
 export function openMap(game: Game) {
   const s = sheet('Kart 🗺️', '#3fa4ff');
-  const go = (k: 'home' | 'shop' | 'vet' | 'eggs' | 'doors' | 'play') => () => {
-    s.close();
-    game.teleport(k);
+  const pins: Record<string, { e: string; n: string }> = {
+    home: { e: '🏠', n: 'Hjem' },
+    shop: { e: '🛒', n: 'Butikk' },
+    vet: { e: '🩺', n: 'Dyrlege' },
+    play: { e: '⚽', n: 'Lekeplass' },
+    eggs: { e: '🥚', n: 'Eggbutikk' },
+    doors: { e: '🚪', n: 'Dørspillet' },
   };
-  const places = [
-    { k: 'home' as const, e: '🏠', n: 'Hjem', c: '#ff8fb1' },
-    { k: 'shop' as const, e: '🛒', n: 'Butikk', c: '#ff6f6f' },
-    { k: 'vet' as const, e: '🩺', n: 'Dyrlege', c: '#3fa4ff' },
-    { k: 'play' as const, e: '⚽', n: 'Lekeplass', c: '#54c45e' },
-    { k: 'eggs' as const, e: '🥚', n: 'Eggbutikk', c: '#b05cff' },
-    { k: 'doors' as const, e: '🚪', n: 'Dørspillet', c: '#ff4fa8' },
-  ];
+  /** A flat picture of the town: where you are and where everything is. You have to walk there. */
+  const minimap = () => {
+    const size = 340;
+    const c = el('canvas', { class: 'minimap', width: String(size * 2), height: String(size * 2), style: { width: `${size}px`, height: `${size}px` } }) as HTMLCanvasElement;
+    const ctx = c.getContext('2d');
+    if (!ctx) return c;
+    const k = (size * 2) / (game.town.size * 0.9);
+    const X = (x: number) => size + x * k;
+    const Y = (z: number) => size + z * k;
+    ctx.fillStyle = '#9fe08a';
+    ctx.fillRect(0, 0, size * 2, size * 2);
+    ctx.strokeStyle = '#f2dfb8';
+    ctx.lineWidth = 16;
+    ctx.lineCap = 'round';
+    for (const z of game.town.zones) {
+      if (z.kind === 'play') continue;
+      ctx.beginPath();
+      ctx.moveTo(X(0), Y(0));
+      ctx.lineTo(X(z.x), Y(z.z));
+      ctx.stroke();
+    }
+    ctx.fillStyle = '#7fd8ff';
+    ctx.beginPath();
+    ctx.arc(X(0), Y(0), 9 * k, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.font = '700 38px Fredoka, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (const z of game.town.zones) {
+      const pin = pins[z.kind];
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(X(z.x), Y(z.z), 38, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#4a3b5c';
+      ctx.font = '40px "Apple Color Emoji","Noto Color Emoji",sans-serif';
+      ctx.fillText(pin.e, X(z.x), Y(z.z) + 3);
+      ctx.font = '700 34px Fredoka, sans-serif';
+      ctx.lineWidth = 8;
+      ctx.strokeStyle = '#ffffff';
+      ctx.strokeText(pin.n, X(z.x), Y(z.z) + 62);
+      ctx.fillText(pin.n, X(z.x), Y(z.z) + 62);
+    }
+    if (game.mode === 'town') {
+      ctx.fillStyle = '#ff4f7f';
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 8;
+      ctx.beginPath();
+      ctx.arc(X(game.player.pos.x), Y(game.player.pos.z), 16, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+    return c;
+  };
   const render = () => {
     s.body.replaceChildren(
-      el('div', { class: 'map-grid' }, ...places.map((p) => button(el('span', {}, el('span', { class: 'big-emoji' }, p.e), el('b', {}, p.n)), go(p.k), 'btn map-btn', { style: `--b:${p.c}` }))),
+      el('p', { class: 'lead' }, game.mode === 'town' ? 'Du er den rosa prikken. Gå dit du vil – alt kan nås til fots.' : 'Gå ut døra for å utforske byen.'),
+      el('div', { class: 'minimap-wrap' }, minimap()),
       el('h3', {}, 'Hus'),
       el(
         'div',

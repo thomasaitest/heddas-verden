@@ -400,34 +400,27 @@ export class Game {
     this.updateHud();
   }
 
-  exitHouse(to: 'home' | 'shop' | 'vet' | 'eggs' | 'doors' | 'play' = 'home') {
+  /** Walk out of the front door: you appear on the street in front of your house. */
+  exitHouse() {
     if (this.building) this.setBuilding(false);
     this.mode = 'town';
     this.interior.group.visible = false;
     this.town.group.visible = true;
     this.setSky();
-    this.teleport(to);
-    this.syncPets();
-    this.updateHud();
-  }
-
-  teleport(kind: 'home' | 'shop' | 'vet' | 'eggs' | 'doors' | 'play') {
-    if (this.mode === 'house') {
-      this.exitHouse(kind);
-      return;
-    }
-    const p = this.town.places[kind];
+    const p = this.town.entrances.home;
     this.player.pos.set(p.x, 0, p.z);
     this.player.vy = 0;
     this.player.yaw = p.yaw;
     this.cam.yaw = p.yaw + Math.PI;
     this.cam.pitch = 0.38;
-    this.flying = false;
+    this.cam.dist = 15;
     this.actors.forEach((a, uid) => {
       const i = this.save.equipped.indexOf(uid);
       a.pos.set(p.x + Math.sin(p.yaw + Math.PI + i) * 2.5, 0, p.z + Math.cos(p.yaw + Math.PI + i) * 2.5);
     });
-    sfx.whoosh();
+    sfx.door();
+    this.syncPets();
+    this.updateHud();
   }
 
   private setSky() {
@@ -443,7 +436,7 @@ export class Game {
         this.enterHouse();
         break;
       case 'exit':
-        this.exitHouse('home');
+        this.exitHouse();
         break;
       case 'shop':
         this.panels.openShop();
@@ -710,7 +703,7 @@ export class Game {
   private colliders(): Colliders {
     return this.mode === 'house' ? this.interior : this.town;
   }
-  /** Settle the player after jumping/teleporting/placing furniture: push out of anything solid. */
+  /** Settle the player after jumping/placing furniture: push out of anything solid. */
   private collide() {
     const pos = this.player.pos;
     if (this.mode === 'town') {
