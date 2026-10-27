@@ -45,9 +45,8 @@ if (want('shop') || want('hospital')) {
       g.cam.dist = 11;
     });
     await shot(page, 'shop-interior-1', 1500);
-    await page.evaluate(() => { const g = window.__hv; g.cam.yaw += 1.2; g.cam.pitch = 0.3; g.cam.dist = 7; });
+    await page.evaluate(() => { const g = window.__hv; const yaw = g.town.entrances.shop.yaw; g.cam.yaw = yaw + 0.25; g.cam.pitch = 1.05; g.cam.dist = 11; });
     await shot(page, 'shop-interior-2-items', 900);
-    await page.evaluate(() => { const g = window.__hv; g.cam.yaw -= 1.9; g.cam.pitch = 0.3; g.cam.dist = 5; const p = g.player.pos; const yaw = g.town.entrances.shop.yaw; p.x += Math.sin(yaw) * 0; });
   }
   if (want('hospital')) {
     await page.evaluate(() => {
@@ -156,6 +155,63 @@ if (want('play')) {
     await shot(page, name, wait * 1000);
     const prompt2 = await page.evaluate(() => document.querySelector('.prompt')?.textContent ?? null);
     console.log(id, 'while on:', prompt2, await page.evaluate(() => !!window.__hv.using));
+  }
+  await ctx.close();
+}
+
+// ---- avatar creator, tasks panel, one follower
+if (want('ui')) {
+  const { page, ctx } = await start();
+  // tasks panel: a closer shot and proof that the card is patched in place (same DOM node, no new pop animation)
+  await page.evaluate(() => {
+    const g = window.__hv;
+    const pet = g.save.pets[0];
+    g.commit({ ...g.save, pets: g.save.pets.map((p) => (p.uid === pet.uid ? { ...p, need: { kind: 'sulten', since: Date.now(), progress: 0.1 } } : p)) });
+  });
+  await page.waitForTimeout(600);
+  const same = await page.evaluate(async () => {
+    const card = document.querySelector('.tasks .task');
+    const g = window.__hv;
+    const before = card;
+    let animRestarts = 0;
+    card?.addEventListener('animationstart', () => animRestarts++);
+    for (let i = 1; i <= 8; i++) {
+      const pet = g.save.pets[0];
+      g.commit({ ...g.save, pets: g.save.pets.map((p) => (p.uid === pet.uid ? { ...p, need: { ...p.need, progress: 0.1 + i * 0.1 } } : p)) });
+      await new Promise((r) => setTimeout(r, 120));
+    }
+    return { sameNode: document.querySelector('.tasks .task') === before, animRestarts };
+  });
+  console.log('tasks card kept between 8 progress updates:', JSON.stringify(same));
+  await page.screenshot({ path: `${out}/tasks-panel.png`, clip: { x: 0, y: 0, width: 420, height: 230 } });
+  console.log('saved tasks-panel');
+  // one follower at a time: hatch-like second pet, then press "Følg meg" on it
+  await page.evaluate(() => {
+    const g = window.__hv;
+    const first = g.save.pets[0];
+    const species = ['kanin', 'hund', 'katt', 'hest', 'ugle'].find((x) => x !== first.speciesId);
+    const second = { ...first, uid: 'pet-second', name: 'Nina', speciesId: species, need: null };
+    g.commit({ ...g.save, pets: [...g.save.pets, second] }, { pets: true });
+  });
+  await page.getByRole('button', { name: /Dyr/ }).last().click();
+  await page.waitForTimeout(500);
+  console.log('equipped before', JSON.stringify(await page.evaluate(() => window.__hv.save.equipped)));
+  await shot(page, 'one-follower-1-before', 300);
+  await page.getByRole('button', { name: 'Følg meg' }).first().click();
+  await page.waitForTimeout(600);
+  console.log('equipped after', JSON.stringify(await page.evaluate(() => window.__hv.save.equipped)), 'followers shown:', await page.evaluate(() => document.querySelectorAll('.pet-card.eq').length));
+  await shot(page, 'one-follower-2-after', 300);
+  await ctx.close();
+}
+
+if (want('avatar')) {
+  const { page, ctx } = await start({ avatar: true });
+  await shot(page, 'avatar-creator-1', 800);
+  const tabs = await page.$$eval('.tabs .tab', (els) => els.map((e) => e.textContent));
+  console.log('tabs', JSON.stringify(tabs));
+  for (const [i, name] of [[1, 'avatar-creator-2'], [3, 'avatar-creator-3']]) {
+    const btns = await page.$$('.tabs .tab');
+    if (btns[i]) { await btns[i].click(); await shot(page, name, 800); }
   }
   await ctx.close();
 }
