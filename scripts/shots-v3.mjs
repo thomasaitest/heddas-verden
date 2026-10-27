@@ -73,4 +73,57 @@ if (want('shop') || want('hospital')) {
   }
   await ctx.close();
 }
+
+// ---- house: two floors, stairs, furnishing while walking
+if (want('house')) {
+  const { page, ctx } = await start();
+  await page.evaluate(() => { const g = window.__hv; g.debugFurnish(); g.enterHouse(); });
+  await page.waitForTimeout(500);
+  // walk to the middle of the ground floor, high view
+  await page.evaluate(() => { const g = window.__hv; g.player.pos.set(0, 0, 3); g.cam.yaw = 0.35; g.cam.pitch = 0.95; g.cam.dist = 19; });
+  await shot(page, 'house-floor0-overview', 900);
+  // walk up the stairs with the game loop: hold "forward" by stepping manually
+  await page.evaluate(() => { const g = window.__hv; const s = g.interior.layout.stairs; g.player.pos.set((s.x0 + s.x1) / 2, 0, s.zBottom + 1.5); g.cam.yaw = 0.9; g.cam.pitch = 0.5; g.cam.dist = 13; });
+  await shot(page, 'house-stairs-bottom', 700);
+  const walked = await page.evaluate(async () => {
+    const g = window.__hv; const s = g.interior.layout.stairs;
+    const trace = [];
+    for (let i = 0; i < 400; i++) {
+      g.input.poll = () => ({ move: { x: 0, y: -1 }, camDX: 0, camDY: 0, zoom: 0, jump: false, jumpPressed: false });
+      g.cam.yaw = 0;
+      g.step(1 / 30);
+      if (i % 50 === 0) trace.push([+g.player.pos.x.toFixed(2), +g.player.pos.y.toFixed(2), +g.player.pos.z.toFixed(2)]);
+    }
+    return { trace, floor: g.playerFloor() };
+  });
+  console.log('walk up', JSON.stringify(walked));
+  await page.evaluate(() => { const g = window.__hv; g.input.poll = () => ({ move: { x: 0, y: 0 }, camDX: 0, camDY: 0, zoom: 0, jump: false, jumpPressed: false }); g.cam.yaw = 0.35; g.cam.pitch = 0.95; g.cam.dist = 17; });
+  await shot(page, 'house-floor1-upstairs', 900);
+  await ctx.close();
+}
+
+// ---- furnishing while walking
+if (want('build')) {
+  const { page, ctx } = await start({ viewport: { width: 1180, height: 820 } });
+  await page.evaluate(() => { const g = window.__hv; g.debugFurnish(); g.enterHouse(); g.player.pos.set(-3, 0, 4.5); g.player.yaw = Math.PI * 0.9; g.cam.yaw = 0.3; });
+  await page.waitForTimeout(400);
+  await page.getByRole('button', { name: /Bygg/ }).last().click();
+  await page.waitForTimeout(500);
+  // walk around in build mode
+  const before = await page.evaluate(() => { const p = window.__hv.player.pos; return [p.x, p.z]; });
+  const after = await page.evaluate(() => {
+    const g = window.__hv;
+    g.input.poll = () => ({ move: { x: 1, y: 0 }, camDX: 0, camDY: 0, zoom: 0, jump: false, jumpPressed: false });
+    for (let i = 0; i < 40; i++) g.step(1 / 30);
+    g.input.poll = () => ({ move: { x: 0, y: 0 }, camDX: 0, camDY: 0, zoom: 0, jump: false, jumpPressed: false });
+    return [g.player.pos.x, g.player.pos.z, g.building];
+  });
+  console.log('build walk', before, after);
+  // walk to the left part of the room, then place a bed right in front of the player
+  await page.evaluate(() => { const g = window.__hv; g.player.pos.set(-7, 0, 3.5); g.player.yaw = Math.PI / 2; g.cam.yaw = 0.5; g.cam.pitch = 0.9; g.cam.dist = 17; });
+  await page.getByText('Seng', { exact: true }).first().click();
+  await page.waitForTimeout(500);
+  await shot(page, 'house-furnish-walking', 800);
+  await ctx.close();
+}
 await browser.close();

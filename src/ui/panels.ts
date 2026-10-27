@@ -520,10 +520,9 @@ export function openBuild(game: Game) {
       save = r.save;
       sfx.buy();
     }
-    // place in front of the camera view centre, a little random so items don't stack
-    const x = (Math.random() - 0.5) * 3;
-    const z = (Math.random() - 0.5) * 3;
-    const r = placeFromInventory(save, id, x, z);
+    // right in front of the player, on the floor they are standing on (the house pushes it clear of walls and stairs)
+    const spot = game.placeSpot();
+    const r = placeFromInventory(save, id, spot.x, spot.z, spot.floor);
     if (!r.ok) {
       toast('Du kan ikke bygge her', 'bad');
       return;

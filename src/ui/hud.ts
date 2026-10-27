@@ -118,6 +118,10 @@ export class Hud {
     this.petBtns.feed.classList.toggle('hidden', !s.hungry);
   }
 
+  setWhere(label: string) {
+    put(this.where, label);
+  }
+
   setMode(mode: 'town' | 'house', label: string, canBuild: boolean) {
     put(this.where, label);
     this.buildBtn.classList.toggle('hidden', !(mode === 'house' && canBuild));

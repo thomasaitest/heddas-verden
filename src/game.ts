@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { sfx, setSoundEnabled } from './audio.ts';
 import { FURN_BY_ID, HOUSE_BY_STYLE } from './logic/catalog.ts';
 import { activeHouse, buyFurniture, careAt, editHouse, feed, placeFromInventory, tickSave } from './logic/economy.ts';
+import { moveItem } from './logic/house.ts';
 import { canEdit, careItems, updateItem } from './logic/house.ts';
 import { NEED_INFO, stageOf, type CareWhere, type NeedKind, type PetState } from './logic/needs.ts';
 import { SPECIES_BY_ID } from './logic/pets.ts';
@@ -11,6 +12,7 @@ import { movePlayer, resolve, type Colliders } from './logic/collision.ts';
 import { Input } from './input.ts';
 import { animateAvatar, buildAvatar, type AvatarPose, type AvatarRig } from './three/avatarModel.ts';
 import { createInterior, type Interior } from './three/interior.ts';
+import { FLOOR_H, floorOfY, groundHeight, onStairs, roomAt } from './logic/layout.ts';
 import { blobShadow } from './three/kit.ts';
 import { animatePet, buildPet, type PetPose, type PetRig } from './three/petModel.ts';
 import { buildTown, type Town, type Zone } from './three/town.ts';
@@ -33,6 +35,9 @@ export interface PetActor {
   care: { x: number; z: number; y?: number; pose: PetPose } | null;
   happyUntil: number;
   shadow: THREE.Mesh;
+  stuck?: number;
+  lastX?: number;
+  lastZ?: number;
 }
 
 export interface PanelHooks {
@@ -394,7 +399,7 @@ export class Game {
     this.cam.dist = 14;
     this.scene.background = new THREE.Color('#ffe9f3');
     this.scene.fog = null;
-    this.actors.forEach((a) => a.pos.set(this.player.pos.x + (this.rng() - 0.5) * 3, 0, this.player.pos.z - 2));
+    this.actors.forEach((a) => a.pos.set(this.player.pos.x + (this.rng() - 0.5) * 3, 0, this.player.pos.z - 2.5));
     this.syncPets();
     sfx.door();
     this.updateHud();
@@ -464,8 +469,9 @@ export class Game {
     this.interior.select(null);
     this.holding = null;
     if (on) {
-      this.cam.pitch = 0.95;
-      this.cam.dist = Math.max(this.interior.w, this.interior.d) * 1.25;
+      // an overview, but you stay in the room and can keep walking around while you furnish
+      this.cam.pitch = Math.max(this.cam.pitch, 0.85);
+      this.cam.dist = Math.max(this.cam.dist, 20);
     } else {
       this.cam.pitch = 0.6;
       this.cam.dist = 14;
@@ -485,13 +491,25 @@ export class Game {
   }
   private pickItem(x: number, y: number): string | null {
     this.raycaster.setFromCamera(this.ndc(x, y), this.camera);
-    const hits = this.raycaster.intersectObjects([...this.interior.items.values()], true);
+    const floor = this.playerFloor();
+    const candidates = [...this.interior.items.values()].filter((g) => ((g.userData.floor as number) ?? 0) <= floor);
+    const hits = this.raycaster.intersectObjects(candidates, true);
     return (hits[0]?.object.userData.uid as string) ?? null;
   }
-  private floorPoint(x: number, y: number): THREE.Vector3 | null {
+  /** Where the pointer touches the floor plane of the given storey. */
+  private floorPoint(x: number, y: number, floor = 0): THREE.Vector3 | null {
     this.raycaster.setFromCamera(this.ndc(x, y), this.camera);
     const p = new THREE.Vector3();
-    return this.raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), p) ? p : null;
+    return this.raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -floor * FLOOR_H), p) ? p : null;
+  }
+  playerFloor(): number {
+    return this.mode === 'house' ? floorOfY(this.player.pos.y) : 0;
+  }
+  /** A free-ish spot a couple of steps in front of the player, on the player's floor, for new furniture. */
+  placeSpot(): { x: number; z: number; floor: number } {
+    const p = this.player;
+    const j = () => (this.rng() - 0.5) * 0.8;
+    return { x: p.pos.x + Math.sin(p.yaw) * 2.8 + j(), z: p.pos.z + Math.cos(p.yaw) * 2.8 + j(), floor: this.playerFloor() };
   }
   private onTap(x: number, y: number) {
     if (this.building) {
@@ -514,7 +532,7 @@ export class Game {
     const uid = this.pickItem(x, y);
     if (!uid) return false;
     const g = this.interior.items.get(uid)!;
-    const p = this.floorPoint(x, y);
+    const p = this.floorPoint(x, y, (g.userData.floor as number) ?? 0);
     if (!p) return false;
     this.selectItem(uid);
     this.dragItem = { uid, dx: g.position.x - p.x, dz: g.position.z - p.z };
@@ -522,11 +540,11 @@ export class Game {
   }
   private onDragMove(x: number, y: number) {
     if (!this.dragItem) return;
-    const p = this.floorPoint(x, y);
-    if (!p) return;
     const house = activeHouse(this.save);
     const it = house.items.find((i) => i.uid === this.dragItem!.uid);
     if (!it) return;
+    const p = this.floorPoint(x, y, it.floor);
+    if (!p) return;
     const nx = p.x + this.dragItem.dx;
     const nz = p.z + this.dragItem.dz;
     this.moveItemLive(it.uid, nx, nz);
@@ -534,7 +552,9 @@ export class Game {
   moveItemLive(uid: string, x: number, z: number) {
     const save = this.save;
     const house = activeHouse(save);
-    const h = updateItem(house, uid, { x, z });
+    // swept, so furniture slides along walls and can never be dragged through them
+    const h = moveItem(house, uid, x, z);
+    if (h === house) return;
     this.commit({ ...save, houses: save.houses.map((x2) => (x2.id === h.id ? h : x2)) });
   }
 
@@ -567,7 +587,7 @@ export class Game {
     const t = this.time;
     const now = Date.now();
     const inp = this.input.poll();
-    const frozen = this.paused || this.building || this.editingAvatar;
+    const frozen = this.paused || this.editingAvatar;
 
     // needs tick
     if (now - this.lastTickAt > 1000) {
@@ -589,7 +609,7 @@ export class Game {
     }
 
     // camera input
-    const maxDist = this.building ? 60 : this.mode === 'house' ? 22 : 34;
+    const maxDist = this.building ? 30 : this.mode === 'house' ? 22 : 34;
     this.cam = orbit(this.cam, inp.camDX, inp.camDY, inp.zoom, maxDist);
 
     // movement
@@ -636,8 +656,10 @@ export class Game {
       }
       p.vy -= GRAVITY * dt;
       p.pos.y += p.vy * dt;
-      if (p.pos.y <= 0) {
-        p.pos.y = 0;
+      const ground = this.groundHere();
+      // walking up/down the stairs keeps you on the ramp; a jump or a fall lands on it
+      if (p.pos.y <= ground || (p.grounded && p.vy <= 0 && p.pos.y - ground < 1.5 && this.mode === 'house')) {
+        p.pos.y = ground;
         p.vy = 0;
         p.grounded = true;
       }
@@ -656,7 +678,7 @@ export class Game {
     if (ride) this.avatarHolder.position.y += ride.rig.seatY * this.actorScale(ride) - 0.95;
     this.avatarHolder.rotation.y = p.yaw;
     animateAvatar(this.avatar, t, pose, mlen, !!this.holding);
-    this.avatarShadow.position.set(p.pos.x, 0.03, p.pos.z);
+    this.avatarShadow.position.set(p.pos.x, this.groundAt(p.pos.x, p.pos.y, p.pos.z) + 0.03, p.pos.z);
     this.avatarShadow.visible = !ride;
 
     // pets
@@ -667,7 +689,11 @@ export class Game {
 
     // camera
     const target = new THREE.Vector3(p.pos.x, p.pos.y + (ride ? 3.5 : 2.4), p.pos.z);
-    if (this.building) target.set(0, 0, this.interior.d * 0.28);
+    // while furnishing, the panel covers the lower right: shift the picture up so you and the room stay in view
+    const vw = this.renderer.domElement.clientWidth;
+    const vh = this.renderer.domElement.clientHeight;
+    if (this.building && vw > 0) this.camera.setViewOffset(vw, vh, 0, vh * 0.16, vw, vh);
+    else if (this.camera.view?.enabled) this.camera.clearViewOffset();
     if (this.editingAvatar) {
       const fy = p.yaw;
       this.camera.position.set(p.pos.x + Math.sin(fy) * 6.5 + Math.cos(fy) * 1.6, p.pos.y + 2.4, p.pos.z + Math.cos(fy) * 6.5 - Math.sin(fy) * 1.6);
@@ -686,13 +712,25 @@ export class Game {
       this.camera.lookAt(target);
     }
     if (this.mode === 'house') {
-      this.interior.updateWalls(this.camera.position);
+      this.interior.updateWalls(this.camera.position, new THREE.Vector3(p.pos.x, p.pos.y, p.pos.z), this.playerFloor());
       this.interior.update(t);
+      const room = roomAt(this.interior.layout, this.playerFloor(), p.pos.x, p.pos.z);
+      this.hud.setWhere(`${HOUSE_BY_STYLE[activeHouse(this.save).style].name} · ${onStairs(this.interior.layout.stairs, p.pos.x, p.pos.z) ? 'Trapp' : room?.name ?? ''}${this.playerFloor() ? ' (oppe)' : ''}`);
     } else this.town.update(t, p.pos.x, p.pos.z, this.camera.position.x, this.camera.position.z);
 
     // sun follows the player for crisp shadows nearby
     this.sun.position.set(p.pos.x + 20, 45, p.pos.z + 14);
     this.sun.target.position.set(p.pos.x, 0, p.pos.z);
+  }
+
+  /** Ground under any point (for shadows). */
+  private groundAt(x: number, y: number, z: number): number {
+    return this.mode === 'house' ? groundHeight(this.interior.layout, x, z, floorOfY(y)) : 0;
+  }
+  /** Height of the walkable floor under the player (stairs are a ramp). */
+  private groundHere(): number {
+    if (this.mode !== 'house') return 0;
+    return groundHeight(this.interior.layout, this.player.pos.x, this.player.pos.z, floorOfY(this.player.pos.y));
   }
 
   /** Player body size: smaller indoors so furniture doesn't feel like a maze. */
@@ -701,7 +739,7 @@ export class Game {
     return this.riding ? 1.3 : 0.55;
   }
   private colliders(): Colliders {
-    return this.mode === 'house' ? this.interior : this.town;
+    return this.mode === 'house' ? this.interior.collidersFor(this.playerFloor()) : this.town;
   }
   /** Settle the player after jumping/placing furniture: push out of anything solid. */
   private collide() {
@@ -770,6 +808,9 @@ export class Game {
       } else {
         let target: THREE.Vector3 | null = null;
         let stopDist = 0.3;
+        const inHouse = this.mode === 'house';
+        const lay = this.interior.layout;
+        const petFloor = inHouse ? floorOfY(a.pos.y) : 0;
         if (a.care) {
           target = new THREE.Vector3(a.care.x, 0, a.care.z);
           stopDist = 0.5;
@@ -779,11 +820,23 @@ export class Game {
           target = new THREE.Vector3(p.pos.x + Math.sin(ang) * off, 0, p.pos.z + Math.cos(ang) * off);
           stopDist = 0.6;
           followIdx++;
+          if (inHouse && petFloor !== this.playerFloor()) {
+            // on another floor: walk to the foot of the stairs, then up (or down) them
+            const s = lay.stairs;
+            const lane = (s.x0 + s.x1) / 2;
+            const downstairs = petFloor === 0;
+            const nearBottom = Math.abs(a.pos.z - s.zBottom) < 2.5 && Math.abs(a.pos.x - lane) < 3;
+            const onRamp = onStairs(s, a.pos.x, a.pos.z) || nearBottom;
+            target = downstairs ? (onRamp ? new THREE.Vector3(lane, 0, s.zTop - 1) : new THREE.Vector3(lane, 0, s.zBottom + 1.2)) : onRamp ? new THREE.Vector3(lane, 0, s.zBottom + 1.5) : new THREE.Vector3(lane, 0, s.zTop - 0.6);
+            if (onStairs(s, a.pos.x, a.pos.z)) target = new THREE.Vector3(lane, 0, downstairs ? s.zTop - 1 : s.zBottom + 1.5);
+            stopDist = 0.3;
+          }
         } else {
           // resting pets wander around the house
           if (!a.wanderTarget || t > a.wanderAt) {
             a.wanderTarget = new THREE.Vector3((this.rng() - 0.5) * (this.interior.w - 3), 0, (this.rng() - 0.5) * (this.interior.d - 3));
             a.wanderAt = t + 4 + this.rng() * 6;
+            if (inHouse && petFloor === 0 && onStairs(lay.stairs, a.wanderTarget.x, a.wanderTarget.z)) a.wanderTarget.z = lay.stairs.zBottom + 2;
           }
           target = a.wanderTarget;
         }
@@ -791,8 +844,18 @@ export class Game {
         const dz = target.z - a.pos.z;
         const d = Math.hypot(dx, dz);
         const flyingPet = pet.flyable && equipped && this.flying;
-        if (d > 25 && equipped) {
-          a.pos.set(target.x, 0, target.z);
+        // a pet that has been stuck against a wall for a moment is lifted to the player (fine for a toy world)
+        if (inHouse && equipped && !a.care) {
+          a.stuck = d > stopDist + 0.5 && Math.hypot(a.pos.x - (a.lastX ?? a.pos.x), a.pos.z - (a.lastZ ?? a.pos.z)) < dt * 0.4 ? (a.stuck ?? 0) + dt : 0;
+        }
+        a.lastX = a.pos.x;
+        a.lastZ = a.pos.z;
+        if ((d > 25 && equipped) || ((a.stuck ?? 0) > 2.5 && equipped)) {
+          if (inHouse) {
+            a.pos.set(p.pos.x - Math.sin(p.yaw) * 1.6, p.pos.y, p.pos.z - Math.cos(p.yaw) * 1.6);
+            resolve(a.pos, 0.5, this.interior.collidersFor(this.playerFloor()));
+            a.stuck = 0;
+          } else a.pos.set(target.x, 0, target.z);
         } else if (d > stopDist) {
           const sp = Math.min(d * 3, equipped ? (this.riding ? RIDE : WALK) * 1.15 : 3);
           a.pos.x += (dx / d) * sp * dt;
@@ -807,9 +870,12 @@ export class Game {
             a.yaw += Math.sin(t) * 0.002;
           }
         }
+        if (inHouse) resolve(a.pos, 0.5, this.interior.collidersFor(floorOfY(a.pos.y)));
         const near = a.care && Math.hypot(a.care.x - a.pos.x, a.care.z - a.pos.z) < 1.2;
-        const targetY = near ? (a.care!.y ?? 0) : equipped && p.pos.y > 1 ? Math.max(0, p.pos.y - 0.5) : 0;
-        a.pos.y += (targetY - a.pos.y) * Math.min(1, dt * 4);
+        let targetY = near ? (a.care!.y ?? 0) : equipped && p.pos.y > 1 && !inHouse ? Math.max(0, p.pos.y - 0.5) : 0;
+        if (inHouse && !near) targetY = groundHeight(lay, a.pos.x, a.pos.z, floorOfY(a.pos.y));
+        if (inHouse && !near && onStairs(lay.stairs, a.pos.x, a.pos.z)) a.pos.y = targetY;
+        else a.pos.y += (targetY - a.pos.y) * Math.min(1, dt * 4);
         if (a.pos.y > 1 && (flyingPet || pet.flyable) && !near) pose = 'fly';
         if (pet.need?.kind === 'syk' && pose === 'idle') pose = 'sick';
       }
@@ -818,7 +884,7 @@ export class Game {
       a.rig.root.position.copy(a.pos);
       a.rig.root.rotation.y = a.yaw;
       animatePet(a.rig, t + a.uid.length, pose, a.speed);
-      a.shadow.position.set(a.pos.x, 0.025, a.pos.z);
+      a.shadow.position.set(a.pos.x, this.groundAt(a.pos.x, a.pos.y, a.pos.z) + 0.025, a.pos.z);
       a.shadow.scale.setScalar(s);
       a.shadow.visible = this.riding !== a.uid && this.holding !== a.uid;
       // need bubble
@@ -855,7 +921,7 @@ export class Game {
       }
     } else {
       const d = Math.hypot(p.x - this.interior.door.x, p.z - this.interior.door.z);
-      if (d < 2) near = { kind: 'exit', label: 'Gå ut 🚪' };
+      if (d < 2 && this.playerFloor() === 0) near = { kind: 'exit', label: 'Gå ut 🚪' };
     }
     if (this.building || this.editingAvatar || this.paused) near = null;
     this.nearZone = near;
@@ -885,10 +951,10 @@ export class Game {
       else if (house && (where === 'seng' || where === 'bad' || where === 'lek')) {
         for (const it of careItems(house, where)) {
           const def = FURN_BY_ID[it.itemId];
-          if (Math.hypot(p.x - it.x, p.z - it.z) < def.size * it.scale * 0.7 + 2.2) {
+          if (it.floor === this.playerFloor() && Math.hypot(p.x - it.x, p.z - it.z) < def.size * it.scale * 0.7 + 2.2) {
             amount = dt;
             const lift = def.model === 'petbed' ? 0.25 : where === 'seng' ? 0.85 : where === 'bad' && (def.model === 'bathtub' || def.model === 'hottub') ? 0.7 : 0;
-            a.care = { x: it.x, z: it.z, y: lift * it.scale, pose: where === 'seng' ? 'sleep' : 'happy' };
+            a.care = { x: it.x, z: it.z, y: lift * it.scale + it.floor * FLOOR_H, pose: where === 'seng' ? 'sleep' : 'happy' };
             break;
           }
         }
@@ -929,16 +995,18 @@ export class Game {
   /** Fill the room with a nice set of furniture (used for demo screenshots). */
   debugFurnish() {
     let s: SaveData = { ...this.save, bucks: Math.max(this.save.bucks, 3000) };
-    const plan: [string, number, number, number][] = [
-      ['seng', -3.4, -4.3, 0], ['sofa', 2, -4.9, 0], ['salongbord', 2, -2.4, 0], ['lenestol', 5, -1.6, -Math.PI / 2],
-      ['bokhylle', -7.3, 0.5, Math.PI / 2], ['gulvlampe', -0.6, -5.4, 0], ['ballonger', -6.8, 4.6, 0], ['maleri', 2, -6, 0],
-      ['klokke', -3.4, -6, 0], ['lysslynge', 7.6, 0, 0], ['akvarium', 6.8, 3, -Math.PI / 2], ['regnbueteppe', -3.8, 2.2, 0],
-      ['bamse', -5.4, 2.6, 0.5], ['ball', -1.6, 2.4, 0], ['lavalampe', 4, -5.2, 0], ['kaktus', 7, -2.8, 0], ['hjertepute', 1, -1, 0.3],
+    // a cosy ground floor (living room in the middle, bedroom and bathroom in the back) and a kids' room upstairs
+    const plan: [string, number, number, number, number][] = [
+      ['seng', -7.2, -6.3, 0, 0], ['sofa', 1.5, -1.2, 0, 0], ['salongbord', 1.5, 1.0, 0, 0], ['lenestol', 3.6, 1.4, -Math.PI / 2, 0],
+      ['bokhylle', -9.6, 1.2, Math.PI / 2, 0], ['gulvlampe', -0.2, -1.6, 0, 0], ['maleri', 2, -8.7, 0, 0],
+      ['klokke', -6.5, -8.7, 0, 0], ['akvarium', 8.5, 2.2, -Math.PI / 2, 0], ['regnbueteppe', -4.5, 3.0, 0, 0],
+      ['bamse', -6.2, 3.4, 0.5, 0], ['ball', -2.8, 4.0, 0, 0], ['kaktus', 9, -0.6, 0, 0], ['hjertepute', -1.8, 2.0, 0.3, 0],
+      ['seng', -7.2, -6.3, 0, 1], ['lavalampe', 7, -6, 0, 1], ['ballonger', -8.5, 4.6, 0, 1], ['regnbueteppe', 6, -2.5, 0, 1], ['bamse', 5.4, 0.5, 0.4, 1],
     ];
-    for (const [id, x, z, rot] of plan) {
+    for (const [id, x, z, rot, floor] of plan) {
       const b = buyFurniture(s, id);
       if (!b.ok) continue;
-      const r = placeFromInventory(b.save, id, x, z);
+      const r = placeFromInventory(b.save, id, x, z, floor);
       if (!r.ok) continue;
       s = r.save;
       const h = activeHouse(s);

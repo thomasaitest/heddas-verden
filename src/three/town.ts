@@ -100,11 +100,13 @@ function openBuilding(w: number, d: number, h: number, wall: string, roof: strin
 function homeExterior(style: HouseStyle): THREE.Group {
   const info = HOUSE_BY_STYLE[style];
   const g = new THREE.Group();
-  const w = style === 'slott' ? 18 : style === 'gard' ? 16 : style === 'villa' ? 15 : 12;
+  const w = style === 'slott' ? 22 : style === 'gard' ? 19 : style === 'villa' ? 17 : 14;
   const d = w * 0.75;
-  const h = style === 'slott' ? 9 : 7;
-  solid(box(g, '#e8d8c4', [0, 0.25, 0], [w + 1, 0.5, d + 1]), 'rect', 0, 14);
-  solid(box(g, info.wall, [0, h / 2 + 0.5, 0], [w, h, d]), 'rect', 0, 14);
+  const h = style === 'slott' ? 14 : 12; // two floors
+
+  solid(box(g, '#e8d8c4', [0, 0.25, 0], [w + 1, 0.5, d + 1]), 'rect', 0, 18);
+  solid(box(g, info.wall, [0, h / 2 + 0.5, 0], [w, h, d]), 'rect', 0, 18);
+  box(g, '#ffffff', [0, 6.9, 0], [w + 0.3, 0.4, d + 0.3]); // the line between the two floors
   box(g, '#ffffff', [0, 0.7, 0], [w + 0.2, 0.4, d + 0.2]);
   // roof
   if (style === 'slott') {
@@ -128,6 +130,8 @@ function homeExterior(style: HouseStyle): THREE.Group {
   for (const s of [-1, 1]) {
     box(g, '#ffffff', [s * (w / 2 - 2.6), 4, d / 2 + 0.05], [2.4, 2.2, 0.2]);
     box(g, '#bfe9ff', [s * (w / 2 - 2.6), 4, d / 2 + 0.12], [2, 1.8, 0.1], undefined, 0.3);
+    box(g, '#ffffff', [s * (w / 2 - 2.6), 9.6, d / 2 + 0.05], [2.4, 2.4, 0.2]);
+    box(g, '#bfe9ff', [s * (w / 2 - 2.6), 9.6, d / 2 + 0.12], [2, 2, 0.1], undefined, 0.3);
     rbox(g, '#7ccf6a', [s * (w / 2 - 2.6), 2.8, d / 2 + 0.5], [2.6, 0.6, 0.7]);
     for (let i = 0; i < 3; i++) sph(g, ['#ff8fb1', '#ffe066', '#ff6f6f'][i], [s * (w / 2 - 2.6) + (i - 1) * 0.7, 3.2, d / 2 + 0.55], [0.4, 0.4, 0.4]);
   }
@@ -135,7 +139,7 @@ function homeExterior(style: HouseStyle): THREE.Group {
   box(g, ROAD, [0, 0.03, d / 2 + 3], [3, 0.06, 5]);
   solid(cyl(g, '#a0632f', [3.5, 0.8, d / 2 + 3], [0.2, 1.6, 0.2]), 'circle', 0.3);
   rbox(g, '#ff6f6f', [3.5, 1.8, d / 2 + 3], [0.7, 0.6, 1.0]);
-  sign(g, 'Hjem', 5.9, d / 2 + 0.12, '#ff8fb1', 3.6);
+  sign(g, 'Hjem', 8.0, d / 2 + 0.12, '#ff8fb1', 3.6);
   g.userData.size = { w: w + 1, d: d + 1 };
   return g;
 }
