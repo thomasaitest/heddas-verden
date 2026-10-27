@@ -17,6 +17,20 @@ export interface PetState extends OwnedPet {
   need: Need | null;
   nextNeedAt: number;
   lastNeed: NeedKind | null;
+  /** How happy the pet is, 0–1 right after `joyAt` (playing with toys raises it; it fades over 10 minutes). Missing = 0. */
+  joy?: number;
+  joyAt?: number;
+}
+
+export const JOY_FADE_MS = 10 * 60_000;
+/** Happiness right now (0–1). */
+export function joyNow(pet: Pick<PetState, 'joy' | 'joyAt'>, now: number): number {
+  const j = pet.joy ?? 0;
+  if (j <= 0) return 0;
+  return Math.max(0, Math.min(1, j - Math.max(0, now - (pet.joyAt ?? now)) / JOY_FADE_MS));
+}
+export function addJoy<T extends PetState>(pet: T, amount: number, now: number): T {
+  return { ...pet, joy: Math.max(0, Math.min(1, joyNow(pet, now) + amount)), joyAt: now };
 }
 
 export const NEED_INFO: Record<NeedKind, { label: string; emoji: string; where: CareWhere; hint: string; reward: number; weight: number }> = {

@@ -1,15 +1,16 @@
 import { sfx } from '../audio.ts';
 import { ACCESSORIES, BOTTOMS, CLOTH_COLORS, FACES, HAIR_COLORS, HAIR_STYLES, HATS, randomAvatar, SHIRT_PRINTS, SHOES, SKIN, type Avatar } from '../logic/avatar.ts';
-import { FLOOR_COLORS, FOODS, FOOD_BY_ID, FURN_BY_ID, FURN_CATS, FURNITURE, HOUSES, PALETTE, POTIONS, WALL_COLORS, type FurnCat } from '../logic/catalog.ts';
+import { FLOOR_COLORS, FOODS, FOOD_BY_ID, FURN_BY_ID, FURN_CATS, FURNITURE, HOUSES, PALETTE, POTIONS, TOYS, WALL_COLORS, type FurnCat } from '../logic/catalog.ts';
 import { POINTS, ITEM_INFO, newGame, openDoor, useMagnifier, type DoorGame } from '../logic/doors.ts';
-import { activeHouse, addBucks, buyAndHatch, buyFood, buyFurniture, buyHouse, buyPotion, editHouse, placeFromInventory, renamePet, storeItem, toggleEquip, usePotion } from '../logic/economy.ts';
+import { activeHouse, addBucks, buyAndHatch, buyFood, buyFurniture, buyHouse, buyPotion, buyToy, editHouse, placeFromInventory, renamePet, storeItem, toggleEquip, usePotion } from '../logic/economy.ts';
 import { rotateItem, updateItem } from '../logic/house.ts';
-import { NEED_INFO, stageOf, stageProgress, STAGES, type PetState } from '../logic/needs.ts';
+import { joyNow, NEED_INFO, stageOf, stageProgress, STAGES, type PetState } from '../logic/needs.ts';
 import { EGGS, RARITY_INFO, SPECIES_BY_ID, type EggType } from '../logic/pets.ts';
 import type { Game } from '../game.ts';
 import { buildAvatar } from '../three/avatarModel.ts';
 import { buildFurniture } from '../three/furniture.ts';
 import { buildPet } from '../three/petModel.ts';
+import { buildToy } from '../three/toys.ts';
 import { bucksText, button, el, sheet, toast, type Sheet } from './dom.ts';
 
 const price = (n: number) => el('span', { class: 'price' }, el('span', { class: 'coin sm' }, 'B'), n === 0 ? 'Gratis' : bucksText(n));
@@ -20,6 +21,10 @@ export function petThumb(game: Game, speciesId: string): string {
 export function furnThumb(game: Game, id: string): string {
   const f = FURN_BY_ID[id];
   return game.thumbs.get(`f-${id}`, () => buildFurniture(f.model, f.color), { yaw: -0.5, pitch: f.wall ? 0.1 : 0.5 });
+}
+
+export function toyThumb(game: Game, id: string): string {
+  return game.thumbs.get(`toy-${id}`, () => buildToy(id), { yaw: -0.5, pitch: 0.5 });
 }
 
 function failText(reason: string): string {
@@ -56,6 +61,35 @@ export function openShop(game: Game) {
             }, 'btn buy'),
           ),
         ),
+      ),
+      el('h3', {}, 'Leker 🧸'),
+      el('p', { class: 'hint' }, 'Dyrene elsker å leke! Lekene ligger i ryggsekken, og du kan bruke dem så mye du vil.'),
+      el(
+        'div',
+        { class: 'grid' },
+        ...TOYS.map((t) => {
+          const have = !!game.save.bag[t.id];
+          return el(
+            'div',
+            { class: 'card' },
+            el('img', { class: 'thumb', src: toyThumb(game, t.id), alt: '' }),
+            el('b', {}, t.name),
+            el('small', {}, t.text),
+            have
+              ? el('small', { class: 'owned' }, 'Du har den ✓')
+              : button(price(t.price), () => {
+                  const r = buyToy(game.save, t.id);
+                  if (!r.ok) {
+                    toast(failText(r.reason), 'bad');
+                    sfx.nope();
+                    return;
+                  }
+                  sfx.buy();
+                  game.commit(r.save);
+                  render();
+                }, 'btn buy'),
+          );
+        }),
       ),
     );
   };
@@ -169,6 +203,24 @@ export function openBag(game: Game) {
       foods.length
         ? el('div', { class: 'grid small' }, ...foods.map((f) => el('div', { class: 'card mini' }, el('div', { class: 'big-emoji' }, f.emoji), el('b', {}, `${f.name} ×${bag[f.id]}`))))
         : el('p', { class: 'empty' }, 'Tomt! Kjøp mat i Butikken.'),
+      el('h3', {}, 'Leker'),
+      TOYS.some((t) => bag[t.id])
+        ? el(
+            'div',
+            { class: 'grid small' },
+            ...TOYS.filter((t) => bag[t.id]).map((t) =>
+              el(
+                'div',
+                { class: 'card mini' },
+                el('img', { class: 'thumb', src: toyThumb(game, t.id), alt: '' }),
+                el('b', {}, t.name),
+                button('Lek! 🎾', () => {
+                  if (game.playWithToy(t.id)) s.close();
+                }, 'btn small green'),
+              ),
+            ),
+          )
+        : el('p', { class: 'empty' }, 'Ingen leker ennå. Kjøp i Butikken!'),
       el('h3', {}, 'Trylledrikker'),
       POTIONS.some((p) => bag[p.id])
         ? el('div', { class: 'grid small' }, ...POTIONS.filter((p) => bag[p.id]).map((p) => el('div', { class: 'card mini' }, el('div', { class: 'big-emoji' }, p.emoji), el('b', {}, `${p.name} ×${bag[p.id]}`), el('small', {}, 'Brukes fra 🐾 Dyr'))))
@@ -181,6 +233,27 @@ export function openBag(game: Game) {
     );
   };
   render();
+}
+
+export function toyMenu(game: Game) {
+  const s = sheet('Lek med dyret 🎾', '#5cc3f2', undefined, 'narrow');
+  const pet = game.mainPet();
+  const owned = TOYS.filter((t) => game.save.bag[t.id]);
+  s.body.replaceChildren(
+    el('p', { class: 'lead' }, pet ? `Hva skal ${pet.name} leke med?` : 'Hva skal dyret leke med?'),
+    owned.length
+      ? el(
+          'div',
+          { class: 'grid small' },
+          ...owned.map((t) =>
+            button(el('span', { class: 'food-btn' }, el('img', { class: 'thumb', src: toyThumb(game, t.id), alt: '' }), t.name), () => {
+              s.close();
+              game.playWithToy(t.id);
+            }, 'card mini tap'),
+          ),
+        )
+      : el('p', { class: 'empty' }, 'Du har ingen leker. Kjøp i Butikken 🛒'),
+  );
 }
 
 export function feedMenu(game: Game, uid: string) {
@@ -254,6 +327,7 @@ export function openPets(game: Game) {
               el('b', {}, p.name),
               el('div', { class: 'row-l' }, el('span', { class: 'rarity sm', style: { background: rar.color } }, rar.label), el('span', { class: 'sp' }, sp.name)),
               el('div', { class: 'age' }, `${st.name}`, el('span', { class: 'bar' }, el('i', { style: { width: `${Math.round(stageProgress(p.xp) * 100)}%` } })), STAGES[STAGES.length - 1].name === st.name ? '⭐' : ''),
+              el('div', { class: 'age joy' }, '💖 Glede', el('span', { class: 'bar' }, el('i', { style: { width: `${Math.round(joyNow(p, Date.now()) * 100)}%`, background: 'linear-gradient(90deg,#ffb3d1,#ff5fa2)' } }))),
               el('div', { class: 'badges' }, p.flyable ? el('span', { class: 'badge fly' }, '🪽 Fly') : null, p.rideable ? el('span', { class: 'badge ride' }, '🐎 Ri') : null, p.need && eq ? el('span', { class: 'badge need' }, `${NEED_INFO[p.need.kind].emoji} ${NEED_INFO[p.need.kind].label}`) : null),
             ),
             el(

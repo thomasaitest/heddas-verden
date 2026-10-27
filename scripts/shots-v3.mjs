@@ -215,4 +215,33 @@ if (want('avatar')) {
   }
   await ctx.close();
 }
+
+// ---- toys
+if (want('toys')) {
+  const { page, ctx } = await start();
+  await page.evaluate(() => { const g = window.__hv; g.commit({ ...g.save, bucks: 300, pets: g.save.pets.map((p) => ({ ...p, need: null, nextNeedAt: Date.now() + 1e9 })) }); g.player.pos.set(g.town.spawn.x, 0, g.town.spawn.z); });
+  await page.getByRole('button', { name: /Sekk/ }).last().click();
+  await page.waitForTimeout(600);
+  await shot(page, 'toys-backpack', 300);
+  await page.getByRole('button', { name: '✕' }).first().click().catch(() => {});
+  await page.evaluate(() => window.__hv.panels.openShop());
+  await page.waitForTimeout(500);
+  await page.evaluate(() => { const b = document.querySelector('.sheet-body'); const h = [...b.querySelectorAll('h3')].find((x) => x.textContent.includes('Leker')); h?.scrollIntoView(); });
+  await shot(page, 'toys-shop', 400);
+  await page.evaluate(() => document.querySelectorAll('.sheet-wrap').forEach((e) => e.remove()));
+  await page.evaluate(() => { window.__hv.paused = false; });
+  const cam = (g, yaw) => { g.cam.yaw = yaw; g.cam.pitch = 0.5; g.cam.dist = 13; };
+  for (const [id, name, wait] of [['leke-ball', 'toys-fetch-ball', 2000], ['leke-garn', 'toys-chase-yarn', 2600], ['leke-bamse', 'toys-cuddle-teddy', 3800]]) {
+    await page.evaluate(() => { const g = window.__hv; const b = { ...g.save.bag, 'leke-bamse': 1, 'leke-pinne': 1 }; g.commit({ ...g.save, bag: b }); g.player.yaw = 0.6; });
+    const ok = await page.evaluate(([id]) => { const g = window.__hv; g.cam.yaw = g.player.yaw + 1.35; g.cam.pitch = 0.45; g.cam.dist = 12; return g.playWithToy(id); }, [id]);
+    console.log(id, 'started:', ok, 'joy bar:', await page.evaluate(() => Math.round((window.__hv.save.pets[0].joy ?? 0) * 100)) + '%');
+    await shot(page, name, wait);
+    // let it finish
+    await page.waitForFunction(() => !window.__hv.playing(), null, { timeout: 25000 }).catch(() => console.log('still playing after 25s'));
+  }
+  // happiness in the pet panel
+  await page.evaluate(() => window.__hv.panels.openPets());
+  await shot(page, 'toys-happiness-bar', 500);
+  await ctx.close();
+}
 await browser.close();

@@ -1,5 +1,5 @@
 import { cleanAvatar, DEFAULT_AVATAR, type Avatar } from './avatar.ts';
-import { FOOD_BY_ID, FURN_BY_ID, POTIONS } from './catalog.ts';
+import { FOOD_BY_ID, FURN_BY_ID, POTIONS, STARTER_TOYS, TOY_BY_ID } from './catalog.ts';
 import { EGG_BY_ID, SPECIES_BY_ID } from './pets.ts';
 import { deserializeHouse, newHouse, type House } from './house.ts';
 import type { PetState } from './needs.ts';
@@ -23,6 +23,8 @@ export interface SaveData {
   stats: { tasks: number; hatched: number; doorWins: number };
   sound: boolean;
   starterClaimed: boolean;
+  /** The starter toys have been put in the backpack (older saves get them once). */
+  toysGiven?: boolean;
 }
 
 export const SAVE_KEY = 'heddasverden-save-v1';
@@ -42,16 +44,17 @@ export function freshSave(now = Date.now()): SaveData {
     pets: [],
     equipped: [],
     inventory: { seng: 1, sofa: 1, ball: 1 },
-    bag: { eple: 2, vann: 2 },
+    bag: { eple: 2, vann: 2, ...Object.fromEntries(STARTER_TOYS.map((t) => [t, 1])) },
     houses: [house],
     activeHouseId: house.id,
     stats: { tasks: 0, hatched: 0, doorWins: 0 },
     sound: true,
     starterClaimed: false,
+    toysGiven: true,
   };
 }
 
-const isBagId = (id: string) => !!FOOD_BY_ID[id] || !!EGG_BY_ID[id] || POTIONS.some((p) => p.id === id);
+const isBagId = (id: string) => !!FOOD_BY_ID[id] || !!TOY_BY_ID[id] || !!EGG_BY_ID[id] || POTIONS.some((p) => p.id === id);
 const counts = (raw: unknown, ok: (id: string) => boolean): Record<string, number> =>
   Object.fromEntries(
     Object.entries(raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {})
@@ -80,6 +83,7 @@ export function parseSave(json: string | null, now = Date.now()): SaveData {
         need: p.need && typeof p.need.kind === 'string' ? { kind: p.need.kind, since: Number(p.need.since) || now, progress: Number(p.need.progress) || 0 } : null,
         nextNeedAt: Number(p.nextNeedAt) || now,
         lastNeed: p.lastNeed ?? null,
+        ...(Number(p.joy) > 0 ? { joy: Math.min(1, Number(p.joy)), joyAt: Number(p.joyAt) || now } : {}),
       }));
     const save: SaveData = {
       ...base,
@@ -96,7 +100,12 @@ export function parseSave(json: string | null, now = Date.now()): SaveData {
       stats: { ...base.stats, ...(raw.stats ?? {}) },
       sound: raw.sound !== false,
       starterClaimed: !!raw.starterClaimed,
+      toysGiven: true,
     };
+    if (!raw.toysGiven) {
+      // saves from before the toys existed: one ball and one yarn ball as a gift, once
+      for (const t of STARTER_TOYS) save.bag[t] = Math.max(1, save.bag[t] ?? 0);
+    }
     if (!save.houses.some((h) => h.id === save.activeHouseId)) save.activeHouseId = save.houses[0].id;
     return save;
   } catch {

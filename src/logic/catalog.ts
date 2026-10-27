@@ -166,3 +166,26 @@ export const HOUSE_BY_STYLE = Object.fromEntries(HOUSES.map((h) => [h.style, h])
 export const PALETTE = ['#ff6f6f', '#ff8fb1', '#ffa6d5', '#ffb84d', '#ffe066', '#7ccf6a', '#9ad8c8', '#5cc3f2', '#8fa8ff', '#c88bff', '#ffffff', '#d9a066', '#8a5a3c', '#555a75', '#2b2b38'];
 export const WALL_COLORS = ['#fff1e0', '#ffe0ef', '#e4f4ff', '#e8ffe4', '#f3e8ff', '#fff9c9', '#ffd6c4', '#d6f5ef', '#ffc2d6', '#c9d8ff'];
 export const FLOOR_COLORS = ['#d9a066', '#b07a4a', '#f3d9b1', '#ffe0ef', '#cfe8ff', '#d7f5c6', '#e6e6ee', '#c88bff', '#555a75'];
+
+export type ToyPlay = 'fetch' | 'chase' | 'cuddle';
+export interface Toy {
+  id: string;
+  name: string;
+  emoji: string;
+  price: number;
+  play: ToyPlay;
+  /** Shown in the shop and in the backpack. */
+  text: string;
+  /** What the pet is doing, for the toast. */
+  verb: string;
+}
+/** Toys stay in the backpack when you use them (they are not eaten). */
+export const TOYS: Toy[] = [
+  { id: 'leke-ball', name: 'Ball', emoji: '⚽', price: 6, play: 'fetch', text: 'Kast den – dyret henter!', verb: 'henter ballen' },
+  { id: 'leke-pinne', name: 'Pinne', emoji: '🪵', price: 4, play: 'fetch', text: 'Kast pinnen langt av gårde', verb: 'henter pinnen' },
+  { id: 'leke-bamse', name: 'Kosebamse', emoji: '🧸', price: 12, play: 'cuddle', text: 'Å kose med og sove ved', verb: 'koser med bamsen' },
+  { id: 'leke-garn', name: 'Garnnøste', emoji: '🧶', price: 7, play: 'chase', text: 'Ruller rundt – dyret jager det', verb: 'jager garnnøstet' },
+];
+export const TOY_BY_ID: Record<string, Toy> = Object.fromEntries(TOYS.map((t) => [t.id, t]));
+/** What every new player starts with in the backpack. */
+export const STARTER_TOYS = ['leke-ball', 'leke-garn'] as const;

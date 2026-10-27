@@ -1,6 +1,6 @@
-import { FOOD_BY_ID, FURN_BY_ID, HOUSE_BY_STYLE, POTIONS, type HouseStyle } from './catalog.ts';
+import { FOOD_BY_ID, FURN_BY_ID, HOUSE_BY_STYLE, POTIONS, TOY_BY_ID, type HouseStyle } from './catalog.ts';
 import { canEdit, newHouse, placeItem, removeItem, type House } from './house.ts';
-import { addCare, completeNeed, newPetState, NEED_INFO, tickPet, type CareWhere, type PetState } from './needs.ts';
+import { addCare, addJoy, CARE_AMOUNT, completeNeed, joyNow, newPetState, NEED_INFO, tickPet, type CareWhere, type PetState } from './needs.ts';
 import { cleanPetName, EGG_BY_ID, hatch } from './pets.ts';
 import type { Rng } from './rng.ts';
 import { MAX_EQUIPPED, type SaveData } from './save.ts';
@@ -38,6 +38,38 @@ export function buyFood(save: SaveData, id: string): Result {
   if (save.bucks < food.price) return fail(save, 'too-expensive');
   return { ok: true, save: { ...save, bucks: save.bucks - food.price, bag: add(save.bag, id, 1) } };
 }
+
+/** Toys are bought once (you only need one of each to play, and playing does not use it up). */
+export function buyToy(save: SaveData, id: string): Result {
+  const toy = TOY_BY_ID[id];
+  if (!toy) return fail(save, 'unknown');
+  if (save.bag[id]) return fail(save, 'owned');
+  if (save.bucks < toy.price) return fail(save, 'too-expensive');
+  return { ok: true, save: { ...save, bucks: save.bucks - toy.price, bag: add(save.bag, id, 1) } };
+}
+
+export const TOY_JOY = 0.3;
+
+/**
+ * Play with a toy from the backpack. The pet gets happier; a bored pet ("Kjeder seg") is cured by it.
+ * The toy stays in the backpack.
+ */
+export function playWithToy(save: SaveData, petUid: string, toyId: string, now: number, rng: Rng): CareOutcome & { reason?: Fail; joy: number } {
+  const none = { save, done: false, reward: 0, grewUp: false, joy: 0 };
+  const toy = TOY_BY_ID[toyId];
+  const pet = save.pets.find((p) => p.uid === petUid);
+  if (!toy || !pet) return { ...none, reason: !pet ? 'no-pet' : 'unknown' };
+  if (!save.bag[toyId]) return { ...none, reason: 'empty' };
+  let next = setPet(save, addJoy(pet, TOY_JOY, now));
+  let out: CareOutcome = { save: next, done: false, reward: 0, grewUp: false };
+  if (pet.need && NEED_INFO[pet.need.kind].where === 'lek') out = careAt(next, petUid, 'lek', CARE_AMOUNT.lek, now, rng);
+  next = out.save;
+  return { ...out, save: next, joy: joyOf(next, petUid, now) };
+}
+const joyOf = (save: SaveData, uid: string, now: number): number => {
+  const p = save.pets.find((x) => x.uid === uid);
+  return p ? joyNow(p, now) : 0;
+};
 
 export function buyPotion(save: SaveData, id: string): Result {
   const p = POTIONS.find((x) => x.id === id);

@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import { sfx, setSoundEnabled } from './audio.ts';
-import { FURN_BY_ID, HOUSE_BY_STYLE } from './logic/catalog.ts';
-import { activeHouse, buyFurniture, careAt, editHouse, feed, placeFromInventory, tickSave } from './logic/economy.ts';
+import { FURN_BY_ID, HOUSE_BY_STYLE, TOYS, TOY_BY_ID } from './logic/catalog.ts';
+import { activeHouse, buyFurniture, careAt, editHouse, feed, placeFromInventory, playWithToy, tickSave } from './logic/economy.ts';
+import { playDone, startPlay, stepPlay, type PlayState } from './logic/toyplay.ts';
+import { buildToy } from './three/toys.ts';
 import { moveItem } from './logic/house.ts';
 import { EQUIP_BY_ID, SIT_DROP, canUse, wantsOff } from './logic/playground.ts';
 import { canEdit, careItems, updateItem } from './logic/house.ts';
@@ -36,6 +38,9 @@ export interface PetActor {
   care: { x: number; z: number; y?: number; pose: PetPose } | null;
   happyUntil: number;
   shadow: THREE.Mesh;
+  /** A toy game in progress (fetch, chase, cuddle). */
+  play?: PlayState;
+  playToy?: string;
   stuck?: number;
   lastX?: number;
   lastZ?: number;
@@ -52,6 +57,7 @@ export interface PanelHooks {
   openDoors(): void;
   openVetInfo(): void;
   feedMenu(uid: string): void;
+  toyMenu(): void;
 }
 
 const GRAVITY = 32;
@@ -157,6 +163,7 @@ export class Game {
         const p = this.mainPet();
         if (p) this.panels.feedMenu(p.uid);
       },
+      play: () => this.panels.toyMenu(),
     });
     this.hud.soundBtn.textContent = this.save.sound ? '🔊' : '🔇';
     this.input = new Input(this.renderer.domElement, this.hud.joyBase, this.hud.joyKnob, this.hud.jump);
@@ -230,6 +237,7 @@ export class Game {
       flying: this.flying,
       canRide: !!p && p.rideable && this.mode === 'town',
       canFly: !!p && p.flyable && this.mode === 'town',
+      canPlay: !!p && !this.holding && !this.riding && !this.flying && !this.using && TOYS.some((t) => this.save.bag[t.id]),
       hungry: this.equippedPets().some((x) => x.need && (NEED_INFO[x.need.kind].where === 'mat' || NEED_INFO[x.need.kind].where === 'drikke')),
     });
   }
@@ -391,6 +399,7 @@ export class Game {
   // ---------- places ----------
   enterHouse() {
     if (this.using) this.stopUse();
+    this.cancelPlays();
     this.mode = 'house';
     this.holding = null;
     this.riding = null;
@@ -415,6 +424,7 @@ export class Game {
 
   /** Walk out of the front door: you appear on the street in front of your house. */
   exitHouse() {
+    this.cancelPlays();
     if (this.building) this.setBuilding(false);
     this.mode = 'town';
     this.interior.group.visible = false;
@@ -474,6 +484,103 @@ export class Game {
         break;
     }
   }
+
+  // ---------- toys ----------
+  private toyMesh: THREE.Group | null = null;
+  private toyMeshId = '';
+
+  /** Is any animal playing with a toy right now? */
+  playing(): boolean {
+    return [...this.actors.values()].some((a) => !!a.play);
+  }
+
+  /**
+   * Take a toy from the backpack and play with the animal closest to you (your follower first).
+   * The animal runs after it with a visible game; happiness goes up straight away.
+   */
+  playWithToy(toyId: string): boolean {
+    const toy = TOY_BY_ID[toyId];
+    if (!toy || this.paused || this.editingAvatar || this.building) return false;
+    if (this.riding || this.holding || this.flying || this.using) {
+      toast('Sett dyret ned først 🐾', 'bad');
+      return false;
+    }
+    if (!this.save.bag[toyId]) {
+      toast('Du har ikke den leken. Kjøp den i Butikken 🛒', 'bad');
+      return false;
+    }
+    const p = this.player.pos;
+    let best: PetActor | null = null;
+    let bestD = 9;
+    for (const a of this.actors.values()) {
+      const d = Math.hypot(a.pos.x - p.x, a.pos.z - p.z) - (this.save.equipped.includes(a.uid) ? 3 : 0);
+      if (d < bestD && Math.abs(a.pos.y - p.y) < 3.5) {
+        best = a;
+        bestD = d;
+      }
+    }
+    if (!best) {
+      toast('Ingen dyr i nærheten å leke med 🐾', 'bad');
+      return false;
+    }
+    if (best.play) {
+      toast('Dyret leker allerede! 🎉');
+      return false;
+    }
+    const pet = this.save.pets.find((x) => x.uid === best!.uid)!;
+    if (pet.need?.kind === 'syk') {
+      toast(`${pet.name} er syk og må til Dyrlegen først 🤒`, 'bad');
+      return false;
+    }
+    const r = playWithToy(this.save, pet.uid, toyId, Date.now(), this.rng);
+    if (r.reason) {
+      sfx.nope();
+      return false;
+    }
+    this.commit(r.save);
+    const house = this.mode === 'house';
+    best.play = startPlay(toy.play, { x: p.x, z: p.z }, this.player.yaw, house ? 3.2 : undefined);
+    best.playToy = toyId;
+    toast(`${pet.name} ${toy.verb}! 💖`, 'gold');
+    if (r.done) toast(`${pet.name} kjeder seg ikke lenger! +${r.reward} bucks`, 'gold');
+    sfx.pop();
+    return true;
+  }
+
+  private cancelPlays() {
+    for (const a of this.actors.values()) {
+      a.play = undefined;
+      a.playToy = undefined;
+    }
+    this.updateToyMesh();
+  }
+
+  /** Show the toy of the game in progress (one at a time is plenty). */
+  private updateToyMesh() {
+    const a = [...this.actors.values()].find((x) => x.play && x.play.toy.visible);
+    if (!a || !a.play || !a.playToy) {
+      if (this.toyMesh) this.toyMesh.visible = false;
+      return;
+    }
+    if (!this.toyMesh || this.toyMeshId !== a.playToy) {
+      if (this.toyMesh) this.scene.remove(this.toyMesh);
+      this.toyMesh = buildToy(a.playToy);
+      this.toyMeshId = a.playToy;
+      this.scene.add(this.toyMesh);
+    }
+    const t = a.play.toy;
+    const m = this.toyMesh;
+    m.visible = true;
+    const base = this.mode === 'house' ? this.groundAt(a.pos.x, a.pos.y, a.pos.z) : 0;
+    if (this.playCarried.has(a.uid)) {
+      m.position.set(a.pos.x + Math.sin(a.yaw) * 0.6 * this.actorScale(a), a.pos.y + 0.55 * this.actorScale(a), a.pos.z + Math.cos(a.yaw) * 0.6 * this.actorScale(a));
+      m.rotation.set(0, a.yaw, 0);
+    } else {
+      m.position.set(t.x, base + t.y - 0.25 * 0, t.z);
+      m.rotation.set(0, t.spin, 0);
+    }
+  }
+  private playCarried = new Set<string>();
 
   // ---------- playground equipment ----------
   /** Climb on a swing / slide / seesaw / merry-go-round. Needs you to be close to it and not busy with an animal. */
@@ -764,6 +871,7 @@ export class Game {
 
     // pets
     this.updatePets(dt, t, moved);
+    this.updateToyMesh();
 
     // zones + care
     this.updateZones(dt, moved, now);
@@ -892,12 +1000,29 @@ export class Game {
         a.yaw = p.yaw;
         pose = 'held';
       } else {
-        let target: THREE.Vector3 | null = null;
+        let target = new THREE.Vector3(a.pos.x, 0, a.pos.z);
         let stopDist = 0.3;
         const inHouse = this.mode === 'house';
         const lay = this.interior.layout;
         const petFloor = inHouse ? floorOfY(a.pos.y) : 0;
-        if (a.care) {
+        let playPose: PetPose | null = null;
+        if (a.play) {
+          // a toy game: the script says where to run and what to do
+          const st = stepPlay(a.play, dt, { x: a.pos.x, z: a.pos.z }, { x: p.pos.x, z: p.pos.z });
+          if (st.carried) this.playCarried.add(a.uid);
+          else this.playCarried.delete(a.uid);
+          target = st.target ? new THREE.Vector3(st.target.x, 0, st.target.z) : new THREE.Vector3(a.pos.x, 0, a.pos.z);
+          stopDist = Math.max(0.3, st.stopDist);
+          playPose = st.pose === 'walk' ? 'idle' : st.pose;
+          if (playDone(a.play)) {
+            a.play = undefined;
+            a.playToy = undefined;
+            this.playCarried.delete(a.uid);
+          }
+        }
+        if (a.play) {
+          // (handled above)
+        } else if (a.care) {
           target = new THREE.Vector3(a.care.x, 0, a.care.z);
           stopDist = 0.5;
         } else if (equipped) {
@@ -943,7 +1068,7 @@ export class Game {
             a.stuck = 0;
           } else a.pos.set(target.x, 0, target.z);
         } else if (d > stopDist) {
-          const sp = Math.min(d * 3, equipped ? (this.riding ? RIDE : WALK) * 1.15 : 3);
+          const sp = Math.min(d * (a.play ? 5 : 3), a.play ? WALK * 1.2 : equipped ? (this.riding ? RIDE : WALK) * 1.15 : 3);
           a.pos.x += (dx / d) * sp * dt;
           a.pos.z += (dz / d) * sp * dt;
           a.yaw = Math.atan2(dx, dz);
@@ -962,6 +1087,7 @@ export class Game {
         if (inHouse && !near) targetY = groundHeight(lay, a.pos.x, a.pos.z, floorOfY(a.pos.y));
         if (inHouse && !near && onStairs(lay.stairs, a.pos.x, a.pos.z)) a.pos.y = targetY;
         else a.pos.y += (targetY - a.pos.y) * Math.min(1, dt * 4);
+        if (playPose && pose !== 'walk') pose = playPose;
         if (a.pos.y > 1 && (flyingPet || pet.flyable) && !near) pose = 'fly';
         if (pet.need?.kind === 'syk' && pose === 'idle') pose = 'sick';
       }

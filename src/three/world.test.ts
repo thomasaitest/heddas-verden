@@ -391,3 +391,24 @@ describe('playground equipment in the town', () => {
     expect(sw.rotation.x).toBe(0); // and hangs still afterwards
   });
 });
+
+describe('toy models', () => {
+  it('every toy has a small 3D model standing on the ground, and a made-up one is an error', async () => {
+    const { buildToy } = await import('./toys.ts');
+    const { TOYS } = await import('../logic/catalog.ts');
+    const THREE = await import('three');
+    for (const t of TOYS) {
+      const g = buildToy(t.id);
+      let meshes = 0;
+      g.traverse((o) => (meshes += (o as import('three').Mesh).isMesh ? 1 : 0));
+      expect(meshes, t.id).toBeGreaterThan(1);
+      const b = new THREE.Box3().setFromObject(g);
+      const size = b.getSize(new THREE.Vector3());
+      expect(Math.max(size.x, size.y, size.z), `${t.id} is a toy-sized thing`).toBeLessThan(1.4);
+      expect(Math.max(size.x, size.y, size.z)).toBeGreaterThan(0.3);
+      expect(b.min.y, `${t.id} stands on the ground`).toBeGreaterThan(-0.15);
+      expect(b.min.y).toBeLessThan(0.15);
+    }
+    expect(() => buildToy('leke-laser')).toThrow();
+  });
+});

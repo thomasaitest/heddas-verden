@@ -19,6 +19,7 @@ export interface HudActions {
   ride(): void;
   fly(): void;
   feed(): void;
+  play(): void;
 }
 
 export interface PetActionState {
@@ -29,6 +30,7 @@ export interface PetActionState {
   canRide: boolean;
   canFly: boolean;
   hungry: boolean;
+  canPlay: boolean;
 }
 
 export class Hud {
@@ -45,7 +47,7 @@ export class Hud {
   joyKnob: HTMLElement;
   jump: HTMLButtonElement;
   petBar: HTMLElement;
-  private petBtns: Record<'hold' | 'ride' | 'fly' | 'feed', HTMLButtonElement>;
+  private petBtns: Record<'hold' | 'ride' | 'fly' | 'feed' | 'play', HTMLButtonElement>;
 
   constructor(host: HTMLElement, a: HudActions) {
     this.bucks = el('span', { class: 'bucks-n' }, '0');
@@ -79,8 +81,9 @@ export class Hud {
       ride: button('🐎 Ri', a.ride, 'btn pet-act'),
       fly: button('🪽 Fly', a.fly, 'btn pet-act'),
       feed: button('🍎 Mat', a.feed, 'btn pet-act'),
+      play: button('🎾 Lek', a.play, 'btn pet-act'),
     };
-    this.petBar = el('div', { class: 'pet-bar' }, this.petBtns.feed, this.petBtns.hold, this.petBtns.ride, this.petBtns.fly);
+    this.petBar = el('div', { class: 'pet-bar' }, this.petBtns.feed, this.petBtns.play, this.petBtns.hold, this.petBtns.ride, this.petBtns.fly);
     this.root = el('div', { class: 'hud' }, top, this.tasks, this.prompt, dock, this.petBar, this.joyZone, this.jump);
     host.append(this.root);
   }
@@ -116,6 +119,7 @@ export class Hud {
     this.petBtns.fly.classList.toggle('hidden', !s.canFly || s.holding);
     put(this.petBtns.fly, s.flying ? '🛬 Land' : '🪽 Fly');
     this.petBtns.feed.classList.toggle('hidden', !s.hungry);
+    this.petBtns.play.classList.toggle('hidden', !s.canPlay);
   }
 
   setWhere(label: string) {
