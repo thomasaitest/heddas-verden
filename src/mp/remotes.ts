@@ -154,6 +154,8 @@ export class RemotePlayers {
 
       const mount: MountWire = r.mount ?? 'none';
       const riding = mount === 'ride' || mount === 'fly';
+      const driving = mount === 'drive';
+      const pramming = mount === 'pram';
 
       actor.holder.visible = !hidden;
       actor.shadow.visible = !hidden && y < 0.5 && !riding;
@@ -209,6 +211,12 @@ export class RemotePlayers {
       if (r.equip === 'sklie') actor.holder.rotation.x = -0.35;
       else if (r.equip === 'vippe') actor.holder.rotation.x = 0.15;
       else actor.holder.rotation.x = 0;
+      if (driving) {
+        pose = 'sit';
+        actor.holder.position.y = Math.max(actor.holder.position.y, 0.55);
+      } else if (pramming) {
+        if (pose === 'idle') pose = 'walk';
+      }
       animateAvatar(actor.avatar, now / 1000, pose, r.speed, pose === 'hold' || mount === 'hold');
       actor.shadow.position.set(x, 0.025, z);
       actor.nameSpr.position.set(x, y + 3.2, z);

@@ -2,6 +2,9 @@
 
 import type { Avatar } from '../logic/avatar.ts';
 import { cleanAvatar } from '../logic/avatar.ts';
+import type { ActivityKind } from '../logic/activity.ts';
+import type { HouseStyle } from '../logic/catalog.ts';
+import { parseHouseStyle, parseHouseWire, type HouseWire } from '../logic/houseWire.ts';
 
 export const MP_VERSION = 1;
 export const MAX_PLAYERS = 8;
@@ -34,13 +37,15 @@ export type AvatarPoseWire =
   | 'swing'
   | 'slide'
   | 'seesaw'
-  | 'spin';
+  | 'spin'
+  | 'dance'
+  | 'drive';
 
 /** Where the player is. Newer clients may also send cars/pets; older ones only know the first four. */
 export type PlaceWire = 'town' | 'house' | 'shop' | 'vet' | 'cars' | 'pets';
 
 /** How the player is attached to their pet (pony ride etc.). */
-export type MountWire = 'none' | 'ride' | 'hold' | 'fly';
+export type MountWire = 'none' | 'ride' | 'hold' | 'fly' | 'drive' | 'pram';
 
 export interface PetWire {
   speciesId: string;
@@ -64,6 +69,10 @@ export interface PlayerSnapshot {
   equip: string | null;
   /** Pet mount mode; missing/unknown → none (backward tolerant). */
   mount: MountWire;
+  /** Exterior house style shown on the player's neighbourhood plot. */
+  houseStyle: HouseStyle | null;
+  /** Vehicle catalog id when mount is drive/pram. */
+  vehicle: string | null;
   emote: EmoteId | null;
   emoteUntil: number;
 }
@@ -84,9 +93,15 @@ export type ClientMsg =
       pet: PetWire | null;
       equip: string | null;
       mount?: MountWire;
+      houseStyle?: HouseStyle | null;
+      vehicle?: string | null;
     }
   | { t: 'avatar'; avatar: Avatar }
   | { t: 'emote'; id: EmoteId }
+  | { t: 'house'; house: HouseWire }
+  | { t: 'visit-ask'; to: string }
+  | { t: 'visit-reply'; to: string; ok: boolean; house?: HouseWire }
+  | { t: 'activity'; kind: ActivityKind }
   | { t: 'ping'; n: number };
 
 /** Server → client */
@@ -108,9 +123,15 @@ export type ServerMsg =
       pet: PetWire | null;
       equip: string | null;
       mount?: MountWire;
+      houseStyle?: HouseStyle | null;
+      vehicle?: string | null;
     }
   | { t: 'avatar'; id: string; avatar: Avatar }
   | { t: 'emote'; id: string; emote: EmoteId }
+  | { t: 'house'; id: string; house: HouseWire }
+  | { t: 'visit-ask'; from: string; fromName: string; fromPlayerId: string }
+  | { t: 'visit-reply'; from: string; ok: boolean; house?: HouseWire }
+  | { t: 'activity'; id: string; kind: ActivityKind }
   | { t: 'pong'; n: number }
   | { t: 'error'; code: string; message: string };
 
@@ -140,9 +161,10 @@ export function decodeServer(raw: string): ServerMsg | null {
 
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const isStr = (v: unknown): v is string => typeof v === 'string';
-const POSES: AvatarPoseWire[] = ['idle', 'walk', 'jump', 'sit', 'hold', 'wave', 'fly', 'swing', 'slide', 'seesaw', 'spin'];
+const POSES: AvatarPoseWire[] = ['idle', 'walk', 'jump', 'sit', 'hold', 'wave', 'fly', 'swing', 'slide', 'seesaw', 'spin', 'dance', 'drive'];
 const PLACES: PlaceWire[] = ['town', 'house', 'shop', 'vet', 'cars', 'pets'];
-const MOUNTS: MountWire[] = ['none', 'ride', 'hold', 'fly'];
+const MOUNTS: MountWire[] = ['none', 'ride', 'hold', 'fly', 'drive', 'pram'];
+const ACTIVITY_KINDS: ActivityKind[] = ['dance', 'parade'];
 
 function parsePet(v: unknown): PetWire | null {
   if (v === null) return null;
@@ -187,12 +209,14 @@ export function parseClient(data: unknown): ClientMsg | null {
       z: clamp(o.z, 250),
       yaw: o.yaw,
       pose: o.pose as AvatarPoseWire,
-      speed: clamp(o.speed, 20),
+      speed: clamp(o.speed, 30),
       place: o.place as PlaceWire,
       area: parseArea(o.area),
       pet,
       equip: isStr(o.equip) && o.equip.length <= 32 ? o.equip : null,
       mount: parseMount(o.mount),
+      houseStyle: parseHouseStyle(o.houseStyle),
+      vehicle: isStr(o.vehicle) && o.vehicle.length <= 32 ? o.vehicle : null,
     };
   }
   if (o.t === 'avatar') {
@@ -205,6 +229,30 @@ export function parseClient(data: unknown): ClientMsg | null {
   if (o.t === 'ping') {
     if (!isNum(o.n)) return null;
     return { t: 'ping', n: o.n };
+  }
+  if (o.t === 'house') {
+    const house = parseHouseWire(o.house);
+    if (!house) return null;
+    return { t: 'house', house };
+  }
+  if (o.t === 'visit-ask') {
+    if (!isStr(o.to) || o.to.length > 64) return null;
+    return { t: 'visit-ask', to: o.to };
+  }
+  if (o.t === 'visit-reply') {
+    if (!isStr(o.to) || o.to.length > 64) return null;
+    if (typeof o.ok !== 'boolean') return null;
+    let house: HouseWire | undefined;
+    if (o.house !== undefined) {
+      const h = parseHouseWire(o.house);
+      if (!h) return null;
+      house = h;
+    }
+    return { t: 'visit-reply', to: o.to, ok: o.ok, ...(house ? { house } : {}) };
+  }
+  if (o.t === 'activity') {
+    if (!isStr(o.kind) || !ACTIVITY_KINDS.includes(o.kind as ActivityKind)) return null;
+    return { t: 'activity', kind: o.kind as ActivityKind };
   }
   return null;
 }
@@ -233,6 +281,8 @@ export function snapshotFromHello(id: string, name: string, avatar: Avatar): Pla
     pet: null,
     equip: null,
     mount: 'none',
+    houseStyle: null,
+    vehicle: null,
     emote: null,
     emoteUntil: 0,
   };
@@ -247,6 +297,8 @@ export function normalizeSnapshot(raw: Partial<PlayerSnapshot> & { id: string; n
     avatar: cleanAvatar(raw.avatar),
     area: raw.area ?? null,
     mount: parseMount(raw.mount),
+    houseStyle: parseHouseStyle(raw.houseStyle),
+    vehicle: typeof raw.vehicle === 'string' ? raw.vehicle : null,
     place: (PLACES.includes(raw.place as PlaceWire) ? raw.place : 'town') as PlaceWire,
   };
 }

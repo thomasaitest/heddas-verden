@@ -1,5 +1,8 @@
 import type * as THREE from 'three';
 import type { Avatar } from '../logic/avatar.ts';
+import type { HouseStyle } from '../logic/catalog.ts';
+import type { ActivityKind } from '../logic/activity.ts';
+import type { HouseWire } from '../logic/houseWire.ts';
 import { SPECIES_BY_ID } from '../logic/pets.ts';
 import type { PetState } from '../logic/needs.ts';
 import { toast } from '../ui/dom.ts';
@@ -11,25 +14,34 @@ import { openEmotePicker, openMpSheet } from './ui.ts';
 /** Minimal game surface needed by multiplayer (avoids circular imports). */
 export interface MpHost {
   scene: THREE.Scene;
-  save: { avatar: Avatar; playerId: string };
+  save: { avatar: Avatar; playerId: string; houses?: { style: HouseStyle }[]; activeHouseId?: string };
   player: { pos: THREE.Vector3; yaw: number; speed: number };
   mode: 'town' | 'house';
   using: { id: string } | null;
   riding: string | null;
   holding: string | null;
   flying: boolean;
+  driving: string | null;
+  pramming: string | null;
+  visitingOwnerId: string | null;
   town: {
     insideBuilding(x: number, z: number): 'shop' | 'vet' | 'cars' | 'pets' | null;
     seatWorld(id: string, u: number): { x: number; y: number; z: number; yaw: number };
     housePlots: { x: number; z: number; rot: number }[];
-    setPlotHouse(plot: number, style: 'hytte' | 'villa' | 'gard' | 'slott' | 'moderne' | 'trehus' | 'sjohus' | null, label?: string): void;
+    setPlotHouse(plot: number, style: HouseStyle | null, label?: string): void;
   };
   mainPet(): PetState | null;
+  activeHouseStyle(): HouseStyle;
+  onVisitAsk(from: string, fromName: string, fromPlayerId: string): void;
+  onVisitReply(from: string, ok: boolean, house?: HouseWire): void;
+  onRemoteHouse(id: string, house: HouseWire): void;
+  onRemoteActivity(id: string, kind: ActivityKind): void;
 }
 
 export class MpClient {
   session: MpSession;
   remotes: RemotePlayers;
+  private lastHouseSent = '';
 
   constructor(private game: MpHost) {
     this.remotes = new RemotePlayers(game.scene);
@@ -43,6 +55,10 @@ export class MpClient {
       onRoom: () => this.updateBadge(),
       onError: (message) => toast(message, 'bad'),
       onAvatar: () => this.updateBadge(),
+      onVisitAsk: (from, fromName, fromPlayerId) => this.game.onVisitAsk(from, fromName, fromPlayerId),
+      onVisitReply: (from, ok, house) => this.game.onVisitReply(from, ok, house),
+      onHouse: (id, house) => this.game.onRemoteHouse(id, house),
+      onActivity: (id, kind) => this.game.onRemoteActivity(id, kind),
     });
   }
 
@@ -70,11 +86,33 @@ export class MpClient {
     this.session.sendAvatar(avatar);
   }
 
+  broadcastHouse(house: HouseWire) {
+    const key = JSON.stringify(house);
+    if (key === this.lastHouseSent) return;
+    this.lastHouseSent = key;
+    this.session.sendHouse(house);
+  }
+
+  askVisit(toSocketOrPlayerId: string) {
+    this.session.sendVisitAsk(toSocketOrPlayerId);
+  }
+
+  replyVisit(to: string, ok: boolean, house?: HouseWire) {
+    this.session.sendVisitReply(to, ok, house);
+  }
+
+  startActivity(kind: ActivityKind) {
+    this.session.sendActivity(kind);
+  }
+
   tick(pose: AvatarPoseWire) {
     const g = this.game;
     const now = performance.now();
     const place = this.currentPlace();
-    const area = place === 'house' ? g.save.playerId : null;
+    const area =
+      place === 'house'
+        ? g.visitingOwnerId ?? g.save.playerId
+        : null;
 
     if (this.session.active) {
       this.session.sendState(
@@ -90,6 +128,8 @@ export class MpClient {
           pet: this.petWire(),
           equip: g.using?.id ?? null,
           mount: this.currentMount(),
+          houseStyle: g.activeHouseStyle(),
+          vehicle: g.driving ?? g.pramming ?? null,
         },
         now,
       );
@@ -111,22 +151,24 @@ export class MpClient {
     this.syncHousePlots();
   }
 
-  /** Put each remote player's house on its own neighbourhood plot. */
+  /** Put each remote player's house on its own neighbourhood plot using their real style. */
   private syncHousePlots() {
     const plots = this.game.town.housePlots;
     if (!plots?.length) return;
     const remotes = [...this.session.remotes.values()];
-    const styles = ['villa', 'gard', 'moderne', 'trehus', 'sjohus', 'slott'] as const;
+    const fallback = ['villa', 'gard', 'moderne', 'trehus', 'sjohus', 'slott'] as const;
     for (let i = 1; i < plots.length; i++) {
       const r = remotes[i - 1];
       if (!r) {
         this.game.town.setPlotHouse(i, null);
         continue;
       }
-      // Stable style from id hash so the same friend always gets the same house look.
-      let h = 0;
-      for (let k = 0; k < r.id.length; k++) h = (h * 31 + r.id.charCodeAt(k)) | 0;
-      const style = styles[Math.abs(h) % styles.length];
+      let style = r.houseStyle;
+      if (!style) {
+        let h = 0;
+        for (let k = 0; k < r.id.length; k++) h = (h * 31 + r.id.charCodeAt(k)) | 0;
+        style = fallback[Math.abs(h) % fallback.length];
+      }
       this.game.town.setPlotHouse(i, style, r.name);
     }
   }
@@ -139,6 +181,8 @@ export class MpClient {
   }
 
   private currentMount(): MountWire {
+    if (this.game.driving) return 'drive';
+    if (this.game.pramming) return 'pram';
     if (this.game.flying && this.game.riding) return 'fly';
     if (this.game.riding) return 'ride';
     if (this.game.holding) return 'hold';

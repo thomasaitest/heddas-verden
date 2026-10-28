@@ -3,7 +3,7 @@ import { HOUSE_BY_STYLE, type HouseStyle } from '../logic/catalog.ts';
 import type { CircleCollider, RectCollider, Surface } from '../logic/collision.ts';
 import { collectColliders, solid } from './colliders.ts';
 import { fillCarShop, fillHospital, fillPetShop, fillShop } from './buildings.ts';
-import { EQUIPMENT, MERRY, SEESAW, SLIDE, SWING_PIVOT_Y, SWING_ROPE, SWING_XS, SWING_Z, merryAngle, seatAt, seesawAngle, swingAngle, type EquipDef, type Seat } from '../logic/playground.ts';
+import { EQUIPMENT, MERRY, SEESAW, SLIDE, SWING_PIVOT_Y, SWING_ROPE, SWING_XS, SWING_Z, TRAMP, merryAngle, seatAt, seesawAngle, swingAngle, type EquipDef, type Seat } from '../logic/playground.ts';
 import { box, cone, cyl, G, mergeStatic, part, rbox, shadowAll, sph, textTexture } from './kit.ts';
 
 export type ZoneKind = 'home' | 'shop' | 'vet' | 'eggs' | 'doors' | 'play' | 'cars' | 'pets';
@@ -451,6 +451,16 @@ export function buildTown(): Town {
     });
     anim.add(merryGroup);
     tag(merryGroup, 'merry');
+    // trampoline
+    const trampGroup = new THREE.Group();
+    trampGroup.position.set(TRAMP.x, TRAMP.y, TRAMP.z);
+    solid(cyl(trampGroup, '#5a6a7a', [0, 0, 0], [TRAMP.radius * 2.1, TRAMP.thick, TRAMP.radius * 2.1]), 'circle', 0, 2);
+    cyl(trampGroup, '#c88bff', [0, 0.06, 0], [TRAMP.radius * 1.85, 0.08, TRAMP.radius * 1.85]);
+    for (const a of [0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2]) {
+      box(trampGroup, '#ff8fb1', [Math.cos(a) * TRAMP.radius, 0.55, Math.sin(a) * TRAMP.radius], [0.12, 1.1, 0.12]);
+    }
+    anim.add(trampGroup);
+    tag(trampGroup, 'tramp');
     // fence: posts joined by rails, with a gap (gate) facing the plaza
     const inGate = (a: number) => Math.abs(Math.atan2(Math.sin(a - faceCenter(P.play.x, P.play.z) + Math.PI / 2), Math.cos(a - faceCenter(P.play.x, P.play.z) + Math.PI / 2))) < 0.35;
     const FENCE_N = 28;

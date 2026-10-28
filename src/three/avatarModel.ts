@@ -699,7 +699,7 @@ export function buildAvatar(a: Avatar): AvatarRig {
   return { root, body, head, arms, legs, extra: [] };
 }
 
-export type AvatarPose = 'idle' | 'walk' | 'jump' | 'sit' | 'hold' | 'wave' | 'fly' | 'swing' | 'slide' | 'seesaw' | 'spin';
+export type AvatarPose = 'idle' | 'walk' | 'jump' | 'sit' | 'hold' | 'wave' | 'fly' | 'swing' | 'slide' | 'seesaw' | 'spin' | 'dance' | 'drive';
 
 export function animateAvatar(rig: AvatarRig, t: number, pose: AvatarPose, speed = 0, holding = false): void {
   const s = pose === 'walk' ? Math.sin(t * 11) * 0.8 * Math.min(1, speed) : 0;
@@ -753,6 +753,20 @@ export function animateAvatar(rig: AvatarRig, t: number, pose: AvatarPose, speed
     r.rotation.set(-1.5, 0, -0.35);
     la.rotation.set(0, 0, -1.4);
     ra.rotation.set(-1.3, 0, 0.2);
+    rig.body.position.y = 0;
+  } else if (pose === 'dance') {
+    const k = Math.sin(t * 8);
+    l.rotation.set(-0.2 + k * 0.6, 0, 0.15);
+    r.rotation.set(-0.2 - k * 0.6, 0, -0.15);
+    la.rotation.set(0, 0, -2.2 - k * 0.4);
+    ra.rotation.set(0, 0, 2.2 + k * 0.4);
+    rig.body.position.y = Math.abs(k) * 0.12;
+    rig.body.rotation.y = k * 0.15;
+  } else if (pose === 'drive') {
+    l.rotation.set(-1.35, 0, 0.25);
+    r.rotation.set(-1.35, 0, -0.25);
+    la.rotation.set(-1.1, 0, 0.2);
+    ra.rotation.set(-1.1, 0, -0.2);
     rig.body.position.y = 0;
   }
   if (holding) {

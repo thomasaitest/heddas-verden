@@ -327,7 +327,7 @@ describe('playground equipment in the town', () => {
   const rot = faceCenter(play.x, play.z);
 
   it('lists every piece in world coordinates, inside the fence', () => {
-    expect(town.equipment.map((e) => e.id).sort()).toEqual(['merry', 'seesaw', 'slide', 'swing1', 'swing2']);
+    expect(town.equipment.map((e) => e.id).sort()).toEqual(['merry', 'seesaw', 'slide', 'swing1', 'swing2', 'tramp']);
     for (const e of town.equipment) {
       expect(Math.hypot(e.wx - play.x, e.wz - play.z), e.id).toBeLessThan(10);
       expect(town.zones.some((z) => z.kind === 'play' && Math.hypot(e.wx - z.x, e.wz - z.z) < z.r), `${e.id} in the play zone`).toBe(true);
@@ -337,7 +337,7 @@ describe('playground equipment in the town', () => {
   it('every piece is tappable (it has meshes that carry its id)', () => {
     const ids = new Set<string>();
     for (const o of town.equipTargets) ids.add(o.userData.equip as string);
-    expect([...ids].sort()).toEqual(['merry', 'seesaw', 'slide', 'swing1', 'swing2']);
+    expect([...ids].sort()).toEqual(['merry', 'seesaw', 'slide', 'swing1', 'swing2', 'tramp']);
   });
 
   it('the spot where you step down is free to stand on, and can be walked to from the gate', () => {

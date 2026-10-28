@@ -6,7 +6,7 @@ const times = (n: number, to: number) => Array.from({ length: n }, (_, i) => (i 
 
 describe('playground equipment: seats', () => {
   it('has a swing (two), slide, seesaw and merry-go-round, each with a free exit', () => {
-    expect(EQUIPMENT.map((e) => e.kind).sort()).toEqual(['merry', 'seesaw', 'slide', 'swing', 'swing']);
+    expect(EQUIPMENT.map((e) => e.kind).sort()).toEqual(['merry', 'seesaw', 'slide', 'swing', 'swing', 'tramp']);
     for (const e of EQUIPMENT) expect(Math.hypot(e.exit.x - e.x, e.exit.z - e.z)).toBeGreaterThan(0.8);
   });
 

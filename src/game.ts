@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { sfx, setSoundEnabled } from './audio.ts';
-import { FURN_BY_ID, HOUSE_BY_STYLE, TOYS, TOY_BY_ID } from './logic/catalog.ts';
+import { sfx, setSoundEnabled, setLocationAmbient, startMusic, stopMusic, musicPlaying } from './audio.ts';
+import { CAR_BY_ID, FURN_BY_ID, HOUSE_BY_STYLE, PET_SHOP_BY_ID, TOYS, TOY_BY_ID, type HouseStyle } from './logic/catalog.ts';
 import { activeHouse, buyFurniture, careAt, editHouse, feed, placeFromInventory, playWithToy, tickSave } from './logic/economy.ts';
 import { playDone, startPlay, stepPlay, type PlayState } from './logic/toyplay.ts';
 import { buildToy } from './three/toys.ts';
@@ -13,6 +13,13 @@ import { loadSave, writeSave, type SaveData } from './logic/save.ts';
 import { cameraRelative, orbit } from './logic/camera.ts';
 import { movePlayer, resolve, surfaceUnder, type Colliders } from './logic/collision.ts';
 import { afterJump, canJump, drainWalk, ENERGY_MAX, restEnergy } from './logic/energy.ts';
+import { skyAt, skyLabel, type SkyState } from './logic/weather.ts';
+import { canDrive, canPram, defaultCar, defaultPram, vehicleSpeed } from './logic/vehicles.ts';
+import { ACTIVITIES, activityPose, canStartActivity, nearPlaza, type ActivityKind } from './logic/activity.ts';
+import { acceptVisit, canAskVisit, idleVisit, receiveAsk, startAsk, tickVisit, type VisitState } from './logic/visit.ts';
+import { guestHouseFromWire, houseToWire, type HouseWire } from './logic/houseWire.ts';
+import { miniReward, startMini, stepMini, type MiniState } from './logic/minigames.ts';
+import { buildCar, buildPram } from './three/vehicles.ts';
 import { Input } from './input.ts';
 import { animateAvatar, buildAvatar, type AvatarPose, type AvatarRig } from './three/avatarModel.ts';
 import { createInterior, type Interior } from './three/interior.ts';
@@ -68,7 +75,6 @@ export interface PanelHooks {
 const GRAVITY = 32;
 const WALK = 9;
 const RIDE = 15;
-const FLY = 18;
 
 export class Game {
   renderer: THREE.WebGLRenderer;
@@ -98,6 +104,20 @@ export class Game {
   holding: string | null = null;
   riding: string | null = null;
   flying = false;
+  /** Catalog id of the car you are driving, or null. */
+  driving: string | null = null;
+  /** Catalog id of the pram you are pushing, or null. */
+  pramming: string | null = null;
+  /** When visiting a friend: their playerId (area). */
+  visitingOwnerId: string | null = null;
+  visit: VisitState = idleVisit();
+  activity: { kind: ActivityKind; since: number; slot: number } | null = null;
+  mini: MiniState | null = null;
+  private vehicleMesh: THREE.Group | null = null;
+  private rain: THREE.Points | null = null;
+  private weatherT0 = performance.now() / 1000;
+  private guestHouse: import('./logic/house.ts').House | null = null;
+  private remoteHouses = new Map<string, HouseWire>();
   building = false;
   editingAvatar = false;
   selectedItem: string | null = null;
@@ -109,7 +129,7 @@ export class Game {
   private dirty = false;
   private lastSaveAt = 0;
   private lastTickAt = 0;
-  private nearZone: Zone | { kind: 'exit'; label: string } | { kind: 'equip'; id: string; label: string } | { kind: 'equip-off'; label: string } | { kind: 'bench'; label: string; x: number; z: number; yaw: number } | { kind: 'bench-off'; label: string } | null = null;
+  private nearZone: Zone | { kind: 'exit'; label: string } | { kind: 'equip'; id: string; label: string } | { kind: 'equip-off'; label: string } | { kind: 'bench'; label: string; x: number; z: number; yaw: number } | { kind: 'bench-off'; label: string } | { kind: 'visit'; label: string; peerId: string; peerName: string } | { kind: 'plaza'; label: string } | { kind: 'mini'; label: string } | null = null;
   /** The playground piece you are sitting on (swing, slide, seesaw, merry-go-round), if any. */
   using: { id: string; since: number } | null = null;
   private bubbleTex = new Map<string, THREE.Texture>();
@@ -172,6 +192,9 @@ export class Game {
         if (p) this.panels.feedMenu(p.uid);
       },
       play: () => this.panels.toyMenu(),
+      drive: () => this.toggleDrive(),
+      pram: () => this.togglePram(),
+      activity: () => this.toggleActivity(),
       mp: () => this.mp?.openMenu(),
       emote: () => this.mp?.openEmotes(),
     });
@@ -214,11 +237,15 @@ export class Game {
     if (opts.pets) this.syncPets();
     if (opts.house || prevHouse !== next.activeHouseId) {
       this.town.setHomeStyle(activeHouse(next).style);
-      if (this.mode === 'house') {
+      if (this.mode === 'house' && !this.guestHouse) {
         this.interior.build(activeHouse(next));
         this.clampPlayerToRoom();
       }
-    } else if (this.mode === 'house') this.interior.syncItems(activeHouse(next));
+      this.mp?.broadcastHouse(houseToWire(activeHouse(next)));
+    } else if (this.mode === 'house' && !this.guestHouse) {
+      this.interior.syncItems(activeHouse(next));
+      this.mp?.broadcastHouse(houseToWire(activeHouse(next)));
+    }
     if (next.bucks !== prevBucks) this.hud.bumpBucks();
     this.updateHud();
     this.onChange.forEach((f) => f());
@@ -242,18 +269,32 @@ export class Game {
     this.hud.setBucks(this.save.bucks);
     this.hud.setEnergy(this.player.energy);
     const house = activeHouse(this.save);
-    this.hud.setMode(this.mode, this.mode === 'house' ? HOUSE_BY_STYLE[house.style].name : 'Heddas by', canEdit(house, this.save.playerId));
+    const liveHouse = this.guestHouse ?? house;
+    this.hud.setMode(this.mode, this.mode === 'house' ? (this.guestHouse ? `Besøk · ${HOUSE_BY_STYLE[liveHouse.style].name}` : HOUSE_BY_STYLE[liveHouse.style].name) : 'Heddas by', !this.guestHouse && canEdit(liveHouse, this.save.playerId));
     this.hud.setTasks(this.equippedPets(), (uid) => this.onTaskTap(uid));
     const p = this.mainPet();
+    const inPlaza = this.mode === 'town' && nearPlaza(this.player.pos.x, this.player.pos.z);
     this.hud.setPetActions({
       any: !!p && !this.building && !this.editingAvatar,
       holding: !!this.holding,
       riding: !!this.riding,
       flying: this.flying,
-      canRide: !!p && p.rideable && this.mode === 'town',
-      canFly: !!p && p.flyable && this.mode === 'town',
-      canPlay: !!p && !this.holding && !this.riding && !this.flying && !this.using && TOYS.some((t) => this.save.bag[t.id]),
+      canRide: !!p && p.rideable && this.mode === 'town' && !this.driving && !this.pramming,
+      canFly: !!p && p.flyable && this.mode === 'town' && !this.driving && !this.pramming,
+      canPlay: !!p && !this.holding && !this.riding && !this.flying && !this.using && !this.driving && !this.pramming && TOYS.some((t) => this.save.bag[t.id]),
       hungry: this.equippedPets().some((x) => x.need && (NEED_INFO[x.need.kind].where === 'mat' || NEED_INFO[x.need.kind].where === 'drikke')),
+      canDrive: this.mode === 'town' && !this.riding && !this.holding && !this.flying && !this.using && !this.pramming && !!defaultCar(this.save),
+      driving: !!this.driving,
+      canPram: this.mode === 'town' && !this.riding && !this.holding && !this.flying && !this.using && !this.driving && !!defaultPram(this.save) && !!p,
+      pramming: !!this.pramming,
+      canActivity: canStartActivity({
+        inTown: this.mode === 'town',
+        nearPlaza: inPlaza,
+        driving: !!this.driving,
+        riding: !!this.riding,
+        using: !!this.using,
+        paused: this.paused,
+      }) || !!this.activity,
     });
   }
 
@@ -412,15 +453,19 @@ export class Game {
   }
 
   // ---------- places ----------
-  enterHouse() {
+  enterHouse(guest?: import('./logic/house.ts').House) {
     this.resting = null;
     if (this.using) this.stopUse();
     this.cancelPlays();
+    this.clearVehicle();
+    this.activity = null;
     this.mode = 'house';
     this.holding = null;
     this.riding = null;
     this.flying = false;
-    const house = activeHouse(this.save);
+    const house = guest ?? activeHouse(this.save);
+    this.guestHouse = guest ?? null;
+    this.visitingOwnerId = guest ? guest.ownerId : null;
     this.interior.build(house);
     this.town.group.visible = false;
     this.interior.group.visible = true;
@@ -443,6 +488,9 @@ export class Game {
     this.cancelPlays();
     if (this.building) this.setBuilding(false);
     this.mode = 'town';
+    this.guestHouse = null;
+    this.visitingOwnerId = null;
+    this.visit = idleVisit();
     this.interior.group.visible = false;
     this.town.group.visible = true;
     this.setSky();
@@ -462,9 +510,47 @@ export class Game {
     this.updateHud();
   }
 
-  private setSky() {
-    this.scene.background = new THREE.Color('#9fdcff');
-    this.scene.fog = new THREE.Fog('#bfe8ff', 90, 230);
+  private setSky(sky?: SkyState) {
+    const s = sky ?? skyAt((performance.now() / 1000) - this.weatherT0);
+    this.scene.background = new THREE.Color(s.skyTop);
+    this.scene.fog = new THREE.Fog(s.fog, s.fogNear, s.fogFar);
+    this.hemi.color.set(s.hemiSky);
+    this.hemi.groundColor.set(s.hemiGround);
+    this.hemi.intensity = s.hemiIntensity;
+    this.sun.color.set(s.sunColor);
+    this.sun.intensity = s.sunIntensity;
+    const elev = Math.max(0.05, s.sunElevation);
+    this.sun.position.set(40 * Math.cos(s.dayT * Math.PI * 2), 10 + elev * 55, 30 * Math.sin(s.dayT * Math.PI * 2));
+    this.ensureRain(s.rain);
+  }
+
+  private ensureRain(amount: number) {
+    if (amount <= 0.05) {
+      if (this.rain) this.rain.visible = false;
+      return;
+    }
+    if (!this.rain) {
+      const n = 600;
+      const pos = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) {
+        pos[i * 3] = (Math.random() - 0.5) * 80;
+        pos[i * 3 + 1] = Math.random() * 40;
+        pos[i * 3 + 2] = (Math.random() - 0.5) * 80;
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      this.rain = new THREE.Points(geo, new THREE.PointsMaterial({ color: '#b8d4ff', size: 0.12, transparent: true, opacity: 0.65, depthTest: true }));
+      this.scene.add(this.rain);
+    }
+    this.rain.visible = this.mode === 'town';
+    const arr = (this.rain.geometry as THREE.BufferGeometry).attributes.position as THREE.BufferAttribute;
+    for (let i = 0; i < arr.count; i++) {
+      let y = arr.getY(i) - 0.35 * (0.7 + amount);
+      if (y < 0) y = 25 + Math.random() * 15;
+      arr.setY(i, y);
+    }
+    arr.needsUpdate = true;
+    this.rain.position.set(this.player.pos.x, 0, this.player.pos.z);
   }
 
   interact() {
@@ -496,7 +582,10 @@ export class Game {
         this.panels.openVetInfo();
         break;
       case 'play':
-        toast('Lek med dyrene dine her! ⚽');
+        this.startBubbles();
+        break;
+      case 'mini':
+        this.startKickball();
         break;
       case 'equip':
         this.startUse(z.id);
@@ -515,6 +604,12 @@ export class Game {
       case 'bench-off':
         this.resting = null;
         this.player.pos.y = 0;
+        break;
+      case 'visit':
+        this.askToVisitNearestFriend();
+        break;
+      case 'plaza':
+        this.toggleActivity();
         break;
     }
   }
@@ -622,7 +717,7 @@ export class Game {
     const def = EQUIP_BY_ID[id];
     const eq = this.town.equipment.find((e) => e.id === id);
     if (!def || !eq || this.mode !== 'town' || this.using) return false;
-    if (!canUse({ riding: !!this.riding, holding: !!this.holding, flying: this.flying, paused: this.paused })) {
+    if (!canUse({ riding: !!this.riding, holding: !!this.holding, flying: this.flying, paused: this.paused, driving: !!this.driving, pramming: !!this.pramming })) {
       toast('Sett dyret ned først 🐾', 'bad');
       return false;
     }
@@ -831,7 +926,7 @@ export class Game {
       mz = m.z;
     }
     const mlen = Math.hypot(mx, mz);
-    const speed = this.flying ? FLY : this.riding ? RIDE : WALK;
+    const speed = vehicleSpeed({ flying: this.flying, driving: !!this.driving, pramming: !!this.pramming, riding: !!this.riding });
     if (mlen > 0.05) {
       // move in small steps so nothing thin can be skipped, sliding along whatever we hit
       movePlayer(p.pos, mx * speed * dt, mz * speed * dt, this.playerRadius(), this.colliders(), this.mode === 'town' ? this.town.size / 2 - 2 : undefined);
@@ -903,14 +998,23 @@ export class Game {
     // avatar
     const ride = this.riding ? this.actors.get(this.riding) : undefined;
     let pose: AvatarPose = 'idle';
-    if (ride) pose = this.flying ? 'fly' : 'sit';
+    if (this.activity) {
+      const ap = activityPose(this.activity.kind, this.time - this.activity.since, this.activity.slot);
+      p.pos.x = ap.x;
+      p.pos.z = ap.z;
+      p.yaw = ap.yaw;
+      p.pos.y = 0;
+      pose = ap.pose === 'dance' ? 'dance' : ap.pose === 'wave' ? 'wave' : 'walk';
+    } else if (ride) pose = this.flying ? 'fly' : 'sit';
+    else if (this.driving) pose = 'drive';
     else if (this.resting) pose = 'sit';
     else if (!p.grounded) pose = 'jump';
     else if (mlen > 0.05) pose = 'walk';
     const seat = this.using ? this.town.seatWorld(this.using.id, this.time - this.using.since) : null;
-    if (seat) pose = seat.pose;
+    if (seat) pose = seat.pose as AvatarPose;
     if (this.editingAvatar) pose = 'wave';
     this.avatarHolder.position.copy(p.pos);
+    if (this.driving) this.avatarHolder.position.y = 0.55;
     if (ride) this.avatarHolder.position.y += ride.rig.seatY * this.actorScale(ride) - 0.95;
     this.avatarHolder.rotation.set(seat ? seat.tilt : 0, p.yaw, 0);
     if (seat && seat.tilt !== 0) {
@@ -923,7 +1027,63 @@ export class Game {
     animateAvatar(this.avatar, t, pose, seat ? 1 : mlen, !!this.holding);
     this.mp?.tick(pose as AvatarPoseWire);
     this.avatarShadow.position.set(p.pos.x, this.groundAt(p.pos.x, p.pos.y, p.pos.z) + 0.03, p.pos.z);
-    this.avatarShadow.visible = !ride;
+    this.avatarShadow.visible = !ride && !this.driving;
+    this.updateVehicleMesh();
+
+    // day/night + weather outdoors
+    if (this.mode === 'town') {
+      const sky = skyAt((performance.now() / 1000) - this.weatherT0);
+      this.setSky(sky);
+      if (Math.floor(this.time) !== Math.floor(this.time - dt)) {
+        if (!this.building && !this.editingAvatar && !this.guestHouse) {
+          this.hud.setWhere(`Heddas by · ${skyLabel(sky)}`);
+        }
+      }
+      const px = p.pos.x;
+      const pz = p.pos.z;
+      const inside = this.town.insideBuilding(px, pz);
+      let amb = 'town';
+      if (inside === 'shop' || inside === 'cars' || inside === 'pets') amb = inside === 'shop' ? 'shop' : inside;
+      else if (nearPlaza(px, pz, 12)) amb = this.activity ? 'plaza' : 'town';
+      else {
+        for (const z of this.town.zones) {
+          if (z.kind === 'play' && Math.hypot(px - z.x, pz - z.z) < z.r) {
+            amb = 'play';
+            break;
+          }
+        }
+      }
+      if (sky.rain > 0.2) amb = 'rain';
+      setLocationAmbient(this.save.sound ? amb : null);
+    } else {
+      setLocationAmbient(this.save.sound ? 'house' : null);
+      if (this.rain) this.rain.visible = false;
+    }
+
+    this.visit = tickVisit(this.visit, performance.now());
+    if (this.activity) {
+      const def = ACTIVITIES.find((a) => a.kind === this.activity!.kind);
+      if (def && this.time - this.activity.since > def.duration) {
+        this.activity = null;
+        stopMusic();
+        toast('Festen er over – tusen takk! 🎉', 'ok');
+      }
+    }
+    if (this.mini) {
+      const play = this.town.zones.find((z) => z.kind === 'play');
+      const lx = play ? p.pos.x - play.x : p.pos.x;
+      const lz = play ? p.pos.z - play.z : p.pos.z;
+      this.mini = stepMini(this.mini, dt, { playerX: lx, playerZ: lz });
+      if (this.mini.done) {
+        const reward = miniReward(this.mini);
+        this.mini = null;
+        if (reward > 0) {
+          this.commit({ ...this.save, bucks: this.save.bucks + reward, stats: { ...this.save.stats, tasks: this.save.stats.tasks + 1 } });
+          sfx.win();
+          toast(`Minispill ferdig! +${reward} bucks`, 'gold');
+        }
+      }
+    }
 
     // pets
     this.updatePets(dt, t, moved);
@@ -1055,6 +1215,13 @@ export class Game {
         a.pos.set(p.pos.x + Math.sin(fy) * 0.9, p.pos.y + 0.8, p.pos.z + Math.cos(fy) * 0.9);
         a.yaw = p.yaw;
         pose = 'held';
+      } else if (this.pramming && equipped) {
+        const fy = p.yaw;
+        const back = 1.4;
+        a.pos.set(p.pos.x - Math.sin(fy) * back, 0.95, p.pos.z - Math.cos(fy) * back);
+        a.yaw = p.yaw;
+        pose = 'sleep';
+        a.speed = p.speed;
       } else {
         let target = new THREE.Vector3(a.pos.x, 0, a.pos.z);
         let stopDist = 0.3;
@@ -1154,7 +1321,7 @@ export class Game {
       animatePet(a.rig, t + a.uid.length, pose, a.speed);
       a.shadow.position.set(a.pos.x, this.groundAt(a.pos.x, a.pos.y, a.pos.z) + 0.025, a.pos.z);
       a.shadow.scale.setScalar(s);
-      a.shadow.visible = this.riding !== a.uid && this.holding !== a.uid;
+      a.shadow.visible = this.riding !== a.uid && this.holding !== a.uid && !(this.pramming && equipped);
       // need bubble
       const kind = equipped && pet.need ? pet.need.kind : null;
       a.bubble.visible = !!kind && this.riding !== a.uid;
@@ -1187,6 +1354,10 @@ export class Game {
           near = z;
         }
       }
+      // open play zone: bubble minigame when not on a piece
+      if (inPlay && !this.using && !this.mini && !this.driving) {
+        // keep as fallback; equipment/visit may override below
+      }
       // benches: sit to rest and restore energy
       if (this.resting) near = { kind: 'bench-off', label: 'Reis deg ✋' };
       else {
@@ -1199,7 +1370,7 @@ export class Game {
       }
       // playground pieces: "Bruk huska", or "Gå av" while you sit on one
       if (this.using) near = { kind: 'equip-off', label: 'Gå av ✋' };
-      else if (!this.resting && inPlay && canUse({ riding: !!this.riding, holding: !!this.holding, flying: this.flying, paused: this.paused })) {
+      else if (!this.resting && inPlay && canUse({ riding: !!this.riding, holding: !!this.holding, flying: this.flying, paused: this.paused, driving: !!this.driving, pramming: !!this.pramming })) {
         let bestK = 1;
         for (const e of this.town.equipment) {
           const k = Math.hypot(p.x - e.wx, p.z - e.wz) / e.reach;
@@ -1208,6 +1379,28 @@ export class Game {
             near = { kind: 'equip', id: e.id, label: `Bruk ${e.label} 🎠` };
           }
         }
+        // minigames near sandbox / open area
+        if (!near && !this.mini) {
+          near = { kind: 'play', x: p.x, z: p.z, r: 1, label: 'Sprett bobler 🫧' };
+        }
+      } else if (inPlay && !this.resting && !this.using && !this.mini && !this.driving) {
+        near = { kind: 'mini', label: 'Spark ball ⚽' };
+      }
+      // visit a friend's house (plot doors)
+      if (!near && this.mp?.session.active && !this.driving) {
+        const remotes = [...this.mp.session.remotes.values()];
+        for (let i = 1; i < this.town.housePlots.length; i++) {
+          const plot = this.town.housePlots[i];
+          const r = remotes[i - 1];
+          if (!r) continue;
+          if (Math.hypot(p.x - plot.x, p.z - plot.z) < 6) {
+            near = { kind: 'visit', label: `Besøk ${r.name} 🏠`, peerId: r.id, peerName: r.name } as Game['nearZone'];
+            break;
+          }
+        }
+      }
+      if (!near && nearPlaza(p.x, p.z) && !this.activity && !this.driving) {
+        near = { kind: 'plaza', label: 'Start fest på torget 💃' } as Game['nearZone'];
       }
     } else {
       const d = Math.hypot(p.x - this.interior.door.x, p.z - this.interior.door.z);
@@ -1305,6 +1498,229 @@ export class Game {
     }
     this.commit(s);
   }
+
+
+  activeHouseStyle(): HouseStyle {
+    return (this.guestHouse ?? activeHouse(this.save)).style;
+  }
+
+  onVisitAsk(from: string, fromName: string, fromPlayerId: string) {
+    this.visit = receiveAsk(fromPlayerId, fromName, from, performance.now());
+    toast(`${fromName} vil besøke huset ditt`, 'ok');
+    this.showVisitPrompt(fromName, from);
+  }
+
+  private showVisitPrompt(name: string, fromSocket: string) {
+    const wrap = document.createElement('div');
+    wrap.className = 'visit-prompt';
+    wrap.innerHTML = `<div class="sheet" style="max-width:320px;margin:12px auto;padding:14px;background:#fff;border-radius:18px;box-shadow:0 8px 30px #0003;text-align:center">
+      <b>${name}</b> vil besøke huset ditt<br/><br/>
+      <button class="btn" data-a="ok">Ja, kom inn ✓</button>
+      <button class="btn ghost" data-a="no">Ikke nå</button>
+    </div>`;
+    wrap.style.cssText = 'position:fixed;inset:0;display:flex;align-items:flex-start;justify-content:center;z-index:80;pointer-events:auto;padding-top:60px;background:#0002';
+    document.getElementById('ui')?.append(wrap);
+    wrap.onclick = (e) => {
+      const btn = (e.target as HTMLElement).closest('[data-a]') as HTMLElement | null;
+      if (!btn) return;
+      const ok = btn.dataset.a === 'ok';
+      wrap.remove();
+      if (ok) {
+        const wire = houseToWire(activeHouse(this.save));
+        this.mp?.replyVisit(fromSocket, true, wire);
+        toast(`${name} kommer på besøk!`, 'ok');
+      } else {
+        this.mp?.replyVisit(fromSocket, false);
+        toast('Du sa nei – det er greit', 'ok');
+      }
+      this.visit = idleVisit();
+    };
+  }
+
+  onVisitReply(_from: string, ok: boolean, house?: HouseWire) {
+    if (!ok) {
+      toast('Vennen din sa nei akkurat nå', 'bad');
+      this.visit = idleVisit();
+      return;
+    }
+    if (!house) {
+      toast('Kunne ikke åpne huset', 'bad');
+      this.visit = idleVisit();
+      return;
+    }
+    const ownerId = this.visit.ownerPlayerId ?? 'friend';
+    const peer = this.visit.peerName;
+    const guest = guestHouseFromWire(ownerId, house);
+    this.visit = acceptVisit(this.visit, performance.now());
+    this.enterHouse(guest);
+    toast(`Velkommen hjem til ${peer ?? 'vennen'}!`, 'ok');
+    sfx.door();
+  }
+
+  onRemoteHouse(id: string, house: HouseWire) {
+    this.remoteHouses.set(id, house);
+    const remotes = [...(this.mp?.session.remotes.values() ?? [])];
+    const idx = remotes.findIndex((r) => r.id === id);
+    if (idx >= 0) this.town.setPlotHouse(idx + 1, house.style, remotes[idx].name);
+  }
+
+  onRemoteActivity(id: string, kind: ActivityKind) {
+    if (this.activity) return;
+    if (id === this.mp?.session.youId) return;
+    if (this.mode !== 'town' || !nearPlaza(this.player.pos.x, this.player.pos.z, 14)) return;
+    this.activity = { kind, since: this.time, slot: 1 + (this.mp?.session.remotes.size ?? 0) % 7 };
+    if (kind === 'dance' && !musicPlaying()) startMusic();
+    toast(kind === 'dance' ? 'Dansefest på torget! 💃' : 'Parade rundt fontenen! 🥳', 'ok');
+  }
+
+  toggleDrive() {
+    if (this.driving) {
+      this.clearVehicle();
+      toast('Parkerte bilen', 'ok');
+      return;
+    }
+    if (this.mode !== 'town' || this.riding || this.holding || this.flying || this.using || this.pramming) {
+      sfx.nope();
+      return;
+    }
+    const id = defaultCar(this.save);
+    if (!id || !canDrive(this.save, id)) {
+      toast('Kjøp en bil i Bilbutikken først', 'bad');
+      sfx.nope();
+      return;
+    }
+    this.resting = null;
+    this.driving = id;
+    this.syncVehicleMesh();
+    sfx.whoosh();
+    toast(`Kjører ${CAR_BY_ID[id]?.name ?? 'bil'}! Bruk styrespaken 🚗`, 'ok');
+    this.updateHud();
+  }
+
+  togglePram() {
+    if (this.pramming) {
+      this.clearVehicle();
+      toast('Satte fra deg vogna', 'ok');
+      return;
+    }
+    if (this.mode !== 'town' || this.riding || this.holding || this.flying || this.using || this.driving) {
+      sfx.nope();
+      return;
+    }
+    const id = defaultPram(this.save);
+    if (!id || !canPram(this.save, id) || !this.mainPet()) {
+      toast('Kjøp en vogn i Dyrebutikken og ta med et dyr', 'bad');
+      sfx.nope();
+      return;
+    }
+    this.resting = null;
+    this.pramming = id;
+    this.syncVehicleMesh();
+    sfx.pop();
+    toast(`Dyret sitter i ${PET_SHOP_BY_ID[id]?.name ?? 'vogna'}! 🍼`, 'ok');
+    this.updateHud();
+  }
+
+  toggleActivity() {
+    if (this.activity) {
+      this.activity = null;
+      stopMusic();
+      toast('Ferdig med festen', 'ok');
+      this.updateHud();
+      return;
+    }
+    if (!canStartActivity({
+      inTown: this.mode === 'town',
+      nearPlaza: nearPlaza(this.player.pos.x, this.player.pos.z),
+      driving: !!this.driving,
+      riding: !!this.riding,
+      using: !!this.using,
+      paused: this.paused,
+    })) {
+      toast('Gå til torget (fontenen) for å starte fest', 'bad');
+      sfx.nope();
+      return;
+    }
+    const kind: ActivityKind = Math.random() < 0.5 ? 'dance' : 'parade';
+    this.activity = { kind, since: this.time, slot: 0 };
+    this.mp?.startActivity(kind);
+    if (kind === 'dance') startMusic();
+    toast(kind === 'dance' ? 'Dansefest! 💃' : 'Parade! 🥳', 'ok');
+    this.updateHud();
+  }
+
+  private clearVehicle() {
+    this.driving = null;
+    this.pramming = null;
+    if (this.vehicleMesh) {
+      this.scene.remove(this.vehicleMesh);
+      this.vehicleMesh = null;
+    }
+    this.updateHud();
+  }
+
+  private syncVehicleMesh() {
+    if (this.vehicleMesh) {
+      this.scene.remove(this.vehicleMesh);
+      this.vehicleMesh = null;
+    }
+    if (this.driving) {
+      this.vehicleMesh = buildCar(this.driving);
+      this.scene.add(this.vehicleMesh);
+    } else if (this.pramming) {
+      this.vehicleMesh = buildPram(this.pramming);
+      this.scene.add(this.vehicleMesh);
+    }
+  }
+
+  private updateVehicleMesh() {
+    if (!this.vehicleMesh) return;
+    const pos = this.player.pos;
+    if (this.driving) {
+      this.vehicleMesh.position.set(pos.x, 0, pos.z);
+      this.vehicleMesh.rotation.y = this.player.yaw;
+    } else if (this.pramming) {
+      const back = 1.4;
+      this.vehicleMesh.position.set(pos.x - Math.sin(this.player.yaw) * back, 0, pos.z - Math.cos(this.player.yaw) * back);
+      this.vehicleMesh.rotation.y = this.player.yaw;
+    }
+  }
+
+  startBubbles() {
+    if (this.mini) return;
+    this.mini = startMini('bubbles');
+    toast('Sprett boblene! 🫧', 'ok');
+  }
+
+  startKickball() {
+    if (this.mini) return;
+    this.mini = startMini('kickball');
+    toast('Spark ballen! ⚽', 'ok');
+  }
+
+  askToVisitNearestFriend() {
+    const remotes = [...(this.mp?.session.remotes.values() ?? [])];
+    if (!remotes.length) {
+      toast('Ingen venner i rommet akkurat nå', 'bad');
+      return;
+    }
+    const plots = this.town.housePlots;
+    let best: { r: (typeof remotes)[0]; d: number } | null = null;
+    for (let i = 1; i < plots.length; i++) {
+      const r = remotes[i - 1];
+      if (!r) continue;
+      const d = Math.hypot(this.player.pos.x - plots[i].x, this.player.pos.z - plots[i].z);
+      if (d < 8 && (!best || d < best.d)) best = { r, d };
+    }
+    if (!best || !canAskVisit({ inTown: this.mode === 'town', nearFriendDoor: true, alreadyVisiting: !!this.visitingOwnerId, driving: !!this.driving, paused: this.paused })) {
+      toast('Gå fram til vennens husdør først', 'bad');
+      return;
+    }
+    this.visit = startAsk(best.r.id, best.r.name, best.r.id, performance.now());
+    this.mp?.askVisit(best.r.id);
+    toast(`Spurte ${best.r.name} om å få komme på besøk…`, 'ok');
+  }
+
 
   feedPet(uid: string, foodId: string): boolean {
     const r = feed(this.save, uid, foodId, Date.now(), this.rng);

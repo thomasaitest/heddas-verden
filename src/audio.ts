@@ -5,7 +5,10 @@ let musicTimer: number | null = null;
 
 export function setSoundEnabled(on: boolean): void {
   enabled = on;
-  if (!on) stopMusic();
+  if (!on) {
+    stopMusic();
+    setLocationAmbient(null);
+  }
 }
 
 /** iPad Safari only plays audio after a touch, so unlock on the first one. */
@@ -74,4 +77,64 @@ export function stopMusic(): void {
 
 export function musicPlaying(): boolean {
   return musicTimer !== null;
+}
+
+/** Soft ambient bed that changes with where you are. */
+let ambientTimer: number | null = null;
+let ambientPlace: string | null = null;
+
+const AMBIENT: Record<string, () => void> = {
+  town: () => {
+    tone(880 + Math.random() * 200, 0, 0.08, 'sine', 0.02);
+    if (Math.random() < 0.3) tone(1320, 0.05, 0.05, 'triangle', 0.015);
+  },
+  house: () => {
+    tone(392, 0, 0.25, 'sine', 0.025);
+    tone(494, 0.12, 0.2, 'sine', 0.02);
+  },
+  play: () => {
+    notes([659, 784, 988], 0.05, 'square', 0.03);
+  },
+  shop: () => {
+    tone(1047, 0, 0.06, 'square', 0.03);
+  },
+  cars: () => {
+    tone(180, 0, 0.2, 'sawtooth', 0.02, 120);
+  },
+  pets: () => {
+    tone(700, 0, 0.08, 'sine', 0.03, 900);
+  },
+  plaza: () => {
+    notes([523, 659, 784, 659], 0.08, 'triangle', 0.04);
+  },
+  rain: () => {
+    tone(400 + Math.random() * 400, 0, 0.04, 'sine', 0.012);
+  },
+};
+
+export function setLocationAmbient(place: string | null): void {
+  if (!enabled) {
+    if (ambientTimer !== null) {
+      window.clearInterval(ambientTimer);
+      ambientTimer = null;
+    }
+    ambientPlace = null;
+    return;
+  }
+  if (place === ambientPlace) return;
+  ambientPlace = place;
+  if (ambientTimer !== null) {
+    window.clearInterval(ambientTimer);
+    ambientTimer = null;
+  }
+  if (!place || !AMBIENT[place]) return;
+  const beat = place === 'rain' ? 180 : place === 'play' || place === 'plaza' ? 900 : 1400;
+  ambientTimer = window.setInterval(() => {
+    if (!enabled || !ctx) return;
+    AMBIENT[place]?.();
+  }, beat);
+}
+
+export function locationAmbient(): string | null {
+  return ambientPlace;
 }

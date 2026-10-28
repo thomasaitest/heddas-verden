@@ -6,8 +6,8 @@
  * the seat of the avatar, so the avatar can never drift off the thing it sits on.
  */
 
-export type EquipKind = 'swing' | 'slide' | 'seesaw' | 'merry';
-export type SeatPose = 'swing' | 'slide' | 'seesaw' | 'spin' | 'walk';
+export type EquipKind = 'swing' | 'slide' | 'seesaw' | 'merry' | 'tramp';
+export type SeatPose = 'swing' | 'slide' | 'seesaw' | 'spin' | 'walk' | 'jump';
 
 export interface EquipDef {
   id: string;
@@ -48,12 +48,14 @@ export const SWING_SEAT_TOP = 0.1;
 export const SLIDE = { x: -4, y: 2, z: 0.2, len: 5.6, tilt: 0.62, thick: 0.25 };
 export const SEESAW = { x: -4, y: 0.9, z: 5.5, len: 6, thick: 0.25, arm: 2.2 };
 export const MERRY = { x: 0, y: 0.6, z: 7.5, radius: 2, thick: 0.3, rider: 1.25 };
+export const TRAMP = { x: 4.5, y: 0.35, z: 4.2, radius: 2.2, thick: 0.2 };
 
 export const EQUIPMENT: EquipDef[] = [
   ...SWING_XS.map((x, i): EquipDef => ({ id: `swing${i + 1}`, kind: 'swing', label: 'huska', x, z: SWING_Z, reach: 3.2, exit: { x, z: -0.9, yaw: 0 } })),
   { id: 'slide', kind: 'slide', label: 'sklia', x: SLIDE.x, z: SLIDE.z + 1.2, reach: 4.4, exit: { x: SLIDE.x, z: 3.4, yaw: 0 } },
   { id: 'seesaw', kind: 'seesaw', label: 'vippa', x: SEESAW.x, z: SEESAW.z, reach: 3.6, exit: { x: SEESAW.x, z: 7.1, yaw: Math.PI } },
   { id: 'merry', kind: 'merry', label: 'karusellen', x: MERRY.x, z: MERRY.z, reach: 3.7, exit: { x: MERRY.x, z: 4.8, yaw: Math.PI } },
+  { id: 'tramp', kind: 'tramp', label: 'trampolinen', x: TRAMP.x, z: TRAMP.z, reach: 3.2, exit: { x: TRAMP.x, z: TRAMP.z + 3.2, yaw: Math.PI } },
 ];
 export const EQUIP_BY_ID: Record<string, EquipDef> = Object.fromEntries(EQUIPMENT.map((e) => [e.id, e]));
 
@@ -127,6 +129,19 @@ export function seatAt(id: string, u: number): Seat {
         focus: { x: MERRY.x, y: 1.6, z: MERRY.z },
       };
     }
+    case 'tramp': {
+      const hop = Math.abs(Math.sin(u * 3.2));
+      const y = TRAMP.y + TRAMP.thick / 2 + hop * 2.4;
+      return {
+        x: TRAMP.x,
+        y: y - (hop < 0.15 ? SIT_DROP * 0.3 : 0),
+        z: TRAMP.z,
+        yaw: 0,
+        tilt: 0,
+        pose: hop > 0.2 ? 'jump' : 'walk',
+        focus: { x: TRAMP.x, y: 1.8, z: TRAMP.z },
+      };
+    }
   }
 }
 
@@ -152,6 +167,6 @@ export function wantsOff(move: { x: number; y: number }, jumpPressed: boolean): 
 }
 
 /** Can you climb on right now? (not while riding, carrying an animal or flying) */
-export function canUse(s: { riding: boolean; holding: boolean; flying: boolean; paused: boolean }): boolean {
-  return !s.riding && !s.holding && !s.flying && !s.paused;
+export function canUse(s: { riding: boolean; holding: boolean; flying: boolean; paused: boolean; driving?: boolean; pramming?: boolean }): boolean {
+  return !s.riding && !s.holding && !s.flying && !s.paused && !s.driving && !s.pramming;
 }

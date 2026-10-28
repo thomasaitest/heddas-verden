@@ -107,7 +107,7 @@ describe('protocol encode/decode', () => {
     if (m?.t === 'state') {
       expect(m.x).toBe(250);
       expect(m.y).toBe(-80);
-      expect(m.speed).toBe(20);
+      expect(m.speed).toBe(30);
     }
   });
 });
@@ -261,5 +261,57 @@ describe('avatar live update + mount', () => {
       equip: null,
     });
     expect(msg).toMatchObject({ t: 'state', mount: 'none', area: null });
+  });
+});
+
+describe('v5 protocol: house, visit, activity, drive', () => {
+  it('parses houseStyle/vehicle on state and visit/activity messages', () => {
+    const state = decodeClient(
+      encode({
+        t: 'state',
+        x: 1,
+        y: 0,
+        z: 2,
+        yaw: 0,
+        pose: 'drive',
+        speed: 18,
+        place: 'town',
+        pet: null,
+        equip: null,
+        mount: 'drive',
+        houseStyle: 'villa',
+        vehicle: 'bil-rosa',
+      }),
+    );
+    expect(state?.t).toBe('state');
+    if (state?.t === 'state') {
+      expect(state.mount).toBe('drive');
+      expect(state.houseStyle).toBe('villa');
+      expect(state.vehicle).toBe('bil-rosa');
+      expect(state.speed).toBe(18);
+    }
+    const ask = decodeClient(encode({ t: 'visit-ask', to: 'sock1' }));
+    expect(ask).toEqual({ t: 'visit-ask', to: 'sock1' });
+    const act = decodeClient(encode({ t: 'activity', kind: 'dance' }));
+    expect(act).toEqual({ t: 'activity', kind: 'dance' });
+    const house = decodeClient(
+      encode({
+        t: 'house',
+        house: { style: 'hytte', items: [{ id: 'sofa', x: 0, z: 1, rot: 0, floor: 0 }] },
+      }),
+    );
+    expect(house?.t).toBe('house');
+  });
+
+  it('relays visit-ask to the target seat and activity to all', () => {
+    const room = createRoom('K7H2M');
+    handleConnect(room, 'a');
+    handleRawMessage(room, 'a', encode({ t: 'hello', v: MP_VERSION, name: 'Ada', avatar: DEFAULT_AVATAR, playerId: 'p-a' }));
+    handleConnect(room, 'b');
+    handleRawMessage(room, 'b', encode({ t: 'hello', v: MP_VERSION, name: 'Bo', avatar: DEFAULT_AVATAR, playerId: 'p-b' }));
+    const out = handleRawMessage(room, 'a', encode({ t: 'visit-ask', to: 'p-b' }));
+    expect(out.some((o) => o.to === 'b' && o.msg.t === 'visit-ask')).toBe(true);
+    const fest = handleRawMessage(room, 'a', encode({ t: 'activity', kind: 'parade' }));
+    expect(fest.some((o) => o.to === 'all' && o.msg.t === 'activity')).toBe(true);
   });
 });

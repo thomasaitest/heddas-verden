@@ -143,6 +143,8 @@ function handleMsg(room: RoomState, socketKey: string, msg: ClientMsg, now: numb
   if (msg.t === 'state') {
     const area = msg.area ?? null;
     const mount = msg.mount ?? 'none';
+    const houseStyle = msg.houseStyle ?? seat.snap.houseStyle ?? null;
+    const vehicle = msg.vehicle ?? null;
     seat.snap = {
       ...seat.snap,
       x: msg.x,
@@ -156,6 +158,8 @@ function handleMsg(room: RoomState, socketKey: string, msg: ClientMsg, now: numb
       pet: msg.pet,
       equip: msg.equip,
       mount,
+      houseStyle,
+      vehicle,
     };
     return [
       {
@@ -174,6 +178,8 @@ function handleMsg(room: RoomState, socketKey: string, msg: ClientMsg, now: numb
           pet: msg.pet,
           equip: msg.equip,
           mount,
+          houseStyle,
+          vehicle,
         },
       },
     ];
@@ -189,6 +195,52 @@ function handleMsg(room: RoomState, socketKey: string, msg: ClientMsg, now: numb
     seat.snap.emote = msg.id;
     seat.snap.emoteUntil = now + 3000;
     return [{ to: 'all', msg: { t: 'emote', id: socketKey, emote: msg.id as EmoteId } }];
+  }
+
+  if (msg.t === 'house') {
+    seat.snap = { ...seat.snap, houseStyle: msg.house.style };
+    return [{ to: 'others', msg: { t: 'house', id: socketKey, house: msg.house } }];
+  }
+
+  if (msg.t === 'visit-ask') {
+    // Resolve target by playerId or socket id
+    let targetKey: string | null = null;
+    for (const [k, s] of room.seats) {
+      if (k === msg.to || s.playerId === msg.to) {
+        targetKey = k;
+        break;
+      }
+    }
+    if (!targetKey || targetKey === socketKey) {
+      return [{ to: socketKey, msg: { t: 'error', code: 'visit', message: 'Fant ikke vennen.' } }];
+    }
+    return [
+      {
+        to: targetKey,
+        msg: { t: 'visit-ask', from: socketKey, fromName: seat.name, fromPlayerId: seat.playerId },
+      },
+    ];
+  }
+
+  if (msg.t === 'visit-reply') {
+    let targetKey: string | null = null;
+    for (const [k, s] of room.seats) {
+      if (k === msg.to || s.playerId === msg.to) {
+        targetKey = k;
+        break;
+      }
+    }
+    if (!targetKey) return [];
+    return [
+      {
+        to: targetKey,
+        msg: { t: 'visit-reply', from: socketKey, ok: msg.ok, ...(msg.house ? { house: msg.house } : {}) },
+      },
+    ];
+  }
+
+  if (msg.t === 'activity') {
+    return [{ to: 'all', msg: { t: 'activity', id: socketKey, kind: msg.kind } }];
   }
 
   return [];

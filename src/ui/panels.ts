@@ -501,7 +501,7 @@ export function openCars(game: Game) {
             el('b', {}, c.name),
             el('small', {}, c.text),
             game.save.bag[c.id]
-              ? el('span', { class: 'tag' }, 'I sekken')
+              ? button('Kjør 🚗', () => { s.close(); game.toggleDrive(); }, 'btn buy')
               : button(price(c.price), () => {
                   const r = buyCar(game.save, c.id);
                   if (!r.ok) { toast(failText(r.reason), 'bad'); sfx.nope(); return; }
@@ -536,7 +536,7 @@ export function openPetShop(game: Game) {
             el('b', {}, item.name),
             el('small', {}, item.text),
             game.save.bag[item.id]
-              ? el('span', { class: 'tag' }, 'I sekken')
+              ? button('Bruk vogn 🍼', () => { s.close(); game.togglePram(); }, 'btn buy')
               : button(price(item.price), () => {
                   const r = buyPetShopItem(game.save, item.id);
                   if (!r.ok) { toast(failText(r.reason), 'bad'); sfx.nope(); return; }
