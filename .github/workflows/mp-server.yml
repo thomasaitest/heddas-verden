@@ -1,15 +1,19 @@
-# Deploys the multiplayer Cloudflare Worker.
-# Disabled until CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID secrets exist.
 name: Deploy multiplayer server
 on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['server/**', 'src/mp/protocol.ts', 'src/mp/roomLogic.ts', 'src/mp/codes.ts', 'src/mp/names.ts', 'src/mp/rateLimit.ts']
+    paths:
+      - 'server/**'
+      - 'src/mp/protocol.ts'
+      - 'src/mp/roomLogic.ts'
+      - 'src/mp/codes.ts'
+      - 'src/mp/names.ts'
+      - 'src/mp/rateLimit.ts'
+      - '.github/workflows/mp-server.yml'
 
 jobs:
   deploy:
-    if: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -19,6 +23,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: npm
+          cache-dependency-path: server/package-lock.json
       - run: npm ci
       - run: npx wrangler deploy
         env:

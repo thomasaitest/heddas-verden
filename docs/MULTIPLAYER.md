@@ -26,6 +26,11 @@ cd .. && npm run dev
 
 Åpne to vinduer, trykk **Sammen** → **Lag rom** / **Bli med**.
 
+## Produksjon
+
+- Worker: `https://heddas-verden-mp.heddasverden.workers.dev` (WSS: `wss://heddas-verden-mp.heddasverden.workers.dev`)
+- WebSocket godtas bare fra Origin `https://thomasaitest.github.io` (og localhost for lokal utvikling).
+
 ## Det Thomas må gjøre for hosting
 
 1. **Cloudflare-konto** (gratis): https://dash.cloudflare.com/sign-up  
