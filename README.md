@@ -33,3 +33,7 @@ src/game.ts  game loop, movement, camera, pet AI, care zones
 ```
 
 Pushing to `main` runs `.github/workflows/deploy.yml` (install, test, build with `BASE_PATH=/heddas-verden/`, deploy to GitHub Pages).
+
+## Flerspiller
+
+Se [docs/MULTIPLAYER.md](docs/MULTIPLAYER.md). Kort: `cd server && npm run dev`, så `npm run dev` med `VITE_MP_URL=ws://127.0.0.1:8787`.

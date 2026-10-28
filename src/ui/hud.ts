@@ -20,6 +20,8 @@ export interface HudActions {
   fly(): void;
   feed(): void;
   play(): void;
+  mp(): void;
+  emote(): void;
 }
 
 export interface PetActionState {
@@ -71,6 +73,8 @@ export class Hud {
       button(el('span', {}, '🧍', el('b', {}, 'Avatar')), a.avatar, 'btn dock-btn avatar'),
       button(el('span', {}, '🗺️', el('b', {}, 'Kart')), a.map, 'btn dock-btn map'),
       this.buildBtn,
+      button(el('span', {}, '👫', el('b', {}, 'Sammen')), a.mp, 'btn dock-btn mp'),
+      button(el('span', {}, '😊', el('b', {}, 'Hei')), a.emote, 'btn dock-btn emote'),
     );
     this.joyKnob = el('div', { class: 'joy-knob' });
     this.joyBase = el('div', { class: 'joy-base' }, this.joyKnob);

@@ -22,6 +22,8 @@ import { buildTown, type Town, type Zone } from './three/town.ts';
 import { Thumbs } from './thumbs.ts';
 import { toast } from './ui/dom.ts';
 import { Hud } from './ui/hud.ts';
+import { MpClient } from './mp/client.ts';
+import type { AvatarPoseWire } from './mp/protocol.ts';
 
 export interface PetActor {
   uid: string;
@@ -110,6 +112,7 @@ export class Game {
   private dragItem: { uid: string; dx: number; dz: number } | null = null;
   private onChange: (() => void)[] = [];
   paused = false;
+  mp: MpClient | null = null;
 
   constructor(private host: HTMLElement, ui: HTMLElement) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance', preserveDrawingBuffer: false });
@@ -164,6 +167,8 @@ export class Game {
         if (p) this.panels.feedMenu(p.uid);
       },
       play: () => this.panels.toyMenu(),
+      mp: () => this.mp?.openMenu(),
+      emote: () => this.mp?.openEmotes(),
     });
     this.hud.soundBtn.textContent = this.save.sound ? '🔊' : '🔇';
     this.input = new Input(this.renderer.domElement, this.hud.joyBase, this.hud.joyKnob, this.hud.jump);
@@ -188,6 +193,7 @@ export class Game {
     window.addEventListener('pagehide', () => this.flush());
     this.resize();
     this.updateHud();
+    this.mp = new MpClient(this);
   }
 
   // ---------- state ----------
@@ -866,6 +872,7 @@ export class Game {
       this.avatarHolder.position.y += hip * (1 - Math.cos(seat.tilt));
     }
     animateAvatar(this.avatar, t, pose, seat ? 1 : mlen, !!this.holding);
+    this.mp?.tick(pose as AvatarPoseWire);
     this.avatarShadow.position.set(p.pos.x, this.groundAt(p.pos.x, p.pos.y, p.pos.z) + 0.03, p.pos.z);
     this.avatarShadow.visible = !ride;
 

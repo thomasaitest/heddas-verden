@@ -249,3 +249,35 @@ body.building .jump, body.building .pet-bar, body.building .tasks, body.building
 .opt-in { display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .opt-img { width: 72px; height: 72px; image-rendering: auto; }
 .opt b { font-size: 13px; line-height: 1.1; }
+
+/* ---------- multiplayer ---------- */
+.dock-btn.mp { --b: #3fa4ff; }
+.dock-btn.mp.on { --b: #54c45e; }
+.dock-btn.emote { --b: #ff8fb1; }
+.dock { gap: 8px; }
+.dock-btn { width: 68px; height: 72px; font-size: 26px; }
+.dock-btn b { font-size: 12px; }
+.field {
+  display: block; width: 100%; margin-top: 6px; padding: 12px 14px;
+  border-radius: 16px; border: 3px solid #eadcff; background: #f8f3ff;
+  font: inherit; font-size: 18px; font-weight: 600; color: var(--ink);
+}
+.field:focus { outline: none; border-color: #3fa4ff; background: #fff; }
+.field.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.mp-label { display: block; font-weight: 700; margin-top: 12px; text-align: left; }
+.mp-err { color: #d44545; font-weight: 700; text-align: center; min-height: 1.2em; }
+.mp-code {
+  font: 700 36px ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.2em; text-align: center; padding: 14px;
+  background: #eef9ff; border: 4px solid #3fa4ff; border-radius: 20px; margin: 10px 0;
+}
+.mp-hr { border: 0; border-top: 3px dashed #eadcff; margin: 18px 0; }
+.emote-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.btn.emote { --b: #fff; color: var(--ink); padding: 10px 6px; height: auto; }
+.emote-btn { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.emote-emoji { font-size: 32px; line-height: 1; }
+.btn.emote small { font-size: 12px; font-weight: 700; }
+@media (max-width: 700px) {
+  .dock-btn { width: 58px; height: 64px; font-size: 22px; border-radius: 18px; }
+  .dock-btn b { font-size: 11px; }
+}
