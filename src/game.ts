@@ -11,7 +11,8 @@ import { NEED_INFO, stageOf, type CareWhere, type NeedKind, type PetState } from
 import { SPECIES_BY_ID } from './logic/pets.ts';
 import { loadSave, writeSave, type SaveData } from './logic/save.ts';
 import { cameraRelative, orbit } from './logic/camera.ts';
-import { movePlayer, resolve, type Colliders } from './logic/collision.ts';
+import { movePlayer, resolve, surfaceUnder, type Colliders } from './logic/collision.ts';
+import { afterJump, canJump, drainWalk, ENERGY_MAX, restEnergy } from './logic/energy.ts';
 import { Input } from './input.ts';
 import { animateAvatar, buildAvatar, type AvatarPose, type AvatarRig } from './three/avatarModel.ts';
 import { createInterior, type Interior } from './three/interior.ts';
@@ -55,6 +56,8 @@ export interface PanelHooks {
   openMap(): void;
   openBuild(): void;
   openShop(): void;
+  openCars(): void;
+  openPetShop(): void;
   openEggs(): void;
   openDoors(): void;
   openVetInfo(): void;
@@ -78,7 +81,9 @@ export class Game {
   input: Input;
   save: SaveData;
   mode: 'town' | 'house' = 'town';
-  player = { pos: new THREE.Vector3(), vy: 0, yaw: 0, grounded: true, speed: 0 };
+  player = { pos: new THREE.Vector3(), vy: 0, yaw: 0, grounded: true, speed: 0, energy: ENERGY_MAX };
+  /** Sitting on an outdoor bench to rest. */
+  resting: { x: number; z: number; yaw: number } | null = null;
   cam = { yaw: 0, pitch: 0.38, dist: 15 };
   /** Camera distance actually used this frame (shorter than cam.dist while a building is in the way). */
   private camShown = 15;
@@ -104,7 +109,7 @@ export class Game {
   private dirty = false;
   private lastSaveAt = 0;
   private lastTickAt = 0;
-  private nearZone: Zone | { kind: 'exit'; label: string } | { kind: 'equip'; id: string; label: string } | { kind: 'equip-off'; label: string } | null = null;
+  private nearZone: Zone | { kind: 'exit'; label: string } | { kind: 'equip'; id: string; label: string } | { kind: 'equip-off'; label: string } | { kind: 'bench'; label: string; x: number; z: number; yaw: number } | { kind: 'bench-off'; label: string } | null = null;
   /** The playground piece you are sitting on (swing, slide, seesaw, merry-go-round), if any. */
   using: { id: string; since: number } | null = null;
   private bubbleTex = new Map<string, THREE.Texture>();
@@ -202,7 +207,10 @@ export class Game {
     const prevHouse = this.save.activeHouseId;
     this.save = next;
     this.dirty = true;
-    if (opts.avatar) this.rebuildAvatar();
+    if (opts.avatar) {
+      this.rebuildAvatar();
+      this.mp?.broadcastAvatar(next.avatar);
+    }
     if (opts.pets) this.syncPets();
     if (opts.house || prevHouse !== next.activeHouseId) {
       this.town.setHomeStyle(activeHouse(next).style);
@@ -232,6 +240,7 @@ export class Game {
 
   updateHud() {
     this.hud.setBucks(this.save.bucks);
+    this.hud.setEnergy(this.player.energy);
     const house = activeHouse(this.save);
     this.hud.setMode(this.mode, this.mode === 'house' ? HOUSE_BY_STYLE[house.style].name : 'Heddas by', canEdit(house, this.save.playerId));
     this.hud.setTasks(this.equippedPets(), (uid) => this.onTaskTap(uid));
@@ -404,6 +413,7 @@ export class Game {
 
   // ---------- places ----------
   enterHouse() {
+    this.resting = null;
     if (this.using) this.stopUse();
     this.cancelPlays();
     this.mode = 'house';
@@ -470,6 +480,12 @@ export class Game {
       case 'shop':
         this.panels.openShop();
         break;
+      case 'cars':
+        this.panels.openCars();
+        break;
+      case 'pets':
+        this.panels.openPetShop();
+        break;
       case 'eggs':
         this.panels.openEggs();
         break;
@@ -487,6 +503,18 @@ export class Game {
         break;
       case 'equip-off':
         this.stopUse();
+        break;
+      case 'bench':
+        this.resting = { x: z.x, z: z.z, yaw: z.yaw };
+        this.player.pos.set(z.x, 0.55, z.z);
+        this.player.yaw = z.yaw;
+        this.player.vy = 0;
+        this.player.grounded = true;
+        toast('Hviler… Energien fylles opp 💤');
+        break;
+      case 'bench-off':
+        this.resting = null;
+        this.player.pos.y = 0;
         break;
     }
   }
@@ -766,7 +794,7 @@ export class Game {
     const now = Date.now();
     const inp = this.input.poll();
     if (this.using && wantsOff(inp.move, inp.jumpPressed)) this.stopUse();
-    const frozen = this.paused || this.editingAvatar || !!this.using;
+    const frozen = this.paused || this.editingAvatar || !!this.using || !!this.resting;
 
     // needs tick
     if (now - this.lastTickAt > 1000) {
@@ -833,29 +861,50 @@ export class Game {
         p.pos.y = 0;
         p.vy = 0;
       }
+    } else if (this.resting) {
+      p.pos.set(this.resting.x, 0.55, this.resting.z);
+      p.yaw = this.resting.yaw;
+      p.vy = 0;
+      p.grounded = true;
+      p.energy = restEnergy(p.energy, dt);
+      if (inp.jumpPressed || mlen > 0.15) {
+        this.resting = null;
+        p.pos.y = 0;
+      }
     } else {
-      if (inp.jumpPressed && p.grounded && !frozen) {
+      if (inp.jumpPressed && p.grounded && !frozen && canJump(p.energy)) {
         p.vy = this.riding ? 13 : 11;
         p.grounded = false;
+        p.energy = afterJump(p.energy);
         sfx.pop();
       }
       p.vy -= GRAVITY * dt;
       p.pos.y += p.vy * dt;
-      const ground = this.groundHere();
+      let ground = this.groundHere();
+      // land on fountain rim / other surfaces while falling
+      if (this.mode === 'town' && p.vy <= 0) {
+        const surf = surfaceUnder(p.pos.x, p.pos.z, p.pos.y, this.town.surfaces, 0.45, 0.2);
+        if (surf !== null && surf > ground) ground = surf;
+      }
       // walking up/down the stairs keeps you on the ramp; a jump or a fall lands on it
       if (p.pos.y <= ground || (p.grounded && p.vy <= 0 && p.pos.y - ground < 1.5 && this.mode === 'house')) {
         p.pos.y = ground;
         p.vy = 0;
         p.grounded = true;
+      } else {
+        p.grounded = false;
       }
+      if (mlen > 0.05) p.energy = drainWalk(p.energy, dt, true);
     }
     if (!this.using) this.collide();
     const moved = this.using ? 0 : Math.hypot(p.pos.x - prev.x, p.pos.z - prev.z);
 
+    this.hud.setEnergy(this.player.energy);
     // avatar
     const ride = this.riding ? this.actors.get(this.riding) : undefined;
     let pose: AvatarPose = 'idle';
     if (ride) pose = this.flying ? 'fly' : 'sit';
+    else if (this.resting) pose = 'sit';
     else if (!p.grounded) pose = 'jump';
     else if (mlen > 0.05) pose = 'walk';
     const seat = this.using ? this.town.seatWorld(this.using.id, this.time - this.using.since) : null;
@@ -1138,9 +1187,19 @@ export class Game {
           near = z;
         }
       }
+      // benches: sit to rest and restore energy
+      if (this.resting) near = { kind: 'bench-off', label: 'Reis deg ✋' };
+      else {
+        for (const b of this.town.benches) {
+          if (Math.hypot(p.x - b.x, p.z - b.z) < 2.2) {
+            near = { kind: 'bench', label: 'Sett deg 🪑', x: b.x, z: b.z, yaw: b.yaw };
+            break;
+          }
+        }
+      }
       // playground pieces: "Bruk huska", or "Gå av" while you sit on one
       if (this.using) near = { kind: 'equip-off', label: 'Gå av ✋' };
-      else if (inPlay && canUse({ riding: !!this.riding, holding: !!this.holding, flying: this.flying, paused: this.paused })) {
+      else if (!this.resting && inPlay && canUse({ riding: !!this.riding, holding: !!this.holding, flying: this.flying, paused: this.paused })) {
         let bestK = 1;
         for (const e of this.town.equipment) {
           const k = Math.hypot(p.x - e.wx, p.z - e.wz) / e.reach;

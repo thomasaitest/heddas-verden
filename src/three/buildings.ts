@@ -250,3 +250,55 @@ export function fillHospital(g: THREE.Group): { beds: { x: number; z: number; y:
   pad.userData.noCast = true;
   return { beds };
 }
+
+// ---------------------------------------------------------------- car shop / pet shop
+
+/** Showroom floor with cars on pads. Returns where to stand to browse. */
+export function fillCarShop(g: THREE.Group): { counter: { x: number; z: number } } {
+  tileFloor(g, 16, 12, '#e8eef8', '#d0d8e8');
+  box(g, '#3fa4ff', [0, 0.05, 5.4], [4, 0.03, 1.2]).userData.noCast = true;
+  plane(g, textTexture('Bilbutikk', { bg: '#3fa4ff', fg: '#fff', w: 512, h: 96 }), [0, 5.2, -5.7], 5, 0.9);
+  const colors = ['#ff8fb1', '#ffe066', '#5cc3f2', '#7ccf6a', '#c88bff'];
+  colors.forEach((c, i) => {
+    const x = -6 + i * 3;
+    const car = new THREE.Group();
+    solid(rbox(car, c, [0, 0.55, 0], [2.4, 0.7, 1.3]), 'rect', 0.1, 1.4);
+    rbox(car, '#bfe9ff', [0.1, 1.05, 0], [1.4, 0.55, 1.15], undefined, 0.25);
+    for (const [wx, wz] of [[-0.7, 0.7], [0.7, 0.7], [-0.7, -0.7], [0.7, -0.7]]) {
+      cyl(car, '#2b2b38', [wx, 0.28, wz], [0.45, 0.35, 0.45], [0, 0, Math.PI / 2]);
+    }
+    box(car, '#fff4c2', [1.15, 0.55, 0.45], [0.15, 0.2, 0.25], undefined, 0.4);
+    car.position.set(x, 0, -1.5);
+    g.add(car);
+    solid(rbox(g, '#ffffff', [x, 0.08, -1.5], [2.8, 0.1, 2.0]), 'rect', 0, 0.2);
+  });
+  solid(rbox(g, '#ffffff', [5.5, 0.55, 3.2], [2.4, 1.1, 1.4]), 'rect', 0, 1.3);
+  rbox(g, '#3fa4ff', [5.5, 1.14, 3.2], [2.5, 0.1, 1.5]);
+  return { counter: { x: 3.5, z: 3.0 } };
+}
+
+/** Pet shop with prams and toys on shelves. */
+export function fillPetShop(g: THREE.Group): { counter: { x: number; z: number } } {
+  tileFloor(g, 14, 11, '#fff0f6', '#ffe0ef');
+  box(g, '#ff8fb1', [0, 0.05, 4.8], [3.6, 0.03, 1.2]).userData.noCast = true;
+  plane(g, textTexture('Dyrebutikk', { bg: '#ff8fb1', fg: '#fff', w: 512, h: 96 }), [0, 5.0, -5.1], 5.2, 0.9);
+  // shelves of toys
+  solid(box(g, '#c98a55', [0, 1.8, -4.7], [12, 3.6, 0.5]), 'rect', 0.05, 4);
+  for (let r = 0; r < 3; r++) {
+    box(g, '#d9a066', [0, 0.7 + r * 1.1, -4.3], [11.6, 0.1, 0.9]);
+    for (let i = 0; i < 8; i++) sph(g, ['#ff6f6f', '#ffe066', '#5cc3f2', '#c88bff'][(i + r) % 4], [-4.5 + i * 1.2, 0.95 + r * 1.1, -4.2], [0.35, 0.35, 0.35]);
+  }
+  // prams
+  for (const [x, c] of [[-3.5, '#ff8fb1'], [0, '#5cc3f2'], [3.5, '#ffe066']] as const) {
+    const p = new THREE.Group();
+    solid(rbox(p, c, [0, 0.7, 0], [1.6, 0.7, 1.0]), 'rect', 0.1, 1.3);
+    for (const sx of [-0.55, 0.55]) cyl(p, '#2b2b38', [sx, 0.25, 0.45], [0.35, 0.2, 0.35], [0, 0, Math.PI / 2]);
+    for (const sx of [-0.55, 0.55]) cyl(p, '#2b2b38', [sx, 0.25, -0.45], [0.35, 0.2, 0.35], [0, 0, Math.PI / 2]);
+    box(p, '#ffffff', [0, 1.3, -0.2], [0.08, 0.9, 0.08], [0.4, 0, 0]);
+    p.position.set(x, 0, 1.2);
+    g.add(p);
+  }
+  solid(rbox(g, '#ffffff', [5.0, 0.55, 3.0], [2.2, 1.1, 1.3]), 'rect', 0, 1.3);
+  rbox(g, '#ff8fb1', [5.0, 1.14, 3.0], [2.3, 0.1, 1.4]);
+  return { counter: { x: 3.0, z: 2.8 } };
+}

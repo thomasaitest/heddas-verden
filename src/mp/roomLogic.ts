@@ -141,6 +141,8 @@ function handleMsg(room: RoomState, socketKey: string, msg: ClientMsg, now: numb
   }
 
   if (msg.t === 'state') {
+    const area = msg.area ?? null;
+    const mount = msg.mount ?? 'none';
     seat.snap = {
       ...seat.snap,
       x: msg.x,
@@ -150,8 +152,10 @@ function handleMsg(room: RoomState, socketKey: string, msg: ClientMsg, now: numb
       pose: msg.pose,
       speed: msg.speed,
       place: msg.place,
+      area,
       pet: msg.pet,
       equip: msg.equip,
+      mount,
     };
     return [
       {
@@ -166,11 +170,19 @@ function handleMsg(room: RoomState, socketKey: string, msg: ClientMsg, now: numb
           pose: msg.pose,
           speed: msg.speed,
           place: msg.place,
+          area,
           pet: msg.pet,
           equip: msg.equip,
+          mount,
         },
       },
     ];
+  }
+
+  if (msg.t === 'avatar') {
+    seat.avatar = msg.avatar;
+    seat.snap = { ...seat.snap, avatar: msg.avatar };
+    return [{ to: 'others', msg: { t: 'avatar', id: socketKey, avatar: msg.avatar } }];
   }
 
   if (msg.t === 'emote') {

@@ -5,11 +5,13 @@ import {
   STATE_HZ,
   type ClientMsg,
   type EmoteId,
+  type MountWire,
   type PetWire,
   type PlaceWire,
   type PlayerSnapshot,
   type AvatarPoseWire,
   type ServerMsg,
+  normalizeSnapshot,
 } from './protocol.ts';
 import { defaultMpUrl, type MpTransport, type TransportStatus } from './transport.ts';
 import { WsTransport } from './wsTransport.ts';
@@ -22,8 +24,10 @@ export interface RemoteView {
   interp: InterpState;
   pose: AvatarPoseWire;
   place: PlaceWire;
+  area: string | null;
   pet: PetWire | null;
   equip: string | null;
+  mount: MountWire;
   emote: EmoteId | null;
   emoteUntil: number;
 }
@@ -34,6 +38,7 @@ export interface SessionHooks {
   onRoom(code: string | null, youName: string | null): void;
   onError(message: string): void;
   onEmote?(id: string, emote: EmoteId): void;
+  onAvatar?(id: string): void;
 }
 
 export class MpSession {
@@ -78,14 +83,13 @@ export class MpSession {
     this.code = code;
     this.youName = n;
     this.remotes.clear();
-    this.youId = null;
     this.wantUrl = `${defaultMpUrl()}/room/${code}`;
     this.transport.connect(this.wantUrl);
     this.hooks.onRoom(code, n);
     return true;
   }
 
-  leave(): void {
+  leave() {
     this.intentionalClose = true;
     this.clearReconnect();
     this.transport.close();
@@ -107,8 +111,10 @@ export class MpSession {
     pose: AvatarPoseWire;
     speed: number;
     place: PlaceWire;
+    area?: string | null;
     pet: PetWire | null;
     equip: string | null;
+    mount?: MountWire;
   }, now = performance.now()): void {
     if (!this.active) return;
     const minGap = 1000 / STATE_HZ;
@@ -116,6 +122,13 @@ export class MpSession {
     this.lastSend = now;
     const msg: ClientMsg = { t: 'state', ...s };
     this.transport.send(msg);
+  }
+
+  /** Push a live avatar/outfit change so others rebuild the remote figure. */
+  sendAvatar(avatar: Avatar): void {
+    if (!this.active) return;
+    if (this.hello) this.hello = { ...this.hello, avatar };
+    this.transport.send({ t: 'avatar', avatar });
   }
 
   sendEmote(id: EmoteId): void {
@@ -195,8 +208,19 @@ export class MpSession {
       });
       r.pose = msg.pose;
       r.place = msg.place;
+      r.area = msg.area ?? null;
       r.pet = msg.pet;
       r.equip = msg.equip;
+      r.mount = msg.mount ?? 'none';
+      return;
+    }
+    if (msg.t === 'avatar') {
+      const r = this.remotes.get(msg.id);
+      if (r) {
+        r.avatar = msg.avatar;
+        this.hooks.onAvatar?.(msg.id);
+        this.hooks.onRemotes();
+      }
       return;
     }
     if (msg.t === 'emote') {
@@ -216,29 +240,32 @@ export class MpSession {
     }
   }
 
-  private upsertRemote(p: PlayerSnapshot) {
-    const existing = this.remotes.get(p.id);
+  private upsertRemote(p: PlayerSnapshot | (Partial<PlayerSnapshot> & { id: string; name: string; avatar: Avatar })) {
+    const snap = normalizeSnapshot(p);
+    const existing = this.remotes.get(snap.id);
     const interp = pushSample(existing?.interp ?? null, {
-      x: p.x,
-      y: p.y,
-      z: p.z,
-      yaw: p.yaw,
-      speed: p.speed,
-      pose: p.pose,
-      place: p.place,
-      equip: p.equip,
+      x: snap.x,
+      y: snap.y,
+      z: snap.z,
+      yaw: snap.yaw,
+      speed: snap.speed,
+      pose: snap.pose,
+      place: snap.place,
+      equip: snap.equip,
     });
-    this.remotes.set(p.id, {
-      id: p.id,
-      name: p.name,
-      avatar: p.avatar,
+    this.remotes.set(snap.id, {
+      id: snap.id,
+      name: snap.name,
+      avatar: snap.avatar,
       interp,
-      pose: p.pose,
-      place: p.place,
-      pet: p.pet,
-      equip: p.equip,
-      emote: p.emote,
-      emoteUntil: p.emoteUntil,
+      pose: snap.pose,
+      place: snap.place,
+      area: snap.area,
+      pet: snap.pet,
+      equip: snap.equip,
+      mount: snap.mount,
+      emote: snap.emote,
+      emoteUntil: snap.emoteUntil,
     });
   }
 }

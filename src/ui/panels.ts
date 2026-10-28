@@ -1,8 +1,8 @@
 import { sfx } from '../audio.ts';
-import { ACCESSORIES, BOTTOMS, CLOTH_COLORS, FACES, HAIR_COLORS, HAIR_STYLES, HATS, randomAvatar, SHIRT_PRINTS, SHOES, SKIN, type Avatar } from '../logic/avatar.ts';
-import { FLOOR_COLORS, FOODS, FOOD_BY_ID, FURN_BY_ID, FURN_CATS, FURNITURE, HOUSES, PALETTE, POTIONS, TOYS, WALL_COLORS, type FurnCat } from '../logic/catalog.ts';
+import { ACCESSORIES, BOTTOMS, CLOTH_COLORS, FACES, HAIR_COLORS, HAIR_STYLES, HATS, OUTFIT_PRESETS, randomAvatar, SHIRT_PRINTS, SHOES, SKIN, type Avatar } from '../logic/avatar.ts';
+import { CARS, FLOOR_COLORS, FOODS, FOOD_BY_ID, FURN_BY_ID, FURN_CATS, FURNITURE, HOUSES, PALETTE, PET_SHOP, POTIONS, TOYS, WALL_COLORS, type FurnCat } from '../logic/catalog.ts';
 import { POINTS, ITEM_INFO, newGame, openDoor, useMagnifier, type DoorGame } from '../logic/doors.ts';
-import { activeHouse, addBucks, buyAndHatch, buyFood, buyFurniture, buyHouse, buyPotion, buyToy, editHouse, placeFromInventory, renamePet, storeItem, toggleEquip, usePotion } from '../logic/economy.ts';
+import { activeHouse, addBucks, buyAndHatch, buyCar, buyFood, buyFurniture, buyHouse, buyPetShopItem, buyPotion, buyToy, editHouse, placeFromInventory, renamePet, storeItem, toggleEquip, usePotion } from '../logic/economy.ts';
 import { rotateItem, updateItem } from '../logic/house.ts';
 import { joyNow, NEED_INFO, stageOf, stageProgress, STAGES, type PetState } from '../logic/needs.ts';
 import { EGGS, RARITY_INFO, SPECIES_BY_ID, type EggType } from '../logic/pets.ts';
@@ -373,6 +373,8 @@ export function openMap(game: Game) {
     play: { e: '⚽', n: 'Lekeplass' },
     eggs: { e: '🥚', n: 'Eggbutikk' },
     doors: { e: '🚪', n: 'Dørspillet' },
+    cars: { e: '🚗', n: 'Bilbutikk' },
+    pets: { e: '🐾', n: 'Dyrebutikk' },
   };
   /** A flat picture of the town: where you are and where everything is. You have to walk there. */
   const minimap = () => {
@@ -389,7 +391,6 @@ export function openMap(game: Game) {
     ctx.lineWidth = 16;
     ctx.lineCap = 'round';
     for (const z of game.town.zones) {
-      if (z.kind === 'play') continue;
       ctx.beginPath();
       ctx.moveTo(X(0), Y(0));
       ctx.lineTo(X(z.x), Y(z.z));
@@ -404,6 +405,7 @@ export function openMap(game: Game) {
     ctx.textBaseline = 'middle';
     for (const z of game.town.zones) {
       const pin = pins[z.kind];
+      if (!pin) continue;
       ctx.fillStyle = '#ffffff';
       ctx.beginPath();
       ctx.arc(X(z.x), Y(z.z), 38, 0, Math.PI * 2);
@@ -481,6 +483,100 @@ export function openVetInfo(game: Game) {
   );
 }
 
+
+// ---------- Bilbutikk ----------
+export function openCars(game: Game) {
+  const s = sheet('Bilbutikk 🚗', '#3fa4ff');
+  const render = () => {
+    s.body.replaceChildren(
+      el('p', { class: 'lead' }, 'Kjøp en fin bil! Den legges i sekken din.'),
+      el(
+        'div',
+        { class: 'grid' },
+        ...CARS.map((c) =>
+          el(
+            'div',
+            { class: `card ${game.save.bag[c.id] ? 'eq' : ''}` },
+            el('div', { class: 'big-emoji' }, c.emoji),
+            el('b', {}, c.name),
+            el('small', {}, c.text),
+            game.save.bag[c.id]
+              ? el('span', { class: 'tag' }, 'I sekken')
+              : button(price(c.price), () => {
+                  const r = buyCar(game.save, c.id);
+                  if (!r.ok) { toast(failText(r.reason), 'bad'); sfx.nope(); return; }
+                  sfx.buy();
+                  toast(`Du kjøpte ${c.name}! 🚗`, 'gold');
+                  game.commit(r.save);
+                  render();
+                }, 'btn buy'),
+          ),
+        ),
+      ),
+    );
+  };
+  render();
+}
+
+// ---------- Dyrebutikk ----------
+export function openPetShop(game: Game) {
+  const s = sheet('Dyrebutikk 🐾', '#ff8fb1');
+  const render = () => {
+    s.body.replaceChildren(
+      el('p', { class: 'lead' }, 'Vogner og leker til dyrene. Alt legges i sekken.'),
+      el('h3', {}, 'Vogner'),
+      el(
+        'div',
+        { class: 'grid' },
+        ...PET_SHOP.filter((i) => i.kind === 'vogn').map((item) =>
+          el(
+            'div',
+            { class: `card ${game.save.bag[item.id] ? 'eq' : ''}` },
+            el('div', { class: 'big-emoji' }, item.emoji),
+            el('b', {}, item.name),
+            el('small', {}, item.text),
+            game.save.bag[item.id]
+              ? el('span', { class: 'tag' }, 'I sekken')
+              : button(price(item.price), () => {
+                  const r = buyPetShopItem(game.save, item.id);
+                  if (!r.ok) { toast(failText(r.reason), 'bad'); sfx.nope(); return; }
+                  sfx.buy();
+                  toast(`Du kjøpte ${item.name}!`, 'gold');
+                  game.commit(r.save);
+                  render();
+                }, 'btn buy'),
+          ),
+        ),
+      ),
+      el('h3', {}, 'Dyreleker'),
+      el(
+        'div',
+        { class: 'grid' },
+        ...PET_SHOP.filter((i) => i.kind === 'dyreleke').map((item) =>
+          el(
+            'div',
+            { class: `card ${game.save.bag[item.id] ? 'eq' : ''}` },
+            el('div', { class: 'big-emoji' }, item.emoji),
+            el('b', {}, item.name),
+            el('small', {}, item.text),
+            game.save.bag[item.id]
+              ? el('span', { class: 'tag' }, 'I sekken')
+              : button(price(item.price), () => {
+                  const r = buyPetShopItem(game.save, item.id);
+                  if (!r.ok) { toast(failText(r.reason), 'bad'); sfx.nope(); return; }
+                  sfx.buy();
+                  toast(`Du kjøpte ${item.name}!`, 'gold');
+                  game.commit(r.save);
+                  render();
+                }, 'btn buy'),
+          ),
+        ),
+      ),
+    );
+  };
+  render();
+}
+
 // ---------- Avatar ----------
 export function openAvatar(game: Game, first = false, onDone?: () => void) {
   game.editingAvatar = true;
@@ -491,7 +587,7 @@ export function openAvatar(game: Game, first = false, onDone?: () => void) {
     game.commit({ ...game.save, avatar: a }, { avatar: true });
     render();
   };
-  type Tab = 'hud' | 'har' | 'ansikt' | 'klaer' | 'hatt' | 'ting';
+  type Tab = 'hud' | 'har' | 'ansikt' | 'klaer' | 'hatt' | 'ting' | 'antrekk';
   let tab: Tab = 'hud';
   const s = sheet(first ? 'Lag din figur!' : 'Avatar', '#ff8fb1', () => {
     game.editingAvatar = false;
@@ -518,10 +614,26 @@ export function openAvatar(game: Game, first = false, onDone?: () => void) {
   };
   const chips = <T extends { id: string; name: string }>(field: Field, list: readonly T[], cur: string, on: (id: T['id']) => void) =>
     el('div', { class: 'opts' }, ...list.map((o) => button(el('span', { class: 'opt-in' }, el('img', { class: 'opt-img', src: optThumb(field, o.id), alt: '' }), el('b', {}, o.name)), () => on(o.id), `opt ${o.id === cur ? 'on' : ''}`)));
-  const tabs: [Tab, string][] = [['hud', '🖐️ Hud'], ['har', '💇 Hår'], ['ansikt', '😊 Ansikt'], ['klaer', '👕 Klær'], ['hatt', '👑 Hatt'], ['ting', '🎒 Ting']];
+  const tabs: [Tab, string][] = [['antrekk', '👗 Antrekk'], ['hud', '🖐️ Hud'], ['har', '💇 Hår'], ['ansikt', '😊 Ansikt'], ['klaer', '👕 Klær'], ['hatt', '👑 Hatt'], ['ting', '🎒 Ting']];
   const render = () => {
     let content: HTMLElement;
     switch (tab) {
+      case 'antrekk':
+        content = el(
+          'div',
+          {},
+          el('h4', {}, 'Ferdige antrekk'),
+          el(
+            'div',
+            { class: 'opts' },
+            ...OUTFIT_PRESETS.map((o) => {
+              const preview = { ...a, ...o.patch };
+              const src = game.thumbs.get(`outfit|${o.id}|${JSON.stringify(o.patch)}`, () => buildAvatar(preview).root, { yaw: 0.25, pitch: 0.08, focus: { y: 1.4, r: 1.6 } });
+              return button(el('span', { class: 'opt-in' }, el('img', { class: 'opt-img', src, alt: '' }), el('b', {}, o.name)), () => set(o.patch), 'opt');
+            }),
+          ),
+        );
+        break;
       case 'hud':
         content = el('div', {}, el('h4', {}, 'Hudfarge'), swatches(SKIN, a.skin, (c) => set({ skin: c })));
         break;

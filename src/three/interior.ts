@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { FURN_BY_ID } from '../logic/catalog.ts';
+import { FURN_BY_ID, HOUSE_BY_STYLE } from '../logic/catalog.ts';
 import { roomSize, type House } from '../logic/house.ts';
 import { blocked, type CircleCollider, type Colliders, type RectCollider } from '../logic/collision.ts';
 import { FLOOR_H, FLOORS, floorColliders, houseLayout, type HouseLayout } from '../logic/layout.ts';
@@ -167,6 +167,20 @@ export function createInterior(): Interior {
           fg.add(g);
           partitions.push({ mesh: g, rect: r, floor: f });
         }
+      }
+      // closed ceiling / roof over the top floor (fixes open sky bug)
+      {
+        const y0 = (FLOORS - 1) * FLOOR_H + WALL_H;
+        const ceil = new THREE.Mesh(new THREE.BoxGeometry(w + 1.2, 0.35, d + 1.2), mat(shade(house.wallColor, -0.05)));
+        ceil.position.set(0, y0 + 0.1, 0);
+        ceil.receiveShadow = true;
+        floorGroups[FLOORS - 1].add(ceil);
+        // shallow pitched roof peeking above when upstairs walls are visible
+        const roof = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1, 4), mat(HOUSE_BY_STYLE[house.style]?.roof ?? '#ff7a7a'));
+        roof.position.set(0, y0 + 2.4, 0);
+        roof.rotation.y = Math.PI / 4;
+        roof.scale.set(w * 1.2, 3.6, d * 1.2);
+        floorGroups[FLOORS - 1].add(roof);
       }
       // the staircase: steps that fill the ramp, with railings
       const stairs = new THREE.Group();

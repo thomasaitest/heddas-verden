@@ -1,6 +1,8 @@
 /**
  * Pure 2D (x/z plane) collision helpers. No three.js here so it is easy to test.
  * A player is a circle; the world is made of oriented rectangles and circles.
+ * Jumping clears low obstacles when the feet are above their top (`h`).
+ * Landable surfaces let you stand on top of things (fountain rim, etc.).
  */
 export interface RectCollider {
   x: number;
@@ -10,7 +12,7 @@ export interface RectCollider {
   hd: number;
   /** Rotation about the y axis (same convention as three.js `rotation.y`). */
   rot: number;
-  /** Top of the object; flying above this clears it. Default: infinitely tall. */
+  /** Top of the object; feet at or above this clear it. Default: infinitely tall. */
   h?: number;
 }
 export interface CircleCollider {
@@ -29,10 +31,48 @@ export interface Pos {
   z: number;
 }
 
-/** How far above an obstacle a player must be (flying) to pass over it. A jump never gets there. */
-export const CLEAR_MARGIN = 2.5;
+/** A flat top you can land on (fountain bowl, roof ledge, …). */
+export interface Surface {
+  x: number;
+  z: number;
+  /** Circle footprint radius, or use hw/hd for a box. */
+  r?: number;
+  hw?: number;
+  hd?: number;
+  rot?: number;
+  /** Absolute y of the walkable top. */
+  top: number;
+}
 
-const cleared = (y: number, h: number | undefined) => h !== undefined && y > h + CLEAR_MARGIN;
+/** How far above an obstacle the feet must be to pass over it. Small so a normal jump clears benches. */
+export const CLEAR_MARGIN = 0.12;
+
+const cleared = (y: number, h: number | undefined) => h !== undefined && y >= h - CLEAR_MARGIN;
+
+function inSurface(s: Surface, x: number, z: number): boolean {
+  if (s.r !== undefined) return Math.hypot(x - s.x, z - s.z) <= s.r;
+  const hw = s.hw ?? 0;
+  const hd = s.hd ?? 0;
+  const rot = s.rot ?? 0;
+  const cos = Math.cos(rot);
+  const sin = Math.sin(rot);
+  const wx = x - s.x;
+  const wz = z - s.z;
+  const lx = wx * cos - wz * sin;
+  const lz = wx * sin + wz * cos;
+  return Math.abs(lx) <= hw && Math.abs(lz) <= hd;
+}
+
+/** Highest surface under (x,z) whose top is at most `y + slack` and at least `minY`. */
+export function surfaceUnder(x: number, z: number, y: number, surfaces: readonly Surface[], slack = 0.35, minY = -0.01): number | null {
+  let best: number | null = null;
+  for (const s of surfaces) {
+    if (s.top < minY || s.top > y + slack) continue;
+    if (!inSurface(s, x, z)) continue;
+    if (best === null || s.top > best) best = s.top;
+  }
+  return best;
+}
 
 /** Push a circle (centre + radius r) out of everything. Slides naturally along walls. Mutates pos. */
 export function resolve(pos: Pos, r: number, c: Colliders, passes = 4): boolean {
@@ -120,4 +160,18 @@ export function blocked(x: number, z: number, r: number, c: Colliders, y = 0): b
   const pz = p.z;
   resolve(p, r - 1e-4, c, 1);
   return Math.abs(p.x - px) > 1e-6 || Math.abs(p.z - pz) > 1e-6;
+}
+
+/** True if feet at height y clear this obstacle (for jump-over tests). */
+export function clearsAt(y: number, h: number | undefined): boolean {
+  return cleared(y, h);
+}
+
+/** Can two players see each other? Houses are private per area id. */
+export function sameVisibility(localPlace: string, localArea: string | null, remotePlace: string, remoteArea: string | null): boolean {
+  const priv = localPlace === 'house' || remotePlace === 'house';
+  if (!priv) return true;
+  if (localPlace !== remotePlace) return false;
+  // both in a house: only same owner's house
+  return (localArea ?? '') === (remoteArea ?? '');
 }

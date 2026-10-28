@@ -11,7 +11,7 @@ describe('avatar options', () => {
     expect(SHIRT_PRINTS.length).toBeGreaterThanOrEqual(9);
     expect(HATS.length).toBeGreaterThanOrEqual(15);
     expect(ACCESSORIES.length).toBeGreaterThanOrEqual(11);
-    expect(BOTTOMS.length).toBe(3);
+    expect(BOTTOMS.length).toBeGreaterThanOrEqual(3);
     expect(SHOES.length).toBe(3);
     expect(SKIN.length).toBeGreaterThanOrEqual(12);
     expect(HAIR_COLORS.length).toBeGreaterThanOrEqual(17);

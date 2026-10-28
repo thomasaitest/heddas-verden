@@ -298,6 +298,67 @@ function printTexture(print: Avatar['print']): THREE.CanvasTexture | null {
       ctx.fill();
       return;
     }
+    if (print === 'enhjorn') {
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.ellipse(64, 78, 30, 24, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#ff8fb1';
+      ctx.beginPath();
+      ctx.moveTo(64, 20);
+      ctx.lineTo(50, 60);
+      ctx.lineTo(78, 60);
+      ctx.fill();
+      ctx.fillStyle = '#c88bff';
+      for (const [a, b] of [[38, 55], [90, 55], [48, 42], [80, 42]]) {
+        ctx.beginPath();
+        ctx.arc(a, b, 9, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      return;
+    }
+    if (print === 'hjerter') {
+      ctx.fillStyle = '#ff4f7f';
+      for (const [cx, cy] of [[32, 32], [96, 32], [32, 96], [96, 96], [64, 64]]) {
+        ctx.beginPath();
+        ctx.moveTo(cx, cy + 10);
+        ctx.bezierCurveTo(cx - 14, cy - 2, cx - 12, cy - 14, cx, cy - 6);
+        ctx.bezierCurveTo(cx + 12, cy - 14, cx + 14, cy - 2, cx, cy + 10);
+        ctx.fill();
+      }
+      return;
+    }
+    if (print === 'prikker') {
+      ctx.fillStyle = '#5cc3f2';
+      for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) {
+        ctx.beginPath();
+        ctx.arc(16 + c * 32, 16 + r * 32, 8, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      return;
+    }
+    if (print === 'katt') {
+      ctx.fillStyle = '#ffb84d';
+      ctx.beginPath();
+      ctx.arc(64, 72, 30, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(38, 52);
+      ctx.lineTo(48, 18);
+      ctx.lineTo(58, 52);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(70, 52);
+      ctx.lineTo(80, 18);
+      ctx.lineTo(90, 52);
+      ctx.fill();
+      ctx.fillStyle = '#2b2b38';
+      ctx.beginPath();
+      ctx.arc(52, 70, 4, 0, Math.PI * 2);
+      ctx.arc(76, 70, 4, 0, Math.PI * 2);
+      ctx.fill();
+      return;
+    }
     ctx.globalAlpha = 0.9;
     ctx.beginPath();
     ctx.ellipse(64, 78, 24, 20, 0, 0, Math.PI * 2);
@@ -474,6 +535,34 @@ function hat(head: THREE.Group, a: Avatar) {
       cone(head, '#6a4cff', [0, 0.8, 0], [0.7, 0.85, 0.7], [0.12, 0, 0]);
       part(head, G.star(), '#ffe066', [0.12, 0.75, 0.3], [0.18, 0.18, 0.18], [0, 0, 0], 0.3);
       break;
+    case 'nisse':
+      cone(head, '#ff4f7f', [0, 0.85, 0], [0.55, 0.95, 0.55], [0.2, 0, 0]);
+      sph(head, '#ffffff', [0, 1.3, -0.15], [0.2, 0.2, 0.2]);
+      cyl(head, '#ffffff', [0, 0.38, 0], [0.78, 0.14, 0.78]);
+      break;
+    case 'beret':
+      cyl(head, '#3f6fd8', [0.08, 0.42, 0], [0.9, 0.18, 0.9]);
+      sph(head, '#3f6fd8', [0.08, 0.5, 0], [0.95, 0.4, 0.95]);
+      break;
+    case 'enhjorn':
+      cone(head, '#ffe066', [0, 0.85, 0.1], [0.18, 0.55, 0.18], [-0.25, 0, 0], 0.2);
+      for (const s of [-1, 1]) {
+        sph(head, '#ff8fb1', [s * 0.28, 0.55, -0.05], [0.22, 0.28, 0.12]);
+        sph(head, '#ffffff', [s * 0.28, 0.55, 0.02], [0.1, 0.16, 0.05]);
+      }
+      break;
+    case 'bandeau':
+      cyl(head, '#ff8fb1', [0, 0.28, 0], [0.82, 0.12, 0.82]);
+      part(head, G.heart(), '#ff4f7f', [0, 0.32, 0.4], [0.2, 0.2, 0.08], [-Math.PI / 2, 0, 0]);
+      break;
+    case 'frosk':
+      sph(head, '#7ccf6a', [0, 0.35, 0], [0.95, 0.7, 0.95]);
+      for (const s of [-1, 1]) {
+        sph(head, '#7ccf6a', [s * 0.28, 0.55, 0.15], [0.28, 0.28, 0.28]);
+        sph(head, '#ffffff', [s * 0.28, 0.55, 0.22], [0.16, 0.16, 0.1]);
+        sph(head, '#2b2b38', [s * 0.28, 0.55, 0.28], [0.08, 0.08, 0.05]);
+      }
+      break;
   }
 }
 
@@ -525,6 +614,27 @@ function accessory(body: THREE.Group, head: THREE.Group, a: Avatar) {
     case 'glorie':
       part(head, G.torus(), '#ffe066', [0, 0.7, 0], [0.55, 0.55, 0.55], [Math.PI / 2, 0, 0], 0.6);
       break;
+    case 'maske':
+      rbox(head, '#c88bff', [0, 0.02, 0.38], [0.7, 0.28, 0.08]);
+      for (const s of [-1, 1]) box(head, '#2b2b38', [s * 0.16, 0.04, 0.43], [0.18, 0.12, 0.04]);
+      break;
+    case 'ballong':
+      sph(body, '#ff6f6f', [0.7, 2.4, 0], [0.45, 0.55, 0.45]);
+      box(body, '#ffffff', [0.55, 1.9, 0], [0.04, 0.9, 0.04]);
+      break;
+    case 'veske':
+      rbox(body, '#ffb84d', [0.55, 1.15, 0.15], [0.35, 0.4, 0.2]);
+      box(body, '#d9a066', [0.55, 1.35, 0.15], [0.08, 0.2, 0.08]);
+      break;
+    case 'stjernekappe':
+      box(body, '#6a4cff', [0, 1.1, -0.32], [1.1, 1.5, 0.06], [0.12, 0, 0]);
+      for (let i = 0; i < 5; i++) part(body, G.star(), '#ffe066', [-0.35 + i * 0.18, 1.5 - (i % 2) * 0.25, -0.36], [0.16, 0.16, 0.06], [0, 0, 0], 0.3);
+      break;
+    case 'skjerfstripete':
+      cyl(body, '#5cc3f2', [0, 1.83, 0], [0.8, 0.16, 0.6]);
+      box(body, '#ffe066', [0.25, 1.55, 0.28], [0.18, 0.5, 0.06]);
+      box(body, '#ff6f6f', [0.25, 1.45, 0.28], [0.18, 0.12, 0.07]);
+      break;
   }
 }
 
@@ -539,8 +649,10 @@ export function buildAvatar(a: Avatar): AvatarRig {
     if (a.bottom === 'shorts') {
       box(pivot, a.pants, [0, -0.2, 0], [0.48, 0.4, 0.5]);
       box(pivot, a.skin, [0, -0.58, 0], [0.38, 0.36, 0.4]);
-    } else if (a.bottom === 'skjort') box(pivot, a.skin, [0, -0.38, 0], [0.38, 0.76, 0.4]);
-    else box(pivot, a.pants, [0, -0.38, 0], [0.46, 0.76, 0.48]);
+    } else if (a.bottom === 'skjort' || a.bottom === 'kjole') box(pivot, a.skin, [0, -0.38, 0], [0.38, 0.76, 0.4]);
+    else if (a.bottom === 'overall') {
+      box(pivot, a.pants, [0, -0.38, 0], [0.46, 0.76, 0.48]);
+    } else box(pivot, a.pants, [0, -0.38, 0], [0.46, 0.76, 0.48]);
     if (a.shoeStyle === 'stovler') {
       rbox(pivot, a.shoes, [0, -0.62, 0.01], [0.5, 0.5, 0.52]);
       rbox(pivot, a.shoes, [0, -0.84, 0.07], [0.5, 0.14, 0.6]);
@@ -552,6 +664,14 @@ export function buildAvatar(a: Avatar): AvatarRig {
     return pivot;
   });
   if (a.bottom === 'skjort') cyl(body, a.pants, [0, 0.78, 0], [1.15, 0.5, 0.78]);
+  if (a.bottom === 'kjole') {
+    cyl(body, a.pants, [0, 0.7, 0], [1.4, 0.85, 1.0]);
+    cyl(body, a.shirt, [0, 1.15, 0], [1.05, 0.35, 0.7]);
+  }
+  if (a.bottom === 'overall') {
+    box(body, a.pants, [0, 1.35, 0], [0.98, 0.55, 0.5]);
+    for (const s of [-1, 1]) box(body, a.pants, [s * 0.28, 1.65, 0], [0.14, 0.35, 0.1]);
+  }
   box(body, a.pants, [0, 0.98, 0], [0.96, 0.18, 0.5]);
   rbox(body, a.shirt, [0, 1.42, 0], [0.98, 0.8, 0.5]);
   const pt = printTexture(a.print);
@@ -640,3 +760,4 @@ export function animateAvatar(rig: AvatarRig, t: number, pose: AvatarPose, speed
     ra.rotation.set(-1.3, 0, -0.25);
   }
 }
+

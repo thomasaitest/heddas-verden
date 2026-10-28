@@ -1,12 +1,12 @@
 import * as THREE from 'three';
 import { HOUSE_BY_STYLE, type HouseStyle } from '../logic/catalog.ts';
-import type { CircleCollider, RectCollider } from '../logic/collision.ts';
+import type { CircleCollider, RectCollider, Surface } from '../logic/collision.ts';
 import { collectColliders, solid } from './colliders.ts';
-import { fillHospital, fillShop } from './buildings.ts';
+import { fillCarShop, fillHospital, fillPetShop, fillShop } from './buildings.ts';
 import { EQUIPMENT, MERRY, SEESAW, SLIDE, SWING_PIVOT_Y, SWING_ROPE, SWING_XS, SWING_Z, merryAngle, seatAt, seesawAngle, swingAngle, type EquipDef, type Seat } from '../logic/playground.ts';
 import { box, cone, cyl, G, mergeStatic, part, rbox, shadowAll, sph, textTexture } from './kit.ts';
 
-export type ZoneKind = 'home' | 'shop' | 'vet' | 'eggs' | 'doors' | 'play';
+export type ZoneKind = 'home' | 'shop' | 'vet' | 'eggs' | 'doors' | 'play' | 'cars' | 'pets';
 export interface Zone {
   kind: ZoneKind;
   x: number;
@@ -46,15 +46,23 @@ export interface Town {
   /** Animate; roofs of the shop and the hospital are lifted off while the player is inside. */
   update(t: number, px?: number, pz?: number, camX?: number, camZ?: number): void;
   /** Centre and radius of the walk-in building the point is inside (the camera must not be pushed in by its walls). */
-  buildingAt(x: number, z: number): { kind: 'shop' | 'vet'; x: number; z: number; r: number } | null;
+  buildingAt(x: number, z: number): { kind: 'shop' | 'vet' | 'cars' | 'pets'; x: number; z: number; r: number } | null;
   /** Which walk-in building the point is inside, if any. */
-  insideBuilding(x: number, z: number): 'shop' | 'vet' | null;
+  insideBuilding(x: number, z: number): 'shop' | 'vet' | 'cars' | 'pets' | null;
+  /** Tops you can land on after a jump (fountain, etc.). */
+  surfaces: Surface[];
+  /** Outdoor benches you can sit on to rest. */
+  benches: { x: number; z: number; yaw: number }[];
+  /** Neighbourhood house plots (each multiplayer player gets one). */
+  housePlots: { x: number; z: number; rot: number }[];
+  /** Show a remote player's house exterior on a plot (style + label). */
+  setPlotHouse(plot: number, style: HouseStyle | null, label?: string): void;
   size: number;
 }
 
 const GRASS = '#7fd36a';
 const ROAD = '#f2dfb8';
-const SIZE = 200;
+const SIZE = 240;
 
 function faceCenter(x: number, z: number) {
   return Math.atan2(-x, -z);
@@ -116,10 +124,11 @@ function openBuilding(w: number, d: number, h: number, wall: string, roof: strin
 }
 
 function homeExterior(style: HouseStyle): THREE.Group {
-  const info = HOUSE_BY_STYLE[style];
+  const info = HOUSE_BY_STYLE[style] ?? HOUSE_BY_STYLE.hytte;
   const g = new THREE.Group();
-  const w = style === 'slott' ? 22 : style === 'gard' ? 19 : style === 'villa' ? 17 : 14;
-  const d = w * 0.75;
+  // Match catalog footprint (tests and door zone use the same numbers).
+  const w = Math.min(22, info.w * 0.65);
+  const d = Math.min(18, info.d * 0.7);
   const h = style === 'slott' ? 14 : 12; // two floors
 
   solid(box(g, '#e8d8c4', [0, 0.25, 0], [w + 1, 0.5, d + 1]), 'rect', 0, 18);
@@ -135,12 +144,17 @@ function homeExterior(style: HouseStyle): THREE.Group {
     for (let i = 0; i < 7; i++) box(g, info.wall, [-w / 2 + 1 + i * ((w - 2) / 6), h + 0.9, d / 2], [1, 0.8, 0.8]);
     part(g, G.heart(), '#ff8fb1', [0, h - 0.8, d / 2 + 0.1], [2, 2, 0.6]);
   } else {
-    const roof = cone(g, info.roof, [0, h + 2.3, 0], [w * 0.9, 4, d * 1.05], [0, Math.PI / 4, 0]);
-    roof.scale.set(w * 1.05, 4, w * 1.05);
-    roof.geometry = new THREE.ConeGeometry(0.5, 1, 4);
-    roof.scale.set(w * 1.45, 4.2, d * 1.45);
-    if (style === 'gard') for (const s of [-1, 1]) box(g, '#ffffff', [s * 3, 3.2, d / 2 + 0.02], [2.4, 0.3, 0.1], [0, 0, s * 0.8]);
-    cyl(g, '#b46a50', [w / 4, h + 3, -d / 6], [1, 3, 1]);
+    // Clean pyramid roof sized to the footprint (no z-fighting with the upper floor).
+    const roofMesh = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1, 4), new THREE.MeshLambertMaterial({ color: info.roof }));
+    roofMesh.position.set(0, h + 2.6, 0);
+    roofMesh.rotation.y = Math.PI / 4;
+    roofMesh.scale.set(w * 1.15, 4.0, d * 1.15);
+    roofMesh.castShadow = true;
+    g.add(roofMesh);
+    // thin ceiling slab under the roof so the 2nd floor is closed
+    box(g, info.wall, [0, h + 0.15, 0], [w + 0.2, 0.3, d + 0.2]).userData.noCast = true;
+    if (style === 'gard' || style === 'trehus') for (const s of [-1, 1]) box(g, '#ffffff', [s * 3, 3.2, d / 2 + 0.02], [2.4, 0.3, 0.1], [0, 0, s * 0.8]);
+    if (style !== 'moderne') cyl(g, '#b46a50', [w / 4, h + 3.2, -d / 6], [0.9, 2.6, 0.9]);
   }
   // door + windows
   rbox(g, '#a0632f', [0, 2.2, d / 2 + 0.05], [2.6, 3.6, 0.3]);
@@ -163,18 +177,33 @@ function homeExterior(style: HouseStyle): THREE.Group {
 }
 
 function tree(g: THREE.Group, x: number, z: number, s: number, kind: number, collide = false) {
-  const trunk = cyl(g, '#a0703f', [x, 1.2 * s, z], [0.7 * s, 2.4 * s, 0.7 * s]);
-  // the solid part is the trunk plus a bit of the low foliage, so you can't stand inside the leaves
-  if (collide) solid(trunk, 'circle', 0.65 * s, 7 * s);
+  const trunk = cyl(g, '#8a5a3c', [x, 1.35 * s, z], [0.55 * s, 2.7 * s, 0.55 * s]);
+  if (collide) solid(trunk, 'circle', 0.85 * s, 8 * s);
+  const puff = (col: string, ox: number, oy: number, oz: number, sx: number, sy: number, sz: number) =>
+    sph(g, col, [x + ox * s, oy * s, z + oz * s], [sx * s, sy * s, sz * s]);
   if (kind === 0) {
-    sph(g, '#4fbf55', [x, 3.4 * s, z], [3.6 * s, 3.2 * s, 3.6 * s]);
-    sph(g, '#66d06a', [x + 0.8 * s, 4.2 * s, z + 0.4 * s], [2.2 * s, 2 * s, 2.2 * s]);
+    // fluffy deciduous
+    puff('#3fae5a', 0, 3.6, 0, 3.8, 3.2, 3.8);
+    puff('#66d06a', 0.9, 4.4, 0.5, 2.6, 2.4, 2.6);
+    puff('#4fbf55', -0.8, 4.2, -0.4, 2.4, 2.2, 2.4);
+    puff('#7ccf6a', 0.2, 5.2, -0.2, 2.0, 1.8, 2.0);
+    puff('#5cc36b', -0.3, 3.2, 0.9, 1.8, 1.6, 1.8);
   } else if (kind === 1) {
-    cone(g, '#3fae5a', [x, 3.6 * s, z], [3.4 * s, 3.6 * s, 3.4 * s]);
-    cone(g, '#4fbf65', [x, 5.2 * s, z], [2.4 * s, 2.6 * s, 2.4 * s]);
+    // layered fir
+    cone(g, '#2f8a45', [x, 3.2 * s, z], [3.6 * s, 3.2 * s, 3.6 * s]);
+    cone(g, '#3fae5a', [x, 4.6 * s, z], [2.8 * s, 2.6 * s, 2.8 * s]);
+    cone(g, '#4fbf65', [x, 5.8 * s, z], [1.8 * s, 2.0 * s, 1.8 * s]);
+  } else if (kind === 2) {
+    // pink blossom
+    puff('#ff9fc8', 0, 3.5, 0, 3.5, 3.1, 3.5);
+    puff('#ffc2dc', -0.7, 4.3, 0.3, 2.2, 2.0, 2.2);
+    puff('#ffa6d5', 0.8, 4.0, -0.5, 2.0, 1.8, 2.0);
   } else {
-    sph(g, '#ff9fc8', [x, 3.4 * s, z], [3.4 * s, 3 * s, 3.4 * s]);
-    sph(g, '#ffc2dc', [x - 0.7 * s, 4.1 * s, z], [2 * s, 1.8 * s, 2 * s]);
+    // pastel purple
+    puff('#c9a0ff', 0, 3.6, 0, 3.6, 3.2, 3.6);
+    puff('#e0c6ff', 0.7, 4.4, 0.4, 2.4, 2.2, 2.4);
+    puff('#b78bff', -0.8, 4.1, -0.3, 2.2, 2.0, 2.2);
+    puff('#d8b4ff', 0.1, 5.1, 0.1, 1.8, 1.6, 1.8);
   }
 }
 
@@ -198,14 +227,20 @@ export function buildTown(): Town {
     vet: { x: 46, z: 12 },
     play: { x: -44, z: 16 },
     doors: { x: 4, z: 46 },
+    cars: { x: 52, z: -8 },
+    pets: { x: -52, z: -8 },
   };
+  const surfaces: Surface[] = [];
+  const benches: { x: number; z: number; yaw: number }[] = [];
 
-  // plaza + fountain
+  // plaza + fountain (outer wall jumpable; rim and upper bowl are landable)
   cyl(stat, ROAD, [0, 0.04, 0], [26, 0.08, 26]);
-  solid(cyl(stat, '#e6ecff', [0, 0.6, 0], [9, 1.2, 9]), 'circle', 0, 6);
+  solid(cyl(stat, '#e6ecff', [0, 0.55, 0], [9, 1.1, 9]), 'circle', 0, 1.15);
   cyl(stat, '#7fd8ff', [0, 1.1, 0], [8, 0.2, 8]);
-  cyl(stat, '#e6ecff', [0, 2.2, 0], [1.2, 3, 1.2]);
-  cyl(stat, '#e6ecff', [0, 3.6, 0], [4, 0.5, 4]);
+  solid(cyl(stat, '#e6ecff', [0, 2.2, 0], [1.2, 3, 1.2]), 'circle', 0.1, 4.5);
+  solid(cyl(stat, '#e6ecff', [0, 3.6, 0], [4, 0.5, 4]), 'circle', 0, 3.9);
+  surfaces.push({ x: 0, z: 0, r: 4.2, top: 1.15 }); // rim
+  surfaces.push({ x: 0, z: 0, r: 1.9, top: 3.85 }); // upper bowl
   const water = sph(group, '#bff0ff', [0, 4.2, 0], [1.6, 1.6, 1.6], undefined, 0.3);
 
   // roads from the plaza to each place
@@ -223,7 +258,7 @@ export function buildTown(): Town {
 
   // walk-in buildings: the roof lifts off while you are inside, so you can see what is there
   type Shell = { back: THREE.Group; left: THREE.Group; right: THREE.Group; front: THREE.Group };
-  const walkIns: { kind: 'shop' | 'vet'; x: number; z: number; rot: number; hw: number; hd: number; roof: THREE.Group; shell: Shell }[] = [];
+  const walkIns: { kind: 'shop' | 'vet' | 'cars' | 'pets'; x: number; z: number; rot: number; hw: number; hd: number; roof: THREE.Group; shell: Shell }[] = [];
   /** Put a walk-in building's walls and roof in the world (they are not merged, since they hide and show). */
   const mountShell = (g: THREE.Group, roofG: THREE.Group, p: { x: number; z: number }, rot: number): Shell => {
     const shell = g.userData.shell as Shell;
@@ -297,6 +332,40 @@ export function buildTown(): Town {
     const z = front(P.eggs, 6.8);
     zones.push({ kind: 'eggs', x: z.x, z: z.z, r: 4, label: 'Kjøp egg 🥚' });
     entrances.eggs = { x: z.x, z: z.z, yaw: f.rot + Math.PI };
+  }
+  // car shop (bilbutikk)
+  {
+    const g = openBuilding(18, 13, 7, '#dfe8ff', '#3fa4ff', '#ffffff', { door: 5.2, roofSeparate: true });
+    const roofG = g.userData.roof as THREE.Group;
+    awning(roofG, 18, 6.0, 7.2, '#3fa4ff', '#ffffff');
+    sign(roofG, 'Bilbutikk', 8.2, 7.4, '#3fa4ff', 8);
+    const inside = fillCarShop(g);
+    const f = front(P.cars, 0);
+    stat.add(g);
+    group.add(roofG);
+    const shell = mountShell(g, roofG, P.cars, f.rot);
+    walkIns.push({ kind: 'cars', x: P.cars.x, z: P.cars.z, rot: f.rot, hw: 9, hd: 6.5, roof: roofG, shell });
+    const z = toWorld(P.cars, f.rot, inside.counter.x, inside.counter.z);
+    zones.push({ kind: 'cars', x: z.x, z: z.z, r: 3.2, label: 'Se på biler 🚗' });
+    const door = front(P.cars, 10);
+    entrances.cars = { x: door.x, z: door.z, yaw: f.rot };
+  }
+  // pet shop (dyrebutikk)
+  {
+    const g = openBuilding(16, 12, 6.5, '#ffe0ef', '#ff8fb1', '#ffffff', { door: 4.8, roofSeparate: true });
+    const roofG = g.userData.roof as THREE.Group;
+    awning(roofG, 16, 5.6, 6.6, '#ff8fb1', '#ffffff');
+    sign(roofG, 'Dyrebutikk', 7.8, 6.8, '#ff8fb1', 8);
+    const inside = fillPetShop(g);
+    const f = front(P.pets, 0);
+    stat.add(g);
+    group.add(roofG);
+    const shell = mountShell(g, roofG, P.pets, f.rot);
+    walkIns.push({ kind: 'pets', x: P.pets.x, z: P.pets.z, rot: f.rot, hw: 8, hd: 6, roof: roofG, shell });
+    const z = toWorld(P.pets, f.rot, inside.counter.x, inside.counter.z);
+    zones.push({ kind: 'pets', x: z.x, z: z.z, r: 3.2, label: 'Dyrebutikk 🐾' });
+    const door = front(P.pets, 9.5);
+    entrances.pets = { x: door.x, z: door.z, yaw: f.rot };
   }
   // door game hut
   {
@@ -445,13 +514,13 @@ export function buildTown(): Town {
     const z = (rnd() - 0.5) * SIZE * 0.95;
     if (blocked(x, z)) continue;
     const s = 0.8 + rnd() * 0.6;
-    tree(stat, x, z, s, Math.floor(rnd() * 3), true);
+    tree(stat, x, z, s, Math.floor(rnd() * 4), true);
   }
   // a ring of trees on the edge
   for (let i = 0; i < 70; i++) {
     const a = (i / 70) * Math.PI * 2;
     const r = SIZE / 2 + 4 + (i % 3) * 3;
-    tree(stat, Math.cos(a) * r, Math.sin(a) * r, 1.3, i % 3);
+    tree(stat, Math.cos(a) * r, Math.sin(a) * r, 1.3, i % 4);
   }
   const flowerCols = ['#ff8fb1', '#ffe066', '#ffffff', '#c88bff', '#ff6f6f'];
   for (let i = 0; i < 160; i++) {
@@ -464,18 +533,29 @@ export function buildTown(): Town {
       sph(stat, flowerCols[i % 5], [x, 0.65, z], [0.35, 0.3, 0.35]);
     }
   }
+  // lamps sit OFF the roads (between road wedges), benches have legs and are sit-targets
   for (let i = 0; i < 8; i++) {
     const a = (i / 8) * Math.PI * 2 + 0.4;
-    const x = Math.cos(a) * 15;
-    const z = Math.sin(a) * 15;
-    solid(cyl(stat, '#555a75', [x, 2.5, z], [0.25, 5, 0.25]), 'circle', 0.2);
+    // place between plaza and buildings, but offset from road spokes
+    const x = Math.cos(a + 0.22) * 18;
+    const z = Math.sin(a + 0.22) * 18;
+    solid(cyl(stat, '#555a75', [x, 2.5, z], [0.25, 5, 0.25]), 'circle', 0.25, 5.5);
     sph(stat, '#fff4c2', [x, 5.2, z], [0.8, 0.8, 0.8], undefined, 0.6);
     if (i % 2 === 0) {
-      const bx = Math.cos(a + 0.2) * 14;
-      const bz = Math.sin(a + 0.2) * 14;
-      const rot = -a + Math.PI / 2;
-      solid(box(stat, '#c98a55', [bx, 0.9, bz], [3, 0.2, 1], [0, rot, 0]), 'rect', 0.1, 2);
-      solid(box(stat, '#c98a55', [bx - Math.cos(a) * 0.4, 1.5, bz - Math.sin(a) * 0.4], [3, 0.8, 0.15], [0, rot, 0]), 'rect', 0.1);
+      const ba = a + 0.55;
+      const bx = Math.cos(ba) * 16;
+      const bz = Math.sin(ba) * 16;
+      const rot = -ba + Math.PI / 2;
+      // legs
+      for (const sx of [-1.1, 1.1]) for (const sz of [-0.35, 0.35]) {
+        const lx = bx + Math.cos(rot) * sx - Math.sin(rot) * sz;
+        const lz = bz - Math.sin(rot) * sx + Math.cos(rot) * sz;
+        solid(cyl(stat, '#8a5a3c', [lx, 0.35, lz], [0.16, 0.7, 0.16]), 'circle', 0.05, 0.8);
+      }
+      // seat + back
+      solid(box(stat, '#c98a55', [bx, 0.85, bz], [2.8, 0.18, 0.95], [0, rot, 0]), 'rect', 0.05, 1.0);
+      solid(box(stat, '#c98a55', [bx - Math.sin(rot) * 0.45, 1.35, bz - Math.cos(rot) * 0.45], [2.8, 0.7, 0.14], [0, rot, 0]), 'rect', 0.05, 1.8);
+      benches.push({ x: bx, z: bz, yaw: rot + Math.PI });
     }
   }
   // hills at the edge
@@ -503,36 +583,83 @@ export function buildTown(): Town {
   const mergedClouds = mergeStatic(clouds);
   group.add(mergedClouds);
 
-  // home exterior (changes with the house style)
-  const homeHolder = new THREE.Group();
-  const homeRot = faceCenter(P.home.x, P.home.z);
-  homeHolder.position.set(P.home.x, 0, P.home.z);
-  homeHolder.rotation.y = homeRot;
-  group.add(homeHolder);
-  let homeRects: RectCollider[] = [];
-  let homeCircles: CircleCollider[] = [];
-  const homeZone: Zone = { kind: 'home', x: 0, z: 0, r: 3.5, label: 'Gå inn 🏠' };
-  zones.push(homeZone);
+  // neighbourhood: several house plots (plot 0 = local player)
+  const housePlots: { x: number; z: number; rot: number }[] = [
+    { x: P.home.x, z: P.home.z, rot: faceCenter(P.home.x, P.home.z) },
+    { x: P.home.x - 28, z: P.home.z + 6, rot: faceCenter(P.home.x - 28, P.home.z + 6) },
+    { x: P.home.x - 14, z: P.home.z - 28, rot: faceCenter(P.home.x - 14, P.home.z - 28) },
+    { x: P.home.x + 14, z: P.home.z - 30, rot: faceCenter(P.home.x + 14, P.home.z - 30) },
+    { x: P.home.x + 30, z: P.home.z + 4, rot: faceCenter(P.home.x + 30, P.home.z + 4) },
+    { x: P.home.x - 36, z: P.home.z - 18, rot: faceCenter(P.home.x - 36, P.home.z - 18) },
+  ];
+  // short roads from plaza toward each plot (after merge: add to group)
+  for (const plot of housePlots.slice(1)) {
+    const len = Math.hypot(plot.x, plot.z);
+    const ang = Math.atan2(plot.x, plot.z);
+    const road = box(group, ROAD, [plot.x / 2, 0.04, plot.z / 2], [4.5, 0.05, len], [0, ang, 0]);
+    road.receiveShadow = true;
+  }
+  type PlotState = { holder: THREE.Group; rects: RectCollider[]; circles: CircleCollider[]; zone: Zone | null };
+  const plots: PlotState[] = housePlots.map((plot, i) => {
+    const holder = new THREE.Group();
+    holder.position.set(plot.x, 0, plot.z);
+    holder.rotation.y = plot.rot;
+    group.add(holder);
+    // empty lot pad
+    box(holder, '#cfe8b8', [0, 0.02, 0], [16, 0.04, 12]).userData.noCast = true;
+    return { holder, rects: [], circles: [], zone: i === 0 ? ({ kind: 'home', x: 0, z: 0, r: 3.5, label: 'Gå inn 🏠' } as Zone) : null };
+  });
+  if (plots[0].zone) zones.push(plots[0].zone);
 
-  function setHomeStyle(style: HouseStyle) {
-    homeHolder.clear();
+  function mountHouseOn(plotIdx: number, style: HouseStyle | null, label?: string) {
+    const plot = housePlots[plotIdx];
+    const st = plots[plotIdx];
+    if (!plot || !st) return;
+    for (const r of st.rects) {
+      const i = rects.indexOf(r);
+      if (i >= 0) rects.splice(i, 1);
+    }
+    for (const c of st.circles) {
+      const i = circles.indexOf(c);
+      if (i >= 0) circles.splice(i, 1);
+    }
+    st.rects = [];
+    st.circles = [];
+    st.holder.clear();
+    box(st.holder, '#cfe8b8', [0, 0.02, 0], [16, 0.04, 12]).userData.noCast = true;
+    if (!style) {
+      if (st.zone && plotIdx !== 0) {
+        const zi = zones.indexOf(st.zone);
+        if (zi >= 0) zones.splice(zi, 1);
+        st.zone = null;
+      }
+      return;
+    }
     const ext = homeExterior(style);
+    if (label) sign(ext, label.slice(0, 10), 8.0, (ext.userData.size as { d: number }).d / 2 + 0.12, '#54c45e', 3.6);
     const size = ext.userData.size as { w: number; d: number };
-    // derive the house colliders from its solid parts (needs the holder's transform)
-    homeHolder.add(ext);
+    st.holder.add(ext);
     const hc = collectColliders(ext);
-    for (const r of homeRects) rects.splice(rects.indexOf(r), 1);
-    for (const c of homeCircles) circles.splice(circles.indexOf(c), 1);
-    homeRects = hc.rects;
-    homeCircles = hc.circles;
-    rects.push(...homeRects);
-    circles.push(...homeCircles);
-    homeHolder.remove(ext);
-    homeHolder.add(mergeStatic(ext, { cast: true, receive: true }));
+    st.rects = hc.rects;
+    st.circles = hc.circles;
+    rects.push(...st.rects);
+    circles.push(...st.circles);
+    st.holder.remove(ext);
+    st.holder.add(mergeStatic(ext, { cast: true, receive: true }));
     const dist = size.d / 2 + 2.2;
-    homeZone.x = P.home.x + Math.sin(homeRot) * dist;
-    homeZone.z = P.home.z + Math.cos(homeRot) * dist;
-    entrances.home = { x: P.home.x + Math.sin(homeRot) * (dist + 2), z: P.home.z + Math.cos(homeRot) * (dist + 2), yaw: homeRot };
+    if (plotIdx === 0) {
+      const zone = plots[0].zone!;
+      zone.x = plot.x + Math.sin(plot.rot) * dist;
+      zone.z = plot.z + Math.cos(plot.rot) * dist;
+      entrances.home = { x: plot.x + Math.sin(plot.rot) * (dist + 2), z: plot.z + Math.cos(plot.rot) * (dist + 2), yaw: plot.rot };
+    }
+  }
+  function setHomeStyle(style: HouseStyle) {
+    mountHouseOn(0, style);
+  }
+  function setPlotHouse(plot: number, style: HouseStyle | null, label?: string) {
+    if (plot <= 0 || plot >= housePlots.length) return;
+    mountHouseOn(plot, style, label);
   }
   setHomeStyle('hytte');
 
@@ -540,11 +667,11 @@ export function buildTown(): Town {
     for (const b of walkIns) {
       const lx = (x - b.x) * Math.cos(b.rot) - (z - b.z) * Math.sin(b.rot);
       const lz = (x - b.x) * Math.sin(b.rot) + (z - b.z) * Math.cos(b.rot);
-      if (Math.abs(lx) < b.hw - 0.3 && Math.abs(lz) < b.hd - 0.3) return { kind: b.kind, x: b.x, z: b.z, r: Math.hypot(b.hw, b.hd) + 1.5 };
+      if (Math.abs(lx) < b.hw - 0.3 && Math.abs(lz) < b.hd - 0.3) return { kind: b.kind as 'shop' | 'vet' | 'cars' | 'pets', x: b.x, z: b.z, r: Math.hypot(b.hw, b.hd) + 1.5 };
     }
     return null;
   }
-  function insideBuilding(x: number, z: number): 'shop' | 'vet' | null {
+  function insideBuilding(x: number, z: number): 'shop' | 'vet' | 'cars' | 'pets' | null {
     return buildingAt(x, z)?.kind ?? null;
   }
 
@@ -553,12 +680,16 @@ export function buildTown(): Town {
     zones,
     rects,
     circles,
+    surfaces,
+    benches,
+    housePlots,
     get spawn() {
       return { x: entrances.home.x, z: entrances.home.z, yaw: entrances.home.yaw };
     },
     entrances,
     vetBeds,
     setHomeStyle,
+    setPlotHouse,
     equipment,
     equipTargets,
     setEquipUse(use) {

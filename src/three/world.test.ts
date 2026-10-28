@@ -117,8 +117,9 @@ describe('town colliders', () => {
       const w = local(p, rot, lx, lz);
       expect(blocked(w.x, w.z, R, col()), `${lx},${lz}`).toBe(true);
     }
-    const w = style === 'slott' ? 22 : style === 'gard' ? 19 : style === 'villa' ? 17 : 14;
-    const d = w * 0.75;
+    const info = HOUSES.find((h) => h.style === style)!;
+    const w = Math.min(22, info.w * 0.65);
+    const d = Math.min(18, info.d * 0.7);
     const mail = local(p, rot, 3.5, d / 2 + 3);
     expect(blocked(mail.x, mail.z, R, col()), 'mailbox').toBe(true);
     if (style === 'slott') {

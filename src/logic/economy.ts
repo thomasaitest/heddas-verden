@@ -1,4 +1,4 @@
-import { FOOD_BY_ID, FURN_BY_ID, HOUSE_BY_STYLE, POTIONS, TOY_BY_ID, type HouseStyle } from './catalog.ts';
+import { CAR_BY_ID, FOOD_BY_ID, FURN_BY_ID, HOUSE_BY_STYLE, PET_SHOP_BY_ID, POTIONS, TOY_BY_ID, type HouseStyle } from './catalog.ts';
 import { canEdit, newHouse, placeItem, removeItem, type House } from './house.ts';
 import { addCare, addJoy, CARE_AMOUNT, completeNeed, joyNow, newPetState, NEED_INFO, tickPet, type CareWhere, type PetState } from './needs.ts';
 import { cleanPetName, EGG_BY_ID, hatch } from './pets.ts';
@@ -109,6 +109,22 @@ export function buyAndHatch(save: SaveData, eggId: string, rng: Rng, now = Date.
   };
 }
 
+
+export function buyCar(save: SaveData, id: string): Result {
+  const car = CAR_BY_ID[id];
+  if (!car) return fail(save, 'unknown');
+  if (save.bag[id]) return fail(save, 'owned');
+  if (save.bucks < car.price) return fail(save, 'too-expensive');
+  return { ok: true, save: { ...save, bucks: save.bucks - car.price, bag: add(save.bag, id, 1) } };
+}
+
+export function buyPetShopItem(save: SaveData, id: string): Result {
+  const item = PET_SHOP_BY_ID[id];
+  if (!item) return fail(save, 'unknown');
+  if (save.bag[id]) return fail(save, 'owned');
+  if (save.bucks < item.price) return fail(save, 'too-expensive');
+  return { ok: true, save: { ...save, bucks: save.bucks - item.price, bag: add(save.bag, id, 1) } };
+}
 export function buyHouse(save: SaveData, style: HouseStyle, now = Date.now()): Result {
   const info = HOUSE_BY_STYLE[style];
   if (!info) return fail(save, 'unknown');

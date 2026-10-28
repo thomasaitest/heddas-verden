@@ -1,5 +1,5 @@
 import { cleanAvatar, DEFAULT_AVATAR, type Avatar } from './avatar.ts';
-import { FOOD_BY_ID, FURN_BY_ID, POTIONS, STARTER_TOYS, TOY_BY_ID } from './catalog.ts';
+import { CAR_BY_ID, FOOD_BY_ID, FURN_BY_ID, PET_SHOP_BY_ID, POTIONS, STARTER_TOYS, TOY_BY_ID } from './catalog.ts';
 import { EGG_BY_ID, SPECIES_BY_ID } from './pets.ts';
 import { deserializeHouse, newHouse, type House } from './house.ts';
 import type { PetState } from './needs.ts';
@@ -54,7 +54,7 @@ export function freshSave(now = Date.now()): SaveData {
   };
 }
 
-const isBagId = (id: string) => !!FOOD_BY_ID[id] || !!TOY_BY_ID[id] || !!EGG_BY_ID[id] || POTIONS.some((p) => p.id === id);
+const isBagId = (id: string) => !!FOOD_BY_ID[id] || !!TOY_BY_ID[id] || !!EGG_BY_ID[id] || !!CAR_BY_ID[id] || !!PET_SHOP_BY_ID[id] || POTIONS.some((p) => p.id === id);
 const counts = (raw: unknown, ok: (id: string) => boolean): Record<string, number> =>
   Object.fromEntries(
     Object.entries(raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {})

@@ -46,11 +46,17 @@ export const SHIRT_PRINTS = [
   { id: 'blomst', name: 'Blomst' },
   { id: 'smiley', name: 'Smiley' },
   { id: 'lyn', name: 'Lyn' },
+  { id: 'enhjorn', name: 'Enhjørning' },
+  { id: 'hjerter', name: 'Hjerter' },
+  { id: 'prikker', name: 'Prikker' },
+  { id: 'katt', name: 'Katt' },
 ] as const;
 export const BOTTOMS = [
   { id: 'bukse', name: 'Bukse' },
   { id: 'shorts', name: 'Shorts' },
   { id: 'skjort', name: 'Skjørt' },
+  { id: 'kjole', name: 'Kjole' },
+  { id: 'overall', name: 'Overall' },
 ] as const;
 export const SHOES = [
   { id: 'sko', name: 'Sko' },
@@ -73,6 +79,11 @@ export const HATS = [
   { id: 'hodeband', name: 'Hodebånd' },
   { id: 'hjelm', name: 'Sykkelhjelm' },
   { id: 'kokkelue', name: 'Kokkelue' },
+  { id: 'nisse', name: 'Nisselue' },
+  { id: 'beret', name: 'Beret' },
+  { id: 'enhjorn', name: 'Enhjørning' },
+  { id: 'bandeau', name: 'Bandeau' },
+  { id: 'frosk', name: 'Froskelu' },
 ] as const;
 export const ACCESSORIES = [
   { id: 'ingen', name: 'Ingen' },
@@ -86,6 +97,11 @@ export const ACCESSORIES = [
   { id: 'hodetelefoner', name: 'Hodetelefoner' },
   { id: 'halskjede', name: 'Halskjede' },
   { id: 'sommerfugl', name: 'Sommerfugl' },
+  { id: 'maske', name: 'Maske' },
+  { id: 'ballong', name: 'Ballong' },
+  { id: 'veske', name: 'Veske' },
+  { id: 'stjernekappe', name: 'Stjernekappe' },
+  { id: 'skjerfstripete', name: 'Stripete skjerf' },
 ] as const;
 
 export interface Avatar {
@@ -117,6 +133,19 @@ export const DEFAULT_AVATAR: Avatar = {
   hat: 'ingen',
   accessory: 'ingen',
 };
+
+
+/** Ready-made outfits with thumbnails in the avatar editor. */
+export const OUTFIT_PRESETS: { id: string; name: string; patch: Partial<Avatar> }[] = [
+  { id: 'prinsesse', name: 'Prinsesse', patch: { hat: 'prinsesse', shirt: '#ffa6d5', print: 'hjerte', pants: '#c88bff', bottom: 'kjole', shoes: '#ffe066', shoeStyle: 'sko', accessory: 'glorie', hair: 'lang', hairColor: '#e0a64f' } },
+  { id: 'ridder', name: 'Ridder', patch: { hat: 'hjelm', shirt: '#555a75', print: 'ingen', pants: '#2b2b38', bottom: 'bukse', shoes: '#2b2b38', shoeStyle: 'stovler', accessory: 'kappe', hair: 'kort', hairColor: '#2b2118' } },
+  { id: 'pirat', name: 'Pirat', patch: { hat: 'pirat', shirt: '#ff6f6f', print: 'ingen', pants: '#2b2b38', bottom: 'bukse', shoes: '#8a5a3c', shoeStyle: 'stovler', accessory: 'ingen', hair: 'piggete', hairColor: '#2b2118' } },
+  { id: 'trollmann', name: 'Trollmann', patch: { hat: 'trollmann', shirt: '#7a4dff', print: 'stjerne', pants: '#2b2b38', bottom: 'bukse', shoes: '#c88bff', shoeStyle: 'sko', accessory: 'stjernekappe', hair: 'lang', hairColor: '#ffffff' } },
+  { id: 'sporty', name: 'Sporty', patch: { hat: 'caps', shirt: '#5cc3f2', print: 'lyn', pants: '#3f6fd8', bottom: 'shorts', shoes: '#ffffff', shoeStyle: 'sneakers', accessory: 'hodetelefoner', hair: 'kort', hairColor: '#5b3a29' } },
+  { id: 'fe', name: 'Fe', patch: { hat: 'blomster', shirt: '#e0b8ff', print: 'blomst', pants: '#ffa6d5', bottom: 'kjole', shoes: '#ffffff', shoeStyle: 'sko', accessory: 'vinger', hair: 'fletter', hairColor: '#c88bff' } },
+  { id: 'kokk', name: 'Kokk', patch: { hat: 'kokkelue', shirt: '#ffffff', print: 'ingen', pants: '#555a75', bottom: 'bukse', shoes: '#2b2b38', shoeStyle: 'sko', accessory: 'ingen', hair: 'kort', hairColor: '#a0632f' } },
+  { id: 'enhjorn', name: 'Enhjørning', patch: { hat: 'enhjorn', shirt: '#ff8fb1', print: 'enhjorn', pants: '#c88bff', bottom: 'overall', shoes: '#ffe066', shoeStyle: 'sneakers', accessory: 'sommerfugl', hair: 'lang', hairColor: '#ff8fc7' } },
+];
 
 export function randomAvatar(rng: Rng): Avatar {
   return {

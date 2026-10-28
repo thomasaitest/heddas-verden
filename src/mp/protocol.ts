@@ -6,7 +6,7 @@ import { cleanAvatar } from '../logic/avatar.ts';
 export const MP_VERSION = 1;
 export const MAX_PLAYERS = 8;
 export const STATE_HZ = 10;
-export const MAX_MSG_BYTES = 2048;
+export const MAX_MSG_BYTES = 4096;
 /** Max client→server messages per second per socket (state + emotes). */
 export const MAX_MSG_PER_SEC = 20;
 
@@ -36,7 +36,11 @@ export type AvatarPoseWire =
   | 'seesaw'
   | 'spin';
 
-export type PlaceWire = 'town' | 'house' | 'shop' | 'vet';
+/** Where the player is. Newer clients may also send cars/pets; older ones only know the first four. */
+export type PlaceWire = 'town' | 'house' | 'shop' | 'vet' | 'cars' | 'pets';
+
+/** How the player is attached to their pet (pony ride etc.). */
+export type MountWire = 'none' | 'ride' | 'hold' | 'fly';
 
 export interface PetWire {
   speciesId: string;
@@ -54,8 +58,12 @@ export interface PlayerSnapshot {
   pose: AvatarPoseWire;
   speed: number;
   place: PlaceWire;
+  /** Whose private house, when place === 'house' (playerId). */
+  area: string | null;
   pet: PetWire | null;
   equip: string | null;
+  /** Pet mount mode; missing/unknown → none (backward tolerant). */
+  mount: MountWire;
   emote: EmoteId | null;
   emoteUntil: number;
 }
@@ -72,9 +80,12 @@ export type ClientMsg =
       pose: AvatarPoseWire;
       speed: number;
       place: PlaceWire;
+      area?: string | null;
       pet: PetWire | null;
       equip: string | null;
+      mount?: MountWire;
     }
+  | { t: 'avatar'; avatar: Avatar }
   | { t: 'emote'; id: EmoteId }
   | { t: 'ping'; n: number };
 
@@ -93,9 +104,12 @@ export type ServerMsg =
       pose: AvatarPoseWire;
       speed: number;
       place: PlaceWire;
+      area?: string | null;
       pet: PetWire | null;
       equip: string | null;
+      mount?: MountWire;
     }
+  | { t: 'avatar'; id: string; avatar: Avatar }
   | { t: 'emote'; id: string; emote: EmoteId }
   | { t: 'pong'; n: number }
   | { t: 'error'; code: string; message: string };
@@ -127,7 +141,8 @@ export function decodeServer(raw: string): ServerMsg | null {
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const isStr = (v: unknown): v is string => typeof v === 'string';
 const POSES: AvatarPoseWire[] = ['idle', 'walk', 'jump', 'sit', 'hold', 'wave', 'fly', 'swing', 'slide', 'seesaw', 'spin'];
-const PLACES: PlaceWire[] = ['town', 'house', 'shop', 'vet'];
+const PLACES: PlaceWire[] = ['town', 'house', 'shop', 'vet', 'cars', 'pets'];
+const MOUNTS: MountWire[] = ['none', 'ride', 'hold', 'fly'];
 
 function parsePet(v: unknown): PetWire | null {
   if (v === null) return null;
@@ -136,6 +151,17 @@ function parsePet(v: unknown): PetWire | null {
   if (!isStr(o.speciesId) || o.speciesId.length > 32) return null;
   if (!isStr(o.name) || o.name.length > 24) return null;
   return { speciesId: o.speciesId, name: o.name };
+}
+
+function parseMount(v: unknown): MountWire {
+  if (isStr(v) && MOUNTS.includes(v as MountWire)) return v as MountWire;
+  return 'none';
+}
+
+function parseArea(v: unknown): string | null {
+  if (v === null || v === undefined) return null;
+  if (!isStr(v) || v.length > 64) return null;
+  return v;
 }
 
 export function parseClient(data: unknown): ClientMsg | null {
@@ -156,16 +182,21 @@ export function parseClient(data: unknown): ClientMsg | null {
     const clamp = (n: number, lim: number) => Math.max(-lim, Math.min(lim, n));
     return {
       t: 'state',
-      x: clamp(o.x, 200),
+      x: clamp(o.x, 250),
       y: clamp(o.y, 80),
-      z: clamp(o.z, 200),
+      z: clamp(o.z, 250),
       yaw: o.yaw,
       pose: o.pose as AvatarPoseWire,
       speed: clamp(o.speed, 20),
       place: o.place as PlaceWire,
+      area: parseArea(o.area),
       pet,
       equip: isStr(o.equip) && o.equip.length <= 32 ? o.equip : null,
+      mount: parseMount(o.mount),
     };
+  }
+  if (o.t === 'avatar') {
+    return { t: 'avatar', avatar: cleanAvatar(o.avatar) };
   }
   if (o.t === 'emote') {
     if (!isStr(o.id) || !EMOTE_BY_ID[o.id]) return null;
@@ -186,11 +217,7 @@ export function parseServer(data: unknown): ServerMsg | null {
   return o as unknown as ServerMsg;
 }
 
-export function snapshotFromHello(
-  id: string,
-  name: string,
-  avatar: Avatar,
-): PlayerSnapshot {
+export function snapshotFromHello(id: string, name: string, avatar: Avatar): PlayerSnapshot {
   return {
     id,
     name,
@@ -202,9 +229,24 @@ export function snapshotFromHello(
     pose: 'idle',
     speed: 0,
     place: 'town',
+    area: null,
     pet: null,
     equip: null,
+    mount: 'none',
     emote: null,
     emoteUntil: 0,
+  };
+}
+
+/** Normalize a snapshot that may come from an older server without area/mount. */
+export function normalizeSnapshot(raw: Partial<PlayerSnapshot> & { id: string; name: string; avatar: Avatar }): PlayerSnapshot {
+  const base = snapshotFromHello(raw.id, raw.name, raw.avatar);
+  return {
+    ...base,
+    ...raw,
+    avatar: cleanAvatar(raw.avatar),
+    area: raw.area ?? null,
+    mount: parseMount(raw.mount),
+    place: (PLACES.includes(raw.place as PlaceWire) ? raw.place : 'town') as PlaceWire,
   };
 }

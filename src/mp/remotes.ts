@@ -1,9 +1,10 @@
 import * as THREE from 'three';
 import { SPECIES_BY_ID } from '../logic/pets.ts';
+import { sameVisibility } from '../logic/collision.ts';
 import { animateAvatar, buildAvatar, type AvatarPose, type AvatarRig } from '../three/avatarModel.ts';
 import { animatePet, buildPet, type PetRig } from '../three/petModel.ts';
 import { blobShadow } from '../three/kit.ts';
-import { EMOTE_BY_ID, type EmoteId } from './protocol.ts';
+import { EMOTE_BY_ID, type EmoteId, type MountWire, type PlaceWire } from './protocol.ts';
 import type { MpSession } from './session.ts';
 
 interface RemoteActor {
@@ -20,6 +21,13 @@ interface RemoteActor {
 
 function avatarKey(a: { skin: string; hair: string; hairColor: string; face: string; shirt: string; print: string; pants: string; bottom: string; shoes: string; shoeStyle: string; hat: string; accessory: string }): string {
   return JSON.stringify(a);
+}
+
+import { ridePetScale, rideSeatOffset } from './ride.ts';
+export { ridePetScale, rideSeatOffset };
+
+export function remoteVisible(localPlace: PlaceWire, localArea: string | null, remotePlace: PlaceWire, remoteArea: string | null): boolean {
+  return sameVisibility(localPlace, localArea, remotePlace, remoteArea);
 }
 
 function makeTextSprite(text: string, opts: { font?: number; bg?: string; pad?: number } = {}): THREE.Sprite {
@@ -89,12 +97,17 @@ export class RemotePlayers {
 
   constructor(private scene: THREE.Scene) {}
 
-  sync(session: MpSession, now: number, seatWorld: ((id: string, u: number) => { x: number; y: number; z: number; yaw: number; pitch?: number } | null) | null) {
+  sync(
+    session: MpSession,
+    now: number,
+    seatWorld: ((id: string, u: number) => { x: number; y: number; z: number; yaw: number; pitch?: number } | null) | null,
+    localPlace: PlaceWire = 'town',
+    localArea: string | null = null,
+  ) {
     const live = new Set<string>();
     for (const r of session.tickRemotes(now)) {
       live.add(r.id);
-      // Hidden when inside a private house
-      const hidden = r.place === 'house';
+      const hidden = !remoteVisible(localPlace, localArea, r.place, r.area);
       let actor = this.actors.get(r.id);
       const key = avatarKey(r.avatar);
       if (!actor) {
@@ -139,36 +152,14 @@ export class RemotePlayers {
         }
       }
 
+      const mount: MountWire = r.mount ?? 'none';
+      const riding = mount === 'ride' || mount === 'fly';
+
       actor.holder.visible = !hidden;
-      actor.shadow.visible = !hidden && y < 0.5;
+      actor.shadow.visible = !hidden && y < 0.5 && !riding;
       actor.nameSpr.visible = !hidden;
-      actor.holder.position.set(x, y, z);
-      actor.holder.rotation.y = yaw;
-      if (r.equip === 'sklie') actor.holder.rotation.x = -0.35;
-      else if (r.equip === 'vippe') actor.holder.rotation.x = 0.15;
-      else actor.holder.rotation.x = 0;
-      animateAvatar(actor.avatar, now / 1000, pose, r.speed, pose === 'hold');
-      actor.shadow.position.set(x, 0.025, z);
-      actor.nameSpr.position.set(x, y + 3.2, z);
 
-      if (r.emote && !hidden) {
-        const cached = this.emoteCache.get(r.emote);
-        if (!cached || actor.bubble.userData.emote !== r.emote) {
-          this.scene.remove(actor.bubble);
-          actor.bubble.material.map?.dispose();
-          (actor.bubble.material as THREE.SpriteMaterial).dispose();
-          actor.bubble = makeEmoteSprite(r.emote);
-          actor.bubble.userData.emote = r.emote;
-          this.emoteCache.set(r.emote, actor.bubble);
-          this.scene.add(actor.bubble);
-        }
-        actor.bubble.visible = true;
-        actor.bubble.position.set(x, y + 4.2, z);
-      } else {
-        actor.bubble.visible = false;
-      }
-
-      // Following pet
+      // Pet first so we know seat height when riding
       const petKey = r.pet ? `${r.pet.speciesId}:${r.pet.name}` : '';
       if (!r.pet || hidden) {
         if (actor.pet) {
@@ -187,16 +178,56 @@ export class RemotePlayers {
           actor.pet = { key: petKey, rig, shadow };
         }
         if (actor.pet) {
-          const ang = yaw + Math.PI - 0.5;
-          const px = x + Math.sin(ang) * 2.4;
-          const pz = z + Math.cos(ang) * 2.4;
-          actor.pet.rig.root.position.set(px, Math.max(0, y - 0.2), pz);
-          actor.pet.rig.root.rotation.y = yaw;
-          actor.pet.rig.root.scale.setScalar(1.5);
-          animatePet(actor.pet.rig, now / 1000, r.speed > 0.2 ? 'walk' : 'idle', r.speed);
-          actor.pet.shadow.position.set(px, 0.025, pz);
-          actor.pet.shadow.visible = y < 0.5;
+          const scale = riding ? ridePetScale(1.5) : 1.5;
+          actor.pet.rig.root.scale.setScalar(scale);
+          if (riding) {
+            // Pony under the rider (same world position as the player)
+            actor.pet.rig.root.position.set(x, Math.max(0, y - (mount === 'fly' ? 0 : 0)), z);
+            actor.pet.rig.root.rotation.y = yaw;
+            y += rideSeatOffset(actor.pet.rig.seatY, scale);
+            if (pose === 'idle' || pose === 'walk') pose = mount === 'fly' ? 'fly' : 'sit';
+          } else if (mount === 'hold') {
+            const ang = yaw;
+            actor.pet.rig.root.position.set(x + Math.sin(ang) * 0.9, y + 0.8, z + Math.cos(ang) * 0.9);
+            actor.pet.rig.root.rotation.y = yaw;
+            actor.pet.rig.root.scale.setScalar(1.1);
+          } else {
+            const ang = yaw + Math.PI - 0.5;
+            const px = x + Math.sin(ang) * 2.4;
+            const pz = z + Math.cos(ang) * 2.4;
+            actor.pet.rig.root.position.set(px, Math.max(0, y - 0.2), pz);
+            actor.pet.rig.root.rotation.y = yaw;
+          }
+          animatePet(actor.pet.rig, now / 1000, r.speed > 0.2 || riding ? 'walk' : 'idle', r.speed);
+          actor.pet.shadow.position.set(actor.pet.rig.root.position.x, 0.025, actor.pet.rig.root.position.z);
+          actor.pet.shadow.visible = actor.pet.rig.root.position.y < 0.5 && mount !== 'hold';
         }
+      }
+
+      actor.holder.position.set(x, y, z);
+      actor.holder.rotation.y = yaw;
+      if (r.equip === 'sklie') actor.holder.rotation.x = -0.35;
+      else if (r.equip === 'vippe') actor.holder.rotation.x = 0.15;
+      else actor.holder.rotation.x = 0;
+      animateAvatar(actor.avatar, now / 1000, pose, r.speed, pose === 'hold' || mount === 'hold');
+      actor.shadow.position.set(x, 0.025, z);
+      actor.nameSpr.position.set(x, y + 3.2, z);
+
+      if (r.emote && !hidden) {
+        const cached = this.emoteCache.get(r.emote);
+        if (!cached || actor.bubble.userData.emote !== r.emote) {
+          this.scene.remove(actor.bubble);
+          actor.bubble.material.map?.dispose();
+          (actor.bubble.material as THREE.SpriteMaterial).dispose();
+          actor.bubble = makeEmoteSprite(r.emote);
+          actor.bubble.userData.emote = r.emote;
+          this.emoteCache.set(r.emote, actor.bubble);
+          this.scene.add(actor.bubble);
+        }
+        actor.bubble.visible = true;
+        actor.bubble.position.set(x, y + 4.2, z);
+      } else {
+        actor.bubble.visible = false;
       }
     }
 

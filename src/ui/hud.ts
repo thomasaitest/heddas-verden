@@ -38,6 +38,8 @@ export interface PetActionState {
 export class Hud {
   root: HTMLElement;
   bucks: HTMLElement;
+  energyBar: HTMLElement;
+  energyFill: HTMLElement;
   tasks: HTMLElement;
   private tasksPanel = new TasksPanel();
   prompt: HTMLButtonElement;
@@ -53,12 +55,15 @@ export class Hud {
 
   constructor(host: HTMLElement, a: HudActions) {
     this.bucks = el('span', { class: 'bucks-n' }, '0');
+    this.energyFill = el('div', { class: 'energy-fill' });
+    this.energyBar = el('div', { class: 'energy', title: 'Energi' }, el('span', {}, '⚡'), this.energyFill);
     this.soundBtn = button('🔊', a.sound, 'btn round small');
     this.where = el('div', { class: 'where' }, 'Byen');
     const top = el(
       'div',
       { class: 'hud-top' },
       el('div', { class: 'bucks' }, el('span', { class: 'coin' }, 'B'), this.bucks),
+      this.energyBar,
       this.where,
       el('div', { class: 'hud-top-right' }, this.soundBtn),
     );
@@ -94,6 +99,10 @@ export class Hud {
 
   setBucks(n: number) {
     put(this.bucks, bucksText(n));
+  }
+  setEnergy(n: number) {
+    const pct = Math.round(Math.max(0, Math.min(1, n)) * 100);
+    this.energyFill.style.width = `${pct}%`;
   }
   bumpBucks() {
     this.bucks.parentElement!.classList.remove('bump');

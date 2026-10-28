@@ -105,7 +105,7 @@ describe('protocol encode/decode', () => {
     });
     expect(m?.t).toBe('state');
     if (m?.t === 'state') {
-      expect(m.x).toBe(200);
+      expect(m.x).toBe(250);
       expect(m.y).toBe(-80);
       expect(m.speed).toBe(20);
     }
@@ -205,5 +205,61 @@ describe('room logic', () => {
     const big = 'x'.repeat(MAX_MSG_BYTES + 10);
     const out = handleRawMessage(room, 'a', big);
     expect(out[0]?.msg).toMatchObject({ code: 'too_big' });
+  });
+});
+
+describe('avatar live update + mount', () => {
+  it('parses avatar client messages and stores latest on the seat', () => {
+    const room = createRoom('K7H2M');
+    handleConnect(room, 'a');
+    handleRawMessage(room, 'a', encode({ t: 'hello', v: MP_VERSION, name: 'Hedda', avatar: DEFAULT_AVATAR, playerId: 'p1' }));
+    const next = { ...DEFAULT_AVATAR, hat: 'krone' as const, shirt: '#5cc3f2' };
+    const out = handleRawMessage(room, 'a', encode({ t: 'avatar', avatar: next }));
+    expect(out.some((o) => o.msg.t === 'avatar' && o.to === 'others')).toBe(true);
+    const seat = [...room.seats.values()][0];
+    expect(seat.snap.avatar.hat).toBe('krone');
+    expect(seat.snap.avatar.shirt).toBe('#5cc3f2');
+  });
+
+  it('relays mount=ride so remotes can seat the rider on the pony', () => {
+    const room = createRoom('K7H2M');
+    handleConnect(room, 'a');
+    handleRawMessage(room, 'a', encode({ t: 'hello', v: MP_VERSION, name: 'Hedda', avatar: DEFAULT_AVATAR, playerId: 'p1' }));
+    const out = handleRawMessage(
+      room,
+      'a',
+      encode({
+        t: 'state',
+        x: 1,
+        y: 0,
+        z: 2,
+        yaw: 0.5,
+        pose: 'sit',
+        speed: 1,
+        place: 'town',
+        pet: { speciesId: 'hest', name: 'Pippi' },
+        equip: null,
+        mount: 'ride',
+        area: null,
+      }),
+    );
+    const state = out.find((o) => o.msg.t === 'state');
+    expect(state?.msg).toMatchObject({ mount: 'ride', pose: 'sit' });
+  });
+
+  it('accepts older state without mount/area (backward tolerant)', () => {
+    const msg = parseClient({
+      t: 'state',
+      x: 0,
+      y: 0,
+      z: 0,
+      yaw: 0,
+      pose: 'idle',
+      speed: 0,
+      place: 'town',
+      pet: null,
+      equip: null,
+    });
+    expect(msg).toMatchObject({ t: 'state', mount: 'none', area: null });
   });
 });

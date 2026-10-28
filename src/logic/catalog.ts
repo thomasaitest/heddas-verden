@@ -154,11 +154,14 @@ export const POTIONS: Potion[] = [
   { id: 'flygedrikk', name: 'Flygedrikk', emoji: '🪽', price: 350, text: 'Gjør et dyr til et flygedyr' },
 ];
 
-export type HouseStyle = 'hytte' | 'villa' | 'gard' | 'slott';
+export type HouseStyle = 'hytte' | 'villa' | 'gard' | 'slott' | 'moderne' | 'trehus' | 'sjohus';
 export const HOUSES: { style: HouseStyle; name: string; price: number; w: number; d: number; wall: string; roof: string; text: string }[] = [
   { style: 'hytte', name: 'Koselig hytte', price: 0, w: 22, d: 18, wall: '#ffe0b8', roof: '#ff7a7a', text: 'Ditt første hjem: 2 etasjer og 6 rom' },
   { style: 'villa', name: 'Rosa villa', price: 600, w: 26, d: 20, wall: '#ffd1e8', roof: '#b05cff', text: 'Stor og rosa! 2 etasjer' },
   { style: 'gard', name: 'Gårdshus', price: 900, w: 30, d: 22, wall: '#ff7f6e', roof: '#fff4e0', text: 'Plass til masse dyr, 2 etasjer' },
+  { style: 'moderne', name: 'Moderne hus', price: 1200, w: 28, d: 20, wall: '#f4f7ff', roof: '#555a75', text: 'Blankt og nytt med store vinduer' },
+  { style: 'trehus', name: 'Trehus', price: 750, w: 24, d: 18, wall: '#d9a066', roof: '#7a5128', text: 'Varmt trehus i skogen' },
+  { style: 'sjohus', name: 'Sjøhus', price: 1400, w: 26, d: 20, wall: '#bfe9ff', roof: '#3fa4ff', text: 'Blått hus ved vannet' },
   { style: 'slott', name: 'Eventyrslott', price: 1800, w: 34, d: 26, wall: '#e6ecff', roof: '#3fa4ff', text: 'Et ekte slott med trapper' },
 ];
 export const HOUSE_BY_STYLE = Object.fromEntries(HOUSES.map((h) => [h.style, h])) as Record<HouseStyle, (typeof HOUSES)[number]>;
@@ -189,3 +192,41 @@ export const TOYS: Toy[] = [
 export const TOY_BY_ID: Record<string, Toy> = Object.fromEntries(TOYS.map((t) => [t.id, t]));
 /** What every new player starts with in the backpack. */
 export const STARTER_TOYS = ['leke-ball', 'leke-garn'] as const;
+
+/** Items sold in the pet shop (dyrebutikk): prams and pet toys. */
+export interface PetShopItem {
+  id: string;
+  name: string;
+  emoji: string;
+  price: number;
+  kind: 'vogn' | 'dyreleke';
+  text: string;
+}
+export const PET_SHOP: PetShopItem[] = [
+  { id: 'vogn-rosa', name: 'Rosa vogn', emoji: '🍼', price: 80, kind: 'vogn', text: 'Koselig barnevogn til dyrene' },
+  { id: 'vogn-blaa', name: 'Blå vogn', emoji: '🩵', price: 80, kind: 'vogn', text: 'Luftig vogn for små dyr' },
+  { id: 'vogn-gull', name: 'Gullvogn', emoji: '✨', price: 200, kind: 'vogn', text: 'Eksklusiv vogn med glitter' },
+  { id: 'dyreleke-mus', name: 'Lekemus', emoji: '🐭', price: 15, kind: 'dyreleke', text: 'En myk mus å jage' },
+  { id: 'dyreleke-tau', name: 'Tauleke', emoji: '🪢', price: 12, kind: 'dyreleke', text: 'Tau å tygge og trekke i' },
+  { id: 'dyreleke-fjols', name: 'Fjølsball', emoji: '🎾', price: 10, kind: 'dyreleke', text: 'Softball som piper' },
+  { id: 'dyreleke-tunnel', name: 'Leketunnel', emoji: '🌀', price: 35, kind: 'dyreleke', text: 'En tunnel å løpe gjennom' },
+];
+export const PET_SHOP_BY_ID = Object.fromEntries(PET_SHOP.map((i) => [i.id, i]));
+
+/** Cars sold in the car shop (bilbutikk). */
+export interface CarItem {
+  id: string;
+  name: string;
+  emoji: string;
+  price: number;
+  color: string;
+  text: string;
+}
+export const CARS: CarItem[] = [
+  { id: 'bil-rosa', name: 'Rosa bil', emoji: '🚗', price: 250, color: '#ff8fb1', text: 'En søt bil å kjøre rundt i' },
+  { id: 'bil-gul', name: 'Gul bil', emoji: '🚕', price: 250, color: '#ffe066', text: 'Lys og glad taxi-stil' },
+  { id: 'bil-bla', name: 'Blå bil', emoji: '🚙', price: 300, color: '#5cc3f2', text: 'Romslig familiebil' },
+  { id: 'bil-gronn', name: 'Grønn bil', emoji: '🛻', price: 280, color: '#7ccf6a', text: 'Liten pickup til turer' },
+  { id: 'bil-lilla', name: 'Lilla bil', emoji: '🏎️', price: 400, color: '#c88bff', text: 'Rask sportsbil' },
+];
+export const CAR_BY_ID = Object.fromEntries(CARS.map((c) => [c.id, c]));
