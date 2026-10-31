@@ -354,21 +354,24 @@ export function buildTown(): Town {
   {
     const g = openBuilding(14, 11, 6.5, '#ffffff', '#5cc3f2', '#9ad8ff', { door: 5, roofSeparate: true });
     const roofG = g.userData.roof as THREE.Group;
-    // Red cross mounted on a short mast on the FRONT facade (not on the liftable roof).
+    // Big red cross on a mast on the FRONT facade (clearly visible from the street).
     const crossMast = new THREE.Group();
-    cyl(crossMast, '#c3cad9', [0, 7.4, 5.55], [0.22, 1.6, 0.22]);
-    box(crossMast, '#ff4b4b', [0, 8.7, 5.55], [0.7, 2.2, 0.35]);
-    box(crossMast, '#ff4b4b', [0, 8.7, 5.55], [2.2, 0.7, 0.35]);
+    cyl(crossMast, '#c3cad9', [0, 7.8, 5.85], [0.28, 2.4, 0.28]);
+    box(crossMast, '#ff4b4b', [0, 9.4, 5.85], [0.85, 2.8, 0.4]);
+    box(crossMast, '#ff4b4b', [0, 9.4, 5.85], [2.8, 0.85, 0.4]);
+    // white outline behind the cross so it reads at a distance
+    box(crossMast, '#ffffff', [0, 9.4, 5.7], [3.1, 1.15, 0.2]);
+    box(crossMast, '#ffffff', [0, 9.4, 5.7], [1.15, 3.1, 0.2]);
     g.add(crossMast);
     shopSign3d(g, {
       label: 'Dyrlegen',
       bg: '#3fa4ff',
-      y: 6.8,
-      z: 5.7,
-      w: 6.4,
+      y: 6.6,
+      z: 5.95,
+      w: 7.0,
       logo: (lg) => {
-        box(lg, '#ff4b4b', [0, 0, 0], [0.45, 1.3, 0.25]);
-        box(lg, '#ff4b4b', [0, 0, 0], [1.3, 0.45, 0.25]);
+        box(lg, '#ff4b4b', [0, 0, 0], [0.55, 1.5, 0.3]);
+        box(lg, '#ff4b4b', [0, 0, 0], [1.5, 0.55, 0.3]);
       },
     });
     const inside = fillHospital(g);
@@ -667,30 +670,38 @@ export function buildTown(): Town {
     sph(stat, '#fff4c2', [L.x, 5.2, L.z], [0.8, 0.8, 0.8], undefined, 0.6);
   }
   for (const b of benchSpots(roads)) {
-    // b.yaw = sit facing (away from the backrest). Backrest sits behind that.
+    // b.yaw = sit facing (away from the backrest). Avatar forward = (sin, cos).
     const sitYaw = b.yaw;
-    const bx = b.x;
-    const bz = b.z;
-    for (const sx of [-1.1, 1.1]) for (const sz of [-0.35, 0.35]) {
-      const lx = bx + Math.cos(sitYaw) * sx - Math.sin(sitYaw) * sz;
-      const lz = bz - Math.sin(sitYaw) * sx + Math.cos(sitYaw) * sz;
+    const fx = Math.sin(sitYaw);
+    const fz = Math.cos(sitYaw);
+    const rx = Math.cos(sitYaw);
+    const rz = -Math.sin(sitYaw);
+    // Seat centre in world; sitter sits slightly toward the backrest so their back touches it.
+    const seatX = b.x;
+    const seatZ = b.z;
+    const sitX = seatX - fx * 0.18;
+    const sitZ = seatZ - fz * 0.18;
+    for (const sx of [-1.15, 1.15]) for (const sz of [-0.32, 0.32]) {
+      const lx = seatX + rx * sx + fx * sz;
+      const lz = seatZ + rz * sx + fz * sz;
       solid(cyl(stat, '#8a5a3c', [lx, 0.35, lz], [0.16, 0.7, 0.16]), 'circle', 0.05, 0.8);
     }
-    solid(box(stat, '#c98a55', [bx, 0.85, bz], [2.8, 0.18, 0.95], [0, sitYaw, 0]), 'rect', 0.05, 1.0);
-    // backrest behind the sitter: opposite of forward (sin/cos of sitYaw)
+    solid(box(stat, '#c98a55', [seatX, 0.85, seatZ], [2.8, 0.18, 0.95], [0, sitYaw, 0]), 'rect', 0.05, 1.0);
+    // backrest at the rear edge of the seat
     solid(
       box(
         stat,
         '#c98a55',
-        [bx - Math.sin(sitYaw) * 0.45, 1.35, bz - Math.cos(sitYaw) * 0.45],
-        [2.8, 0.7, 0.14],
+        [seatX - fx * 0.48, 1.35, seatZ - fz * 0.48],
+        [2.8, 0.75, 0.14],
         [0, sitYaw, 0],
       ),
       'rect',
       0.05,
       1.8,
     );
-    benches.push({ x: bx, z: bz, yaw: sitYaw });
+    // Interaction / sit pose uses the centred sit point (not a corner of the bench).
+    benches.push({ x: sitX, z: sitZ, yaw: sitYaw });
   }
   // hills at the edge
   for (let i = 0; i < 10; i++) {
@@ -760,16 +771,28 @@ export function buildTown(): Town {
       return;
     }
     const ext = homeExterior(style, locked);
-    if (label) sign(ext, (locked ? '🔒 ' : '') + label.slice(0, 8), 8.0, (ext.userData.size as { d: number }).d / 2 + 0.12, locked ? '#555a75' : '#54c45e', 3.6);
+    // Prefer the peer's name plate over the generic «Hjem» label on remote plots.
+    if (label) {
+      const toRemove: THREE.Object3D[] = [];
+      ext.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (m.isMesh && (m.geometry as THREE.BufferGeometry)?.type === 'PlaneGeometry' && (m.material as THREE.Material)?.transparent) {
+          toRemove.push(m);
+        }
+      });
+      for (const m of toRemove) m.parent?.remove(m);
+      sign(ext, (locked ? '🔒 ' : '') + label.slice(0, 8), 8.0, (ext.userData.size as { d: number }).d / 2 + 0.12, locked ? '#555a75' : '#54c45e', 3.6);
+    }
     const size = ext.userData.size as { w: number; d: number };
+    // Parent first so collectColliders reads world-space footprints for the plot.
     st.holder.add(ext);
+    st.holder.updateMatrixWorld(true);
     const hc = collectColliders(ext);
     st.rects = hc.rects;
     st.circles = hc.circles;
     rects.push(...st.rects);
     circles.push(...st.circles);
-    st.holder.remove(ext);
-    st.holder.add(mergeStatic(ext, { cast: true, receive: true }));
+    shadowAll(ext);
     const dist = size.d / 2 + 2.2;
     if (plotIdx === 0) {
       const zone = plots[0].zone!;

@@ -131,177 +131,174 @@ function pushClear(roads: RoadSeg[], s: RoadSeg, buildings: BuildingFoot[]) {
  * Road network: plaza ring + short approaches that stop at each building front,
  * neighbourhood loop, and clear cross-links. Never runs through a building.
  */
+/**
+ * Road network: orthogonal grid of main streets + cross streets, a small
+ * plaza square around the fountain, and short stubs to each door.
+ * No hub-and-spoke diagonals from the centre.
+ */
 export function buildRoadNetwork(): RoadSeg[] {
   const buildings = buildingsFromPlaces();
   const roads: RoadSeg[] = [];
 
-  // Ring around the plaza (chords).
-  const N = 20;
-  for (let i = 0; i < N; i++) {
-    const a0 = (i / N) * Math.PI * 2;
-    const a1 = ((i + 1) / N) * Math.PI * 2;
-    pushClear(
-      roads,
-      {
-        x1: Math.cos(a0) * RING_R,
-        z1: Math.sin(a0) * RING_R,
-        x2: Math.cos(a1) * RING_R,
-        z2: Math.sin(a1) * RING_R,
-        width: ROAD_W,
-      },
-      buildings,
-    );
-  }
+  const add = (x1: number, z1: number, x2: number, z2: number, width = ROAD_W) => {
+    pushClear(roads, { x1, z1, x2, z2, width }, buildings);
+  };
 
-  // Approach from ring to each landmark's door (stops well clear of the footprint).
+  // --- Plaza square (around the fountain), not a spoke ring ---
+  const P = 14;
+  add(-P, -P, P, -P, 5.0);
+  add(P, -P, P, P, 5.0);
+  add(P, P, -P, P, 5.0);
+  add(-P, P, -P, -P, 5.0);
+
+  // --- Main streets (axis-aligned) ---
+  // East–West corridors
+  add(-70, -22, 70, -22, 5.2); // south of plaza: pets ↔ home/shop ↔ cars
+  add(-60, 22, 60, 22, 5.0); // north of plaza: play ↔ doors/vet belt
+  add(-80, -55, -10, -55, 4.6); // neighbourhood south belt
+  add(-80, -40, -20, -40, 4.4); // neighbourhood mid belt
+
+  // North–South corridors
+  add(-22, -78, -22, 40, 5.0); // west spine: houses / play
+  add(22, -60, 22, 50, 5.0); // east spine: eggs/shop/vet/doors
+  add(-55, -78, -55, 10, 4.6); // far-west neighbourhood
+  add(55, -40, 55, 20, 4.6); // far-east: cars / vet
+
+  // Extra cross links (still axis-aligned; form a real network)
+  add(-22, -22, 22, -22, 5.2); // already on EW but ensure plaza connector
+  add(0, -P, 0, -48, 4.8); // plaza south → eggs
+  add(0, P, 0, 42, 4.8); // plaza north → doors
+  add(-P, 0, -48, 0, 4.8); // plaza west → pets/play approach
+  add(P, 0, 50, 0, 4.8); // plaza east → cars/vet approach
+
+  // --- Short stubs: from nearest main street to each building door (L-shaped, axis-aligned) ---
+  // Landmark doors (front side facing plaza)
   for (const p of Object.values(PLACES)) {
-    if (p.id === 'home' || p.id === 'play') continue; // home/play use other links
-    const doorDist = p.hd + 3.5;
-    const door = frontOf(p, doorDist);
-    const ang = Math.atan2(p.z, p.x);
-    const ring = { x: Math.cos(ang) * RING_R, z: Math.sin(ang) * RING_R };
-    if (Math.hypot(p.x, p.z) <= RING_R + 6) continue;
-    // Route via an intermediate point further out from the plaza so we don't clip corners.
-    const midAng = Math.atan2(door.z - ring.z, door.x - ring.x);
-    const midLen = Math.hypot(door.x - ring.x, door.z - ring.z) * 0.55;
-    const mid = {
-      x: ring.x + Math.cos(midAng) * midLen,
-      z: ring.z + Math.sin(midAng) * midLen,
-    };
-    // Nudge mid away from any building centre it might skim.
-    let mx = mid.x;
-    let mz = mid.z;
-    for (const b of buildings) {
-      const d = Math.hypot(mx - b.x, mz - b.z);
-      const minD = Math.hypot(b.hw, b.hd) + APPROACH_W + 2;
-      if (d < minD && d > 1e-3) {
-        const push = (minD - d) / d;
-        mx += (mx - b.x) * push;
-        mz += (mz - b.z) * push;
-      }
+    if (p.id === 'home') continue; // plot stub below
+    const door = frontOf(p, p.hd + 3.2);
+    // Snap stub to nearest cardinal main street
+    const candidates: { sx?: number; sz?: number; d: number }[] = [
+      { sz: -22, d: Math.abs(door.z - -22) },
+      { sz: 22, d: Math.abs(door.z - 22) },
+      { sz: -55, d: Math.abs(door.z - -55) },
+      { sz: 0, d: Math.abs(door.z - 0) },
+      { sx: -22, d: Math.abs(door.x - -22) },
+      { sx: 22, d: Math.abs(door.x - 22) },
+      { sx: -55, d: Math.abs(door.x - -55) },
+      { sx: 55, d: Math.abs(door.x - 55) },
+      { sx: 0, d: Math.abs(door.x - 0) },
+    ];
+    candidates.sort((a, b) => a.d - b.d);
+    const best = candidates[0];
+    if (best.sz !== undefined) {
+      // vertical stub from EW street up to door, plus short EW jog from street x to door x
+      const along = best.sz;
+      add(door.x, along, door.x, door.z, APPROACH_W);
+    } else if (best.sx !== undefined) {
+      add(best.sx, door.z, door.x, door.z, APPROACH_W);
     }
-    pushClear(roads, { x1: ring.x, z1: ring.z, x2: mx, z2: mz, width: APPROACH_W }, buildings);
-    pushClear(roads, { x1: mx, z1: mz, x2: door.x, z2: door.z, width: APPROACH_W }, buildings);
   }
 
-  // Playground: approach to the gate (not through the fence circle).
-  {
-    const p = PLACES.play;
-    const door = frontOf(p, 13);
-    const ang = Math.atan2(p.z, p.x);
-    const ring = { x: Math.cos(ang) * RING_R, z: Math.sin(ang) * RING_R };
-    pushClear(roads, { x1: ring.x, z1: ring.z, x2: door.x, z2: door.z, width: APPROACH_W }, buildings);
-  }
-
-  // Neighbourhood loop (west/south of home), clear of every landmark.
-  const loop: [number, number][] = [
-    [-22, -20],
-    [-22, -52],
-    [-42, -78],
-    [-72, -78],
-    [-86, -48],
-    [-72, -22],
-    [-48, -20],
-    [-22, -20],
-  ];
-  for (let i = 0; i < loop.length - 1; i++) {
-    const [x1, z1] = loop[i];
-    const [x2, z2] = loop[i + 1];
-    pushClear(roads, { x1, z1, x2, z2, width: 4.2 }, buildings);
-  }
+  // House plot stubs → nearest neighbourhood belt
   for (const plot of HOUSE_PLOTS) {
     const rot = faceCenter(plot.x, plot.z);
     const door = { x: plot.x + Math.sin(rot) * 10, z: plot.z + Math.cos(rot) * 10 };
-    let best = loop[0];
-    let bestD = Infinity;
-    for (const v of loop) {
-      const d = Math.hypot(v[0] - door.x, v[1] - door.z);
-      if (d < bestD) {
-        bestD = d;
-        best = v;
-      }
-    }
-    pushClear(roads, { x1: best[0], z1: best[1], x2: door.x, z2: door.z, width: 4.0 }, buildings);
-  }
-
-  // Cross-links via outer waypoints (network, not only spokes).
-  const links: { a: string; b: string; wx: number; wz: number; w: number }[] = [
-    { a: 'shop', b: 'eggs', wx: 22, wz: -48, w: 4.2 },
-    { a: 'cars', b: 'vet', wx: 58, wz: 4, w: 4.2 },
-    { a: 'pets', b: 'play', wx: -58, wz: 6, w: 4.2 },
-    { a: 'doors', b: 'vet', wx: 28, wz: 36, w: 4.0 },
-    { a: 'shop', b: 'cars', wx: 48, wz: -22, w: 4.2 },
-    { a: 'eggs', b: 'doors', wx: 18, wz: -8, w: 4.0 },
-  ];
-  for (const L of links) {
-    const A = PLACES[L.a];
-    const B = PLACES[L.b];
-    const da = frontOf(A, A.hd + 3.5);
-    const db = frontOf(B, B.hd + 3.5);
-    pushClear(roads, { x1: da.x, z1: da.z, x2: L.wx, z2: L.wz, width: L.w }, buildings);
-    pushClear(roads, { x1: L.wx, z1: L.wz, x2: db.x, z2: db.z, width: L.w }, buildings);
+    // attach to closest of z=-40, z=-55, x=-22, x=-55
+    const opts = [
+      { sz: -40, d: Math.abs(door.z + 40) },
+      { sz: -55, d: Math.abs(door.z + 55) },
+      { sx: -22, d: Math.abs(door.x + 22) },
+      { sx: -55, d: Math.abs(door.x + 55) },
+    ];
+    opts.sort((a, b) => a.d - b.d);
+    const b = opts[0] as { sx?: number; sz?: number };
+    if (b.sz !== undefined) add(door.x, b.sz, door.x, door.z, 4.0);
+    else if (b.sx !== undefined) add(b.sx, door.z, door.x, door.z, 4.0);
   }
 
   return roads;
 }
 
 /**
- * Bench positions: off every road.
- * `yaw` is the sit-facing direction (avatar forward = away from the backrest).
+ * Bench positions: on the grass, clearly off every road.
+ * `yaw` = sit facing (avatar forward = away from the backrest).
  * Forward in the game is (sin(yaw), cos(yaw)).
  */
 export function benchSpots(roads: readonly RoadSeg[]): { x: number; z: number; yaw: number }[] {
   const out: { x: number; z: number; yaw: number }[] = [];
   const tryAdd = (x: number, z: number, yaw: number) => {
-    if (onRoad(x, z, roads, 1.3)) return;
-    if (Math.hypot(x, z) < PLAZA_R - 0.5) return;
+    if (onRoad(x, z, roads, 1.35)) return;
+    // Keep clear of the fountain bowl only (not the whole plaza lawn).
+    if (Math.hypot(x, z) < 6.2) return;
     for (const p of Object.values(PLACES)) {
-      if (Math.hypot(x - p.x, z - p.z) < Math.max(p.hw, p.hd) + 2) return;
+      if (Math.hypot(x - p.x, z - p.z) < Math.max(p.hw, p.hd) + 2.5) return;
     }
+    // keep clear of other benches
+    if (out.some((b) => Math.hypot(b.x - x, b.z - z) < 3.5)) return;
     out.push({ x, z, yaw });
   };
-  // Around the plaza: face the fountain (towards origin).
-  for (let i = 0; i < 12; i++) {
-    const a = (i / 12) * Math.PI * 2 + 0.2;
-    const x = Math.cos(a) * 12.2;
-    const z = Math.sin(a) * 12.2;
-    // forward toward centre: (-x, -z) ⇒ yaw = atan2(-x, -z)
+
+  // Plaza grass just inside the square roads, facing the fountain.
+  // Sit on the inner lawn (radius ~10), not on the plaza road at |x| or |z| = 14.
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2 + Math.PI / 8;
+    // well inside the plaza square roads (|x|,|z|=14) so onRoad never rejects them
+    const x = Math.cos(a) * 8.5;
+    const z = Math.sin(a) * 8.5;
     tryAdd(x, z, Math.atan2(-x, -z));
   }
-  // Outside the ring: face roughly toward the plaza.
-  for (let i = 0; i < 10; i++) {
-    const a = (i / 10) * Math.PI * 2 + 0.4;
-    const x = Math.cos(a) * 24;
-    const z = Math.sin(a) * 24;
-    tryAdd(x, z, Math.atan2(-x, -z));
-  }
-  // Neighbourhood: face the nearby road / open space (explicit sit yaw).
-  for (const [x, z, yaw] of [
-    [-30, -54, Math.PI],       // look north toward loop
-    [-60, -80, Math.PI / 2],   // look east
-    [-84, -48, 0],             // look south
-    [-48, -24, -Math.PI / 2],  // look west
-    [-14, -56, Math.PI],
-  ] as [number, number, number][]) {
-    tryAdd(x, z, yaw);
-  }
+
+  // Grass strips beside the main streets (offset off the asphalt), facing the street.
+  const roadside: [number, number, number][] = [
+    // south of EW z=-22, face north (toward street / plaza)
+    [-35, -27, Math.PI],
+    [8, -27, Math.PI],
+    [35, -27, Math.PI],
+    // north of EW z=-22, face south
+    [-35, -17, 0],
+    [35, -17, 0],
+    // west of NS x=-22, face east
+    [-27, 5, Math.PI / 2],
+    [-27, -35, Math.PI / 2],
+    // east of NS x=22, face west
+    [27, 5, -Math.PI / 2],
+    [27, -35, -Math.PI / 2],
+    // neighbourhood park pockets
+    [-40, -48, Math.PI],
+    [-65, -48, Math.PI / 2],
+    [-48, -70, 0],
+    [-18, -62, -Math.PI / 2],
+  ];
+  for (const [x, z, yaw] of roadside) tryAdd(x, z, yaw);
+
   return out;
 }
 
-/** World offset of the backrest relative to the seat for a given sit yaw (pure helper for tests). */
-export function benchBackrestOffset(sitYaw: number, depth = 0.45): { x: number; z: number } {
+/** World offset of the backrest relative to the sit point for a given sit yaw. */
+export function benchBackrestOffset(sitYaw: number, depth = 0.3): { x: number; z: number } {
+  // Backrest is behind the sitter (opposite of forward).
   return { x: -Math.sin(sitYaw) * depth, z: -Math.cos(sitYaw) * depth };
 }
 
-/** Lamp posts sit just outside the ring road. */
+/** Lamp posts along the plaza square and main streets, off the asphalt. */
 export function lampSpots(roads: readonly RoadSeg[]): { x: number; z: number }[] {
   const out: { x: number; z: number }[] = [];
-  for (let i = 0; i < 12; i++) {
-    const a = (i / 12) * Math.PI * 2 + 0.12;
-    const x = Math.cos(a) * (RING_R + 3.5);
-    const z = Math.sin(a) * (RING_R + 3.5);
-    if (onRoad(x, z, roads, 0.9)) continue;
+  const tryAdd = (x: number, z: number) => {
+    if (onRoad(x, z, roads, 0.9)) return;
     out.push({ x, z });
+  };
+  // Corners of the plaza square
+  for (const s of [-1, 1]) {
+    for (const t of [-1, 1]) tryAdd(s * 16.5, t * 16.5);
+  }
+  // Along main corridors
+  for (const x of [-50, -30, 30, 50]) {
+    tryAdd(x, -25);
+    tryAdd(x, -19);
+  }
+  for (const z of [-50, -30, 10, 30]) {
+    tryAdd(-25, z);
+    tryAdd(25, z);
   }
   return out;
 }

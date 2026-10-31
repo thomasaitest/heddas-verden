@@ -602,7 +602,7 @@ export class Game {
         break;
       case 'bench':
         this.resting = { x: z.x, z: z.z, yaw: z.yaw };
-        this.player.pos.set(z.x, 0.55, z.z);
+        this.player.pos.set(z.x, 0.85, z.z);
         this.player.yaw = z.yaw;
         this.player.vy = 0;
         this.player.grounded = true;
@@ -935,7 +935,7 @@ export class Game {
     }
 
     // camera input
-    const maxDist = this.building ? 30 : this.mode === 'house' ? 22 : 34;
+    const maxDist = this.building ? 30 : this.mode === 'house' ? 22 : 140;
     this.cam = orbit(this.cam, inp.camDX, inp.camDY, inp.zoom, maxDist);
 
     // movement
@@ -981,7 +981,7 @@ export class Game {
         p.vy = 0;
       }
     } else if (this.resting) {
-      p.pos.set(this.resting.x, 0.55, this.resting.z);
+      p.pos.set(this.resting.x, 0.85, this.resting.z);
       p.yaw = this.resting.yaw;
       p.vy = 0;
       p.grounded = true;

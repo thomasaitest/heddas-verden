@@ -12,11 +12,15 @@ describe('town road network', () => {
   const roads = buildRoadNetwork();
   const buildings = buildingsFromPlaces();
 
-  it('has a real network (ring + approaches + neighbourhood), not only spokes from centre', () => {
-    expect(roads.length).toBeGreaterThan(20);
+  it('has a real grid network (not hub-and-spoke from the fountain)', () => {
+    expect(roads.length).toBeGreaterThan(15);
     for (const s of roads) {
       const fromCentre = Math.hypot(s.x1, s.z1) < 1 || Math.hypot(s.x2, s.z2) < 1;
       expect(fromCentre).toBe(false);
+      // segments are axis-aligned (orthogonal grid), not diagonal spokes
+      const dx = Math.abs(s.x2 - s.x1);
+      const dz = Math.abs(s.z2 - s.z1);
+      expect(dx < 0.2 || dz < 0.2, `diagonal road ${s.x1},${s.z1}→${s.x2},${s.z2}`).toBe(true);
     }
   });
 

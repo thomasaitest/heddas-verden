@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { solid } from './colliders.ts';
 import { buildFood } from './food.ts';
 import { box, cone, cyl, G, part, rbox, sph, textTexture } from './kit.ts';
+import { buildCar } from './vehicles.ts';
 
 type V3 = [number, number, number];
 
@@ -258,19 +259,15 @@ export function fillCarShop(g: THREE.Group): { counter: { x: number; z: number }
   tileFloor(g, 16, 12, '#e8eef8', '#d0d8e8');
   box(g, '#3fa4ff', [0, 0.05, 5.4], [4, 0.03, 1.2]).userData.noCast = true;
   plane(g, textTexture('Bilbutikk', { bg: '#3fa4ff', fg: '#fff', w: 512, h: 96 }), [0, 5.2, -5.7], 5, 0.9);
-  const colors = ['#ff8fb1', '#ffe066', '#5cc3f2', '#7ccf6a', '#c88bff'];
-  colors.forEach((c, i) => {
+  const ids = ['bil-rosa', 'bil-gul', 'bil-bla', 'bil-gronn', 'bil-lilla'];
+  ids.forEach((id, i) => {
     const x = -6 + i * 3;
-    const car = new THREE.Group();
-    solid(rbox(car, c, [0, 0.55, 0], [2.4, 0.7, 1.3]), 'rect', 0.1, 1.4);
-    rbox(car, '#bfe9ff', [0.1, 1.05, 0], [1.4, 0.55, 1.15], undefined, 0.25);
-    for (const [wx, wz] of [[-0.7, 0.7], [0.7, 0.7], [-0.7, -0.7], [0.7, -0.7]]) {
-      cyl(car, '#2b2b38', [wx, 0.28, wz], [0.45, 0.35, 0.45], [0, 0, Math.PI / 2]);
-    }
-    box(car, '#fff4c2', [1.15, 0.55, 0.45], [0.15, 0.2, 0.25], undefined, 0.4);
-    car.position.set(x, 0, -1.5);
+    const car = buildCar(id);
+    car.scale.setScalar(0.72);
+    car.position.set(x, 0, -1.2);
+    car.rotation.y = Math.PI / 2;
     g.add(car);
-    solid(rbox(g, '#ffffff', [x, 0.08, -1.5], [2.8, 0.1, 2.0]), 'rect', 0, 0.2);
+    solid(rbox(g, '#ffffff', [x, 0.08, -1.2], [3.0, 0.1, 2.4]), 'rect', 0, 0.2);
   });
   solid(rbox(g, '#ffffff', [5.5, 0.55, 3.2], [2.4, 1.1, 1.4]), 'rect', 0, 1.3);
   rbox(g, '#3fa4ff', [5.5, 1.14, 3.2], [2.5, 0.1, 1.5]);
