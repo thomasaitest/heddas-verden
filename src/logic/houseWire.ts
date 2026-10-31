@@ -17,9 +17,11 @@ export interface FurnWire {
 export interface HouseWire {
   style: HouseStyle;
   items: FurnWire[];
+  /** Locked door: others cannot enter; owner always can. */
+  locked?: boolean;
 }
 
-export const MAX_FURN_WIRE = 24;
+export const MAX_FURN_WIRE = 48;
 
 export function parseHouseStyle(v: unknown): HouseStyle | null {
   if (typeof v === 'string' && (HOUSE_STYLES as string[]).includes(v)) return v as HouseStyle;
@@ -38,7 +40,7 @@ export function houseToWire(house: House): HouseWire {
     if (it.color && FURN_BY_ID[it.itemId] && it.color !== FURN_BY_ID[it.itemId].color) w.color = it.color;
     return w;
   });
-  return { style: house.style, items };
+  return { style: house.style, items, locked: !!house.locked };
 }
 
 export function wireToPlaced(items: FurnWire[]): PlacedItem[] {
@@ -78,7 +80,7 @@ export function parseHouseWire(raw: unknown): HouseWire | null {
       ...(typeof f.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(f.color) ? { color: f.color } : {}),
     });
   }
-  return { style, items };
+  return { style, items, locked: !!o.locked };
 }
 
 export function guestHouseFromWire(ownerId: string, wire: HouseWire, now = Date.now()): House {
@@ -92,5 +94,6 @@ export function guestHouseFromWire(ownerId: string, wire: HouseWire, now = Date.
     floorColor: '#d9a066',
     items: wireToPlaced(wire.items),
     createdAt: now,
+    locked: !!wire.locked,
   };
 }

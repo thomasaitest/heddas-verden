@@ -29,6 +29,8 @@ export interface RemoteView {
   equip: string | null;
   mount: MountWire;
   houseStyle: import('../logic/catalog.ts').HouseStyle | null;
+  house: import('../logic/houseWire.ts').HouseWire | null;
+  plot: number | null;
   vehicle: string | null;
   emote: EmoteId | null;
   emoteUntil: number;
@@ -44,6 +46,7 @@ export interface SessionHooks {
   onVisitAsk?(from: string, fromName: string, fromPlayerId: string): void;
   onVisitReply?(from: string, ok: boolean, house?: import('../logic/houseWire.ts').HouseWire): void;
   onHouse?(id: string, house: import('../logic/houseWire.ts').HouseWire): void;
+  onLeft?(id: string): void;
   onActivity?(id: string, kind: import('../logic/activity.ts').ActivityKind): void;
 }
 
@@ -56,7 +59,9 @@ export class MpSession {
   private lastSend = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private wantUrl: string | null = null;
-  private hello: { name: string; avatar: Avatar; playerId: string } | null = null;
+  private hello: { name: string; avatar: Avatar; playerId: string; house?: import('../logic/houseWire.ts').HouseWire } | null = null;
+  /** Set before create/join so hello carries the player's house into the room. */
+  pendingHouse: import('../logic/houseWire.ts').HouseWire | null = null;
   private intentionalClose = false;
 
   constructor(
@@ -85,7 +90,7 @@ export class MpSession {
     const n = filterName(name);
     if (!isValidCode(code) || !n) return false;
     this.intentionalClose = false;
-    this.hello = { name: n, avatar, playerId };
+    this.hello = { name: n, avatar, playerId, ...(this.pendingHouse ? { house: this.pendingHouse } : {}) };
     this.code = code;
     this.youName = n;
     this.remotes.clear();
@@ -179,7 +184,14 @@ export class MpSession {
   private onTransportStatus(s: TransportStatus, detail?: string) {
     this.hooks.onStatus(s, detail);
     if (s === 'open' && this.hello) {
-      this.transport.send({ t: 'hello', v: 1, name: this.hello.name, avatar: this.hello.avatar, playerId: this.hello.playerId });
+      this.transport.send({
+        t: 'hello',
+        v: 1,
+        name: this.hello.name,
+        avatar: this.hello.avatar,
+        playerId: this.hello.playerId,
+        ...(this.hello.house ? { house: this.hello.house } : {}),
+      });
     }
     if ((s === 'closed' || s === 'error') && this.wantUrl && this.hello && !this.intentionalClose) {
       this.scheduleReconnect();
@@ -209,6 +221,8 @@ export class MpSession {
       for (const p of msg.players) this.upsertRemote(p);
       this.hooks.onRoom(msg.code, this.youName);
       this.hooks.onRemotes();
+      // Re-send our house so peers that were already here get furniture (and we confirm plot).
+      if (this.pendingHouse) this.transport.send({ t: 'house', house: this.pendingHouse });
       return;
     }
     if (msg.t === 'joined') {
@@ -218,6 +232,7 @@ export class MpSession {
     }
     if (msg.t === 'left') {
       this.remotes.delete(msg.id);
+      this.hooks.onLeft?.(msg.id);
       this.hooks.onRemotes();
       return;
     }
@@ -246,7 +261,10 @@ export class MpSession {
     }
     if (msg.t === 'house') {
       const r = this.remotes.get(msg.id);
-      if (r) r.houseStyle = msg.house.style;
+      if (r) {
+        r.houseStyle = msg.house.style;
+        r.house = msg.house;
+      }
       this.hooks.onHouse?.(msg.id, msg.house);
       return;
     }
@@ -312,10 +330,13 @@ export class MpSession {
       pet: snap.pet,
       equip: snap.equip,
       mount: snap.mount,
-      houseStyle: snap.houseStyle ?? null,
+      houseStyle: snap.houseStyle ?? snap.house?.style ?? existing?.houseStyle ?? null,
+      house: snap.house ?? existing?.house ?? null,
+      plot: snap.plot ?? existing?.plot ?? null,
       vehicle: snap.vehicle ?? null,
       emote: snap.emote,
       emoteUntil: snap.emoteUntil,
     });
+    if (snap.house) this.hooks.onHouse?.(snap.id, snap.house);
   }
 }

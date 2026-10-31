@@ -626,6 +626,57 @@ function accessory(body: THREE.Group, head: THREE.Group, a: Avatar) {
       rbox(body, '#ffb84d', [0.55, 1.15, 0.15], [0.35, 0.4, 0.2]);
       box(body, '#d9a066', [0.55, 1.35, 0.15], [0.08, 0.2, 0.08]);
       break;
+    case 'veske-hjerte':
+      rbox(body, '#ff6f6f', [0.55, 1.15, 0.15], [0.38, 0.36, 0.22]);
+      part(body, G.heart(), '#ff4f7f', [0.55, 1.15, 0.28], [0.22, 0.22, 0.06], [-Math.PI / 2, 0, 0]);
+      box(body, '#ff8fb1', [0.55, 1.38, 0.15], [0.08, 0.22, 0.08]);
+      break;
+    case 'veske-gul':
+      rbox(body, '#ffe066', [0.58, 1.12, 0.12], [0.4, 0.42, 0.24]);
+      box(body, '#ffffff', [0.58, 1.35, 0.12], [0.1, 0.18, 0.1]);
+      sph(body, '#ff8fb1', [0.58, 1.0, 0.24], [0.1, 0.1, 0.1]);
+      break;
+    case 'vinger-engel':
+      for (const s of [-1, 1]) {
+        sph(body, '#ffffff', [s * 0.4, 1.6, -0.38], [0.7, 0.85, 0.08], [0.15, s * 0.35, s * 0.45], 0.05);
+        sph(body, '#fff8e8', [s * 0.55, 1.85, -0.4], [0.45, 0.55, 0.06], [0.1, s * 0.4, s * 0.3], 0.08);
+      }
+      break;
+    case 'vinger-regnbue':
+      for (const s of [-1, 1]) {
+        const cols = ['#ff6f6f', '#ffe066', '#7ccf6a', '#5cc3f2', '#c88bff'];
+        cols.forEach((c, i) => sph(body, c, [s * (0.35 + i * 0.04), 1.7 - i * 0.08, -0.36 - i * 0.01], [0.5 - i * 0.05, 0.65 - i * 0.06, 0.05], [0.15, s * 0.35, s * 0.4], 0.1));
+      }
+      break;
+    case 'sekk-stjerne':
+      rbox(body, '#3f6fd8', [0, 1.35, -0.4], [0.75, 0.8, 0.32]);
+      part(body, G.star(), '#ffe066', [0, 1.4, -0.58], [0.35, 0.35, 0.08], [0, 0, 0], 0.3);
+      box(body, '#5cc3f2', [0, 1.75, -0.4], [0.55, 0.12, 0.28]);
+      break;
+    case 'sekk-rosa':
+      rbox(body, '#ff8fb1', [0, 1.32, -0.42], [0.72, 0.78, 0.34]);
+      part(body, G.heart(), '#ff4f7f', [0, 1.35, -0.6], [0.28, 0.28, 0.08], [-Math.PI / 2, 0, 0]);
+      for (const s of [-1, 1]) box(body, '#ffb3c7', [s * 0.28, 1.7, -0.2], [0.1, 0.35, 0.08]);
+      break;
+    case 'perlekjede':
+      for (let i = 0; i < 11; i++) {
+        const t = (i / 10) * Math.PI;
+        sph(body, i % 2 ? '#ffe066' : '#ff8fb1', [Math.cos(t) * 0.36, 1.8 - Math.sin(t) * 0.35, 0.28], [0.09, 0.09, 0.09], undefined, 0.15);
+      }
+      break;
+    case 'oreringer':
+      for (const s of [-1, 1]) {
+        cyl(head, '#ffe066', [s * 0.38, -0.15, 0.05], [0.06, 0.18, 0.06]);
+        sph(head, '#ff4f7f', [s * 0.38, -0.28, 0.05], [0.12, 0.12, 0.12], undefined, 0.2);
+      }
+      break;
+    case 'armband':
+      for (const s of [-1, 1]) cyl(body, '#ffe066', [s * 0.72, 1.25, 0], [0.48, 0.1, 0.48]);
+      break;
+    case 'klokke':
+      cyl(body, '#555a75', [0.72, 1.22, 0.05], [0.22, 0.08, 0.22]);
+      box(body, '#ffffff', [0.72, 1.22, 0.16], [0.16, 0.16, 0.04]);
+      break;
     case 'stjernekappe':
       box(body, '#6a4cff', [0, 1.1, -0.32], [1.1, 1.5, 0.06], [0.12, 0, 0]);
       for (let i = 0; i < 5; i++) part(body, G.star(), '#ffe066', [-0.35 + i * 0.18, 1.5 - (i % 2) * 0.25, -0.36], [0.16, 0.16, 0.06], [0, 0, 0], 0.3);
@@ -646,11 +697,12 @@ export function buildAvatar(a: Avatar): AvatarRig {
     const pivot = new THREE.Object3D();
     pivot.position.set(s * 0.24, 0.9, 0);
     body.add(pivot);
+    const skirtLike = a.bottom === 'skjort' || a.bottom === 'miniskjort' || a.bottom === 'langtskort' || a.bottom === 'tutu' || a.bottom === 'plissert' || a.bottom === 'kjole' || a.bottom === 'ballkjole';
     if (a.bottom === 'shorts') {
       box(pivot, a.pants, [0, -0.2, 0], [0.48, 0.4, 0.5]);
       box(pivot, a.skin, [0, -0.58, 0], [0.38, 0.36, 0.4]);
-    } else if (a.bottom === 'skjort' || a.bottom === 'kjole') box(pivot, a.skin, [0, -0.38, 0], [0.38, 0.76, 0.4]);
-    else if (a.bottom === 'overall') {
+    } else if (skirtLike) box(pivot, a.skin, [0, -0.38, 0], [0.38, 0.76, 0.4]);
+    else if (a.bottom === 'overall' || a.bottom === 'jeans' || a.bottom === 'joggebukse') {
       box(pivot, a.pants, [0, -0.38, 0], [0.46, 0.76, 0.48]);
     } else box(pivot, a.pants, [0, -0.38, 0], [0.46, 0.76, 0.48]);
     if (a.shoeStyle === 'stovler') {
@@ -664,13 +716,45 @@ export function buildAvatar(a: Avatar): AvatarRig {
     return pivot;
   });
   if (a.bottom === 'skjort') cyl(body, a.pants, [0, 0.78, 0], [1.15, 0.5, 0.78]);
+  if (a.bottom === 'miniskjort') cyl(body, a.pants, [0, 0.88, 0], [1.05, 0.32, 0.72]);
+  if (a.bottom === 'langtskort') {
+    cyl(body, a.pants, [0, 0.55, 0], [1.25, 1.0, 0.9]);
+    cyl(body, a.pants, [0, 0.95, 0], [1.05, 0.3, 0.7]);
+  }
+  if (a.bottom === 'tutu') {
+    for (let i = 0; i < 6; i++) {
+      const a0 = (i / 6) * Math.PI * 2;
+      sph(body, a.pants, [Math.cos(a0) * 0.35, 0.85, Math.sin(a0) * 0.25], [0.55, 0.35, 0.45]);
+    }
+    cyl(body, '#ffffff', [0, 0.95, 0], [0.9, 0.12, 0.6]);
+  }
+  if (a.bottom === 'plissert') {
+    cyl(body, a.pants, [0, 0.78, 0], [1.2, 0.55, 0.82]);
+    for (let i = 0; i < 8; i++) {
+      const a0 = (i / 8) * Math.PI * 2;
+      box(body, a.pants, [Math.cos(a0) * 0.5, 0.75, Math.sin(a0) * 0.35], [0.08, 0.5, 0.2]);
+    }
+  }
   if (a.bottom === 'kjole') {
     cyl(body, a.pants, [0, 0.7, 0], [1.4, 0.85, 1.0]);
     cyl(body, a.shirt, [0, 1.15, 0], [1.05, 0.35, 0.7]);
   }
+  if (a.bottom === 'ballkjole') {
+    cyl(body, a.pants, [0, 0.55, 0], [1.7, 1.1, 1.3]);
+    cyl(body, a.shirt, [0, 1.2, 0], [1.0, 0.4, 0.65]);
+    for (let i = 0; i < 5; i++) part(body, G.star(), '#ffe066', [-0.5 + i * 0.25, 0.9, 0.55], [0.14, 0.14, 0.05], [0, 0, 0], 0.25);
+  }
   if (a.bottom === 'overall') {
     box(body, a.pants, [0, 1.35, 0], [0.98, 0.55, 0.5]);
     for (const s of [-1, 1]) box(body, a.pants, [s * 0.28, 1.65, 0], [0.14, 0.35, 0.1]);
+  }
+  if (a.bottom === 'jeans') {
+    box(body, a.pants, [0, 0.98, 0], [0.96, 0.18, 0.5]);
+    box(body, '#ffe066', [0.15, 1.0, 0.26], [0.12, 0.08, 0.04]);
+  }
+  if (a.bottom === 'joggebukse') {
+    box(body, a.pants, [0, 0.98, 0], [0.96, 0.18, 0.5]);
+    for (const s of [-1, 1]) box(body, '#ffffff', [s * 0.24, 0.55, 0.22], [0.12, 0.5, 0.04]);
   }
   box(body, a.pants, [0, 0.98, 0], [0.96, 0.18, 0.5]);
   rbox(body, a.shirt, [0, 1.42, 0], [0.98, 0.8, 0.5]);
@@ -699,13 +783,14 @@ export function buildAvatar(a: Avatar): AvatarRig {
   return { root, body, head, arms, legs, extra: [] };
 }
 
-export type AvatarPose = 'idle' | 'walk' | 'jump' | 'sit' | 'hold' | 'wave' | 'fly' | 'swing' | 'slide' | 'seesaw' | 'spin' | 'dance' | 'drive';
+export type AvatarPose = 'idle' | 'walk' | 'jump' | 'sit' | 'sleep' | 'hold' | 'wave' | 'fly' | 'swing' | 'slide' | 'seesaw' | 'spin' | 'dance' | 'drive';
 
 export function animateAvatar(rig: AvatarRig, t: number, pose: AvatarPose, speed = 0, holding = false): void {
   const s = pose === 'walk' ? Math.sin(t * 11) * 0.8 * Math.min(1, speed) : 0;
   const [l, r] = rig.legs;
   const [la, ra] = rig.arms;
-  rig.body.position.y = pose === 'walk' ? Math.abs(Math.sin(t * 11)) * 0.06 : pose === 'idle' ? Math.sin(t * 2) * 0.012 : 0;
+  rig.body.rotation.set(0, 0, 0);
+  rig.body.position.set(0, pose === 'walk' ? Math.abs(Math.sin(t * 11)) * 0.06 : pose === 'idle' ? Math.sin(t * 2) * 0.012 : 0, 0);
   rig.head.rotation.set(pose === 'idle' ? Math.sin(t * 0.8) * 0.04 : 0, pose === 'idle' ? Math.sin(t * 0.5) * 0.2 : 0, 0);
   l.rotation.set(s, 0, 0);
   r.rotation.set(-s, 0, 0);
@@ -762,6 +847,15 @@ export function animateAvatar(rig: AvatarRig, t: number, pose: AvatarPose, speed
     ra.rotation.set(0, 0, 2.2 + k * 0.4);
     rig.body.position.y = Math.abs(k) * 0.12;
     rig.body.rotation.y = k * 0.15;
+  } else if (pose === 'sleep') {
+    // Lie on the back: flat on the mattress, soft breathing.
+    l.rotation.set(-0.15, 0, 0.12);
+    r.rotation.set(-0.15, 0, -0.12);
+    la.rotation.set(-0.25, 0, -0.55);
+    ra.rotation.set(-0.25, 0, 0.55);
+    rig.body.rotation.x = -Math.PI / 2;
+    rig.body.position.set(0, 0.4 + Math.sin(t * 1.6) * 0.02, 0.15);
+    rig.head.rotation.set(0.15, Math.sin(t * 0.7) * 0.05, 0);
   } else if (pose === 'drive') {
     l.rotation.set(-1.35, 0, 0.25);
     r.rotation.set(-1.35, 0, -0.25);

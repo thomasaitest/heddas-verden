@@ -15,6 +15,7 @@ import {
 } from './protocol.ts';
 import { RateLimit } from './rateLimit.ts';
 import { isValidCode } from './codes.ts';
+import { allocatePlot, takenPlots } from '../logic/plotAssign.ts';
 
 export interface Seat {
   id: string;
@@ -113,12 +114,19 @@ function handleMsg(room: RoomState, socketKey: string, msg: ClientMsg, now: numb
     const rate = room.pending.get(socketKey) ?? new RateLimit(MAX_MSG_PER_SEC);
     room.pending.delete(socketKey);
     const avatar = cleanAvatar(msg.avatar);
+    const plotsTaken = takenPlots([...room.seats.values()].map((s) => s.snap.plot));
+    const plot = allocatePlot(plotsTaken);
+    const house = msg.house ?? null;
+    const snap = snapshotFromHello(socketKey, finalName, avatar);
+    snap.plot = plot;
+    snap.house = house;
+    snap.houseStyle = house?.style ?? null;
     const seat: Seat = {
       id: socketKey,
       name: finalName,
       avatar,
       playerId: msg.playerId.slice(0, 64),
-      snap: snapshotFromHello(socketKey, finalName, avatar),
+      snap,
       rate,
       helloOk: true,
     };
@@ -198,7 +206,7 @@ function handleMsg(room: RoomState, socketKey: string, msg: ClientMsg, now: numb
   }
 
   if (msg.t === 'house') {
-    seat.snap = { ...seat.snap, houseStyle: msg.house.style };
+    seat.snap = { ...seat.snap, houseStyle: msg.house.style, house: msg.house };
     return [{ to: 'others', msg: { t: 'house', id: socketKey, house: msg.house } }];
   }
 

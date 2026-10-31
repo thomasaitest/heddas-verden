@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { HOUSES, type HouseStyle } from '../logic/catalog.ts';
-import { blocked, movePlayer, type Colliders } from '../logic/collision.ts';
+import { blocked, movePlayer, resolve, type Colliders } from '../logic/collision.ts';
 import { newHouse, type House, type PlacedItem } from '../logic/house.ts';
 import { installDomStub } from '../test/domStub.ts';
 import type { Interior } from './interior.ts';
@@ -411,5 +411,43 @@ describe('toy models', () => {
       expect(b.min.y).toBeLessThan(0.15);
     }
     expect(() => buildToy('leke-laser')).toThrow();
+  });
+});
+
+
+describe('town roads, benches and shop signs (next round)', () => {
+  it('exposes a road network that does not run through building centres', () => {
+    expect(town.roads.length).toBeGreaterThan(20);
+    for (const s of town.roads) {
+      for (const p of Object.values(PLACES)) {
+        // sample midpoint of each segment – must stay clear of building centre
+        const mx = (s.x1 + s.x2) / 2;
+        const mz = (s.z1 + s.z2) / 2;
+        expect(Math.hypot(mx - p.x, mz - p.z), `${p} mid`).toBeGreaterThan(4);
+      }
+    }
+  });
+
+  it('no bench sits on a road', async () => {
+    const { onRoad } = await import('../logic/townLayout.ts');
+    expect(town.benches.length).toBeGreaterThanOrEqual(4);
+    for (const b of town.benches) {
+      expect(onRoad(b.x, b.z, town.roads, 0.9), `${b.x},${b.z}`).toBe(false);
+    }
+  });
+
+  it('bench sit yaw faces away from the backrest', async () => {
+    const { benchBackrestOffset } = await import('../logic/townLayout.ts');
+    for (const b of town.benches) {
+      const back = benchBackrestOffset(b.yaw);
+      const dot = Math.sin(b.yaw) * back.x + Math.cos(b.yaw) * back.z;
+      expect(dot).toBeLessThan(-0.2);
+    }
+  });
+
+  it('a pet circle is pushed out of solid town colliders (same as avatar)', () => {
+    const pos = { x: 0, y: 0, z: 0 };
+    resolve(pos, 0.5, col());
+    expect(Math.hypot(pos.x, pos.z)).toBeGreaterThan(3);
   });
 });

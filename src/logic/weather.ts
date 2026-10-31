@@ -1,12 +1,12 @@
-/** Day/night cycle and light weather for the outdoor town (pure maths). */
+/** Daytime sky and light weather for the outdoor town (pure maths). Night mode is removed – always day. */
 
 export type WeatherKind = 'clear' | 'cloudy' | 'rain';
 
 export interface SkyState {
-  /** 0..1 through a full day (0 = midnight, 0.25 = dawn, 0.5 = noon, 0.75 = dusk). */
+  /** Kept for save/compat; always midday-ish (no night). */
   dayT: number;
   weather: WeatherKind;
-  /** 0 = night, 1 = full day. */
+  /** Always bright day (0.85..1). */
   daylight: number;
   sunElevation: number;
   skyTop: string;
@@ -23,7 +23,7 @@ export interface SkyState {
   rain: number;
 }
 
-/** Real-time seconds for one full in-game day. */
+/** Real-time seconds for one weather “day” loop (sun drifts a little, never night). */
 export const DAY_SECONDS = 180;
 
 /** Weather changes every this many real seconds (deterministic from seed+time). */
@@ -49,34 +49,24 @@ export function weatherAt(slot: number): WeatherKind {
   return 'clear';
 }
 
-/** Pure sky state from elapsed seconds since an arbitrary epoch. */
+/** Pure sky state – always daytime. Sun drifts slightly for interest; never goes dark. */
 export function skyAt(elapsedSec: number): SkyState {
-  const dayT = ((elapsedSec % DAY_SECONDS) + DAY_SECONDS) % DAY_SECONDS / DAY_SECONDS;
-  // Smooth daylight: night around 0 and 1, bright mid-day.
-  const ang = dayT * Math.PI * 2;
-  const sunElevation = Math.sin(ang - Math.PI / 2); // -1..1, peak at noon (dayT=0.5)
-  const daylight = clamp01(sunElevation * 0.9 + 0.55);
+  // Map elapsed time into a gentle midday wobble (0.42..0.58), never dawn/dusk/night.
+  const wobble = Math.sin((elapsedSec / DAY_SECONDS) * Math.PI * 2) * 0.08;
+  const dayT = 0.5 + wobble;
+  const sunElevation = 0.75 + wobble * 0.5;
+  const daylight = clamp01(0.88 + sunElevation * 0.08);
 
   const slot = Math.floor(elapsedSec / WEATHER_SLOT);
   const weather = weatherAt(slot);
 
-  const nightTop = '#0b1a3a';
-  const dawnTop = '#ff9a6b';
-  const dayTop = '#9fdcff';
-  const duskTop = '#ff7a9a';
-  let skyTop: string;
-  if (dayT < 0.22) skyTop = hexMix(nightTop, dawnTop, dayT / 0.22);
-  else if (dayT < 0.35) skyTop = hexMix(dawnTop, dayTop, (dayT - 0.22) / 0.13);
-  else if (dayT < 0.65) skyTop = dayTop;
-  else if (dayT < 0.78) skyTop = hexMix(dayTop, duskTop, (dayT - 0.65) / 0.13);
-  else skyTop = hexMix(duskTop, nightTop, (dayT - 0.78) / 0.22);
-
+  let skyTop = '#9fdcff';
   if (weather === 'cloudy') skyTop = hexMix(skyTop, '#a8b8c8', 0.45);
   if (weather === 'rain') skyTop = hexMix(skyTop, '#6a7a8c', 0.55);
 
-  const skyHorizon = hexMix(skyTop, '#ffe9c8', 0.35 * daylight);
+  const skyHorizon = hexMix(skyTop, '#ffe9c8', 0.35);
   const fog = hexMix(skyTop, '#dfefff', 0.4);
-  const rain = weather === 'rain' ? 0.55 + 0.25 * (1 - daylight) : 0;
+  const rain = weather === 'rain' ? 0.55 : 0;
 
   return {
     dayT,
@@ -86,22 +76,20 @@ export function skyAt(elapsedSec: number): SkyState {
     skyTop,
     skyHorizon,
     fog,
-    fogNear: 70 + daylight * 40,
-    fogFar: 180 + daylight * 60,
+    fogNear: 90,
+    fogFar: 220,
     hemiSky: skyTop,
-    hemiGround: hexMix('#3a5a2a', '#9ad07a', daylight),
-    hemiIntensity: 0.55 + daylight * 1.1,
-    sunColor: daylight > 0.35 ? '#fff4dc' : '#ffb08a',
-    sunIntensity: Math.max(0.15, daylight * 2.1),
+    hemiGround: '#9ad07a',
+    hemiIntensity: 1.45,
+    sunColor: '#fff4dc',
+    sunIntensity: 1.85,
     rain,
   };
 }
 
-/** Label for HUD (Norwegian). */
+/** Label for HUD (Norwegian). Never «Natt». */
 export function skyLabel(s: SkyState): string {
-  const tod =
-    s.dayT < 0.2 || s.dayT >= 0.85 ? 'Natt' : s.dayT < 0.35 ? 'Morgen' : s.dayT < 0.65 ? 'Dag' : s.dayT < 0.8 ? 'Kveld' : 'Natt';
-  if (s.weather === 'rain') return `${tod} · Regn 🌧️`;
-  if (s.weather === 'cloudy') return `${tod} · Skyet ☁️`;
-  return `${tod} · Sol ☀️`;
+  if (s.weather === 'rain') return 'Dag · Regn 🌧️';
+  if (s.weather === 'cloudy') return 'Dag · Skyet ☁️';
+  return 'Dag · Sol ☀️';
 }

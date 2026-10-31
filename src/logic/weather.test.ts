@@ -1,12 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { DAY_SECONDS, skyAt, skyLabel, weatherAt } from './weather.ts';
 
-describe('weather / day-night', () => {
-  it('cycles through a day', () => {
+describe('weather / always day', () => {
+  it('never goes dark – noon and former midnight are both bright day', () => {
     const noon = skyAt(DAY_SECONDS * 0.5);
-    const midnight = skyAt(0);
-    expect(noon.daylight).toBeGreaterThan(midnight.daylight);
-    expect(noon.sunIntensity).toBeGreaterThan(midnight.sunIntensity);
+    const wasMidnight = skyAt(0);
+    const late = skyAt(DAY_SECONDS * 0.95);
+    for (const s of [noon, wasMidnight, late]) {
+      expect(s.daylight).toBeGreaterThan(0.8);
+      expect(s.sunIntensity).toBeGreaterThan(1);
+      expect(skyLabel(s)).not.toMatch(/Natt/);
+      expect(skyLabel(s)).toMatch(/^Dag/);
+    }
   });
   it('picks weather slots', () => {
     expect(['clear', 'cloudy', 'rain']).toContain(weatherAt(0));

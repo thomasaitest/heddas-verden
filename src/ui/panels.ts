@@ -599,7 +599,7 @@ export function openAvatar(game: Game, first = false, onDone?: () => void) {
   /** A small picture of the avatar wearing this option (the rest of the look stays as it is now). */
   const optThumb = (field: Field, id: string): string => {
     const head = field === 'hair' || field === 'face' || field === 'hat';
-    const behind = field === 'accessory' && ['vinger', 'sommerfugl', 'sekk', 'kappe'].includes(id);
+    const behind = field === 'accessory' && ['vinger', 'vinger-engel', 'vinger-regnbue', 'sommerfugl', 'sekk', 'sekk-stjerne', 'sekk-rosa', 'kappe', 'stjernekappe'].includes(id);
     const frame = head
       ? field === 'hat' ? { y: 2.4, r: 1.05 } : { y: 2.22, r: 0.72 }
       : field === 'accessory'

@@ -1,6 +1,18 @@
 import * as THREE from 'three';
 import { HOUSE_BY_STYLE, type HouseStyle } from '../logic/catalog.ts';
 import type { CircleCollider, RectCollider, Surface } from '../logic/collision.ts';
+import {
+  HOUSE_PLOTS,
+  PLACES,
+  PLAZA_R,
+  benchSpots,
+  buildRoadNetwork,
+  faceCenter,
+  frontOf,
+  lampSpots,
+  onRoad,
+  type RoadSeg,
+} from '../logic/townLayout.ts';
 import { collectColliders, solid } from './colliders.ts';
 import { fillCarShop, fillHospital, fillPetShop, fillShop } from './buildings.ts';
 import { EQUIPMENT, MERRY, SEESAW, SLIDE, SWING_PIVOT_Y, SWING_ROPE, SWING_XS, SWING_Z, TRAMP, merryAngle, seatAt, seesawAngle, swingAngle, type EquipDef, type Seat } from '../logic/playground.ts';
@@ -34,7 +46,7 @@ export interface Town {
   entrances: Record<ZoneKind, { x: number; z: number; yaw: number }>;
   /** World positions where a sick animal can lie down in the hospital. */
   vetBeds: { x: number; z: number; y: number }[];
-  setHomeStyle(style: HouseStyle): void;
+  setHomeStyle(style: HouseStyle, locked?: boolean): void;
   /** Playground equipment in world coordinates (you can sit on these). */
   equipment: WorldEquip[];
   /** The meshes you can tap to climb on (userData.equip holds the id). */
@@ -53,10 +65,12 @@ export interface Town {
   surfaces: Surface[];
   /** Outdoor benches you can sit on to rest. */
   benches: { x: number; z: number; yaw: number }[];
+  /** Road centre-line segments (for tests and props). */
+  roads: RoadSeg[];
   /** Neighbourhood house plots (each multiplayer player gets one). */
   housePlots: { x: number; z: number; rot: number }[];
   /** Show a remote player's house exterior on a plot (style + label). */
-  setPlotHouse(plot: number, style: HouseStyle | null, label?: string): void;
+  setPlotHouse(plot: number, style: HouseStyle | null, label?: string, locked?: boolean): void;
   size: number;
 }
 
@@ -64,17 +78,40 @@ const GRASS = '#7fd36a';
 const ROAD = '#f2dfb8';
 const SIZE = 240;
 
-function faceCenter(x: number, z: number) {
-  return Math.atan2(-x, -z);
-}
-
-/** Put a sign with text above a building front. */
+/** Flat text plate (kept for house labels). */
 function sign(parent: THREE.Object3D, text: string, y: number, z: number, bg: string, w = 7) {
   const tex = textTexture(text, { bg, fg: '#ffffff', stroke: '#00000033', w: 512, h: 128 });
   const m = new THREE.Mesh(new THREE.PlaneGeometry(w, w / 4), new THREE.MeshBasicMaterial({ map: tex, transparent: true }));
   m.position.set(0, y, z);
   parent.add(m);
   return m;
+}
+
+/** Unique 3D shop signboard with logo mesh, mounted on posts (stays when roof lifts). */
+function shopSign3d(
+  parent: THREE.Object3D,
+  opts: { label: string; bg: string; y: number; z: number; w?: number; logo: (g: THREE.Group) => void },
+) {
+  const w = opts.w ?? 6.5;
+  const g = new THREE.Group();
+  // posts into the facade / ground relative to building
+  for (const s of [-1, 1]) {
+    cyl(g, '#8a5a3c', [s * (w / 2 - 0.35), opts.y - 1.2, opts.z - 0.15], [0.18, 2.6, 0.18]);
+  }
+  // board
+  rbox(g, opts.bg, [0, opts.y, opts.z], [w, 1.5, 0.35]);
+  rbox(g, '#ffffff', [0, opts.y, opts.z + 0.2], [w - 0.35, 1.15, 0.08]);
+  const tex = textTexture(opts.label, { bg: opts.bg, fg: '#ffffff', stroke: '#00000044', w: 512, h: 128 });
+  const plate = new THREE.Mesh(new THREE.PlaneGeometry(w - 0.8, 0.7), new THREE.MeshBasicMaterial({ map: tex, transparent: true }));
+  plate.position.set(0, opts.y - 0.15, opts.z + 0.26);
+  g.add(plate);
+  // unique logo above the board
+  const logo = new THREE.Group();
+  logo.position.set(0, opts.y + 1.35, opts.z);
+  opts.logo(logo);
+  g.add(logo);
+  parent.add(g);
+  return g;
 }
 
 function awning(g: THREE.Group, w: number, y: number, z: number, a: string, b: string) {
@@ -123,7 +160,7 @@ function openBuilding(w: number, d: number, h: number, wall: string, roof: strin
   return g;
 }
 
-function homeExterior(style: HouseStyle): THREE.Group {
+function homeExterior(style: HouseStyle, locked = false): THREE.Group {
   const info = HOUSE_BY_STYLE[style] ?? HOUSE_BY_STYLE.hytte;
   const g = new THREE.Group();
   // Match catalog footprint (tests and door zone use the same numbers).
@@ -159,6 +196,12 @@ function homeExterior(style: HouseStyle): THREE.Group {
   // door + windows
   rbox(g, '#a0632f', [0, 2.2, d / 2 + 0.05], [2.6, 3.6, 0.3]);
   sph(g, '#ffd23f', [0.8, 2.2, d / 2 + 0.25], [0.25, 0.25, 0.2]);
+  if (locked) {
+    // visible padlock on the door so others see the lock state
+    rbox(g, '#555a75', [0, 2.35, d / 2 + 0.22], [0.55, 0.45, 0.2]);
+    part(g, G.torus(), '#ffe066', [0, 2.7, d / 2 + 0.22], [0.35, 0.35, 0.2], [Math.PI / 2, 0, 0], 0.3);
+    box(g, '#ffe066', [0, 2.25, d / 2 + 0.32], [0.12, 0.12, 0.08]);
+  }
   for (const s of [-1, 1]) {
     box(g, '#ffffff', [s * (w / 2 - 2.6), 4, d / 2 + 0.05], [2.4, 2.2, 0.2]);
     box(g, '#bfe9ff', [s * (w / 2 - 2.6), 4, d / 2 + 0.12], [2, 1.8, 0.1], undefined, 0.3);
@@ -221,20 +264,21 @@ export function buildTown(): Town {
   group.add(ground);
 
   const P = {
-    home: { x: -38, z: -34 },
-    shop: { x: 38, z: -34 },
-    eggs: { x: 0, z: -50 },
-    vet: { x: 46, z: 12 },
-    play: { x: -44, z: 16 },
-    doors: { x: 4, z: 46 },
-    cars: { x: 52, z: -8 },
-    pets: { x: -52, z: -8 },
+    home: { x: PLACES.home.x, z: PLACES.home.z },
+    shop: { x: PLACES.shop.x, z: PLACES.shop.z },
+    eggs: { x: PLACES.eggs.x, z: PLACES.eggs.z },
+    vet: { x: PLACES.vet.x, z: PLACES.vet.z },
+    play: { x: PLACES.play.x, z: PLACES.play.z },
+    doors: { x: PLACES.doors.x, z: PLACES.doors.z },
+    cars: { x: PLACES.cars.x, z: PLACES.cars.z },
+    pets: { x: PLACES.pets.x, z: PLACES.pets.z },
   };
   const surfaces: Surface[] = [];
+  const roads = buildRoadNetwork();
   const benches: { x: number; z: number; yaw: number }[] = [];
 
   // plaza + fountain (outer wall jumpable; rim and upper bowl are landable)
-  cyl(stat, ROAD, [0, 0.04, 0], [26, 0.08, 26]);
+  cyl(stat, ROAD, [0, 0.04, 0], [PLAZA_R * 2, 0.08, PLAZA_R * 2]);
   solid(cyl(stat, '#e6ecff', [0, 0.55, 0], [9, 1.1, 9]), 'circle', 0, 1.15);
   cyl(stat, '#7fd8ff', [0, 1.1, 0], [8, 0.2, 8]);
   solid(cyl(stat, '#e6ecff', [0, 2.2, 0], [1.2, 3, 1.2]), 'circle', 0.1, 4.5);
@@ -243,18 +287,18 @@ export function buildTown(): Town {
   surfaces.push({ x: 0, z: 0, r: 1.9, top: 3.85 }); // upper bowl
   const water = sph(group, '#bff0ff', [0, 4.2, 0], [1.6, 1.6, 1.6], undefined, 0.3);
 
-  // roads from the plaza to each place
-  for (const p of Object.values(P)) {
-    const len = Math.hypot(p.x, p.z);
-    const ang = Math.atan2(p.x, p.z);
-    box(stat, ROAD, [p.x / 2, 0.05, p.z / 2], [6, 0.06, len], [0, ang, 0]);
+  // road network (ring + approaches + neighbourhood) – never through buildings
+  for (const s of roads) {
+    const dx = s.x2 - s.x1;
+    const dz = s.z2 - s.z1;
+    const L = Math.hypot(dx, dz);
+    if (L < 0.2) continue;
+    const ang = Math.atan2(dx, dz);
+    box(stat, ROAD, [(s.x1 + s.x2) / 2, 0.05, (s.z1 + s.z2) / 2], [s.width, 0.06, L], [0, ang, 0]);
   }
 
   const entrances = {} as Town["entrances"];
-  const front = (p: { x: number; z: number }, dist: number) => {
-    const rot = faceCenter(p.x, p.z);
-    return { x: p.x + Math.sin(rot) * dist, z: p.z + Math.cos(rot) * dist, rot };
-  };
+  const front = (p: { x: number; z: number }, dist: number) => frontOf(p, dist);
 
   // walk-in buildings: the roof lifts off while you are inside, so you can see what is there
   type Shell = { back: THREE.Group; left: THREE.Group; right: THREE.Group; front: THREE.Group };
@@ -281,7 +325,20 @@ export function buildTown(): Town {
     const g = openBuilding(14, 10, 6, '#ffe8a8', '#ff6f6f', '#ffffff', { door: 4.4, roofSeparate: true });
     const roofG = g.userData.roof as THREE.Group;
     awning(roofG, 14, 5.4, 5.6, '#ff6f6f', '#ffffff');
-    sign(roofG, 'Butikk', 7.5, 5.8, '#ff6f6f');
+    // 3D sign on the front shell (stays when roof lifts)
+    shopSign3d(g, {
+      label: 'Butikk',
+      bg: '#ff6f6f',
+      y: 7.2,
+      z: 5.3,
+      w: 6.2,
+      logo: (lg) => {
+        rbox(lg, '#ffffff', [0, 0, 0], [1.1, 0.9, 0.35]);
+        box(lg, '#ff6f6f', [0, 0.15, 0.2], [0.7, 0.45, 0.1]);
+        cyl(lg, '#8a5a3c', [-0.35, -0.55, 0.1], [0.12, 0.25, 0.12], [0, 0, Math.PI / 2]);
+        cyl(lg, '#8a5a3c', [0.35, -0.55, 0.1], [0.12, 0.25, 0.12], [0, 0, Math.PI / 2]);
+      },
+    });
     const inside = fillShop(g);
     const f = front(P.shop, 0);
     stat.add(g);
@@ -297,9 +354,23 @@ export function buildTown(): Town {
   {
     const g = openBuilding(14, 11, 6.5, '#ffffff', '#5cc3f2', '#9ad8ff', { door: 5, roofSeparate: true });
     const roofG = g.userData.roof as THREE.Group;
-    sign(roofG, 'Dyrlegen', 8, 6.2, '#3fa4ff');
-    box(roofG, '#ff4b4b', [0, 9.6, 0], [0.8, 2.4, 0.8]);
-    box(roofG, '#ff4b4b', [0, 9.6, 0], [2.4, 0.8, 0.8]);
+    // Red cross mounted on a short mast on the FRONT facade (not on the liftable roof).
+    const crossMast = new THREE.Group();
+    cyl(crossMast, '#c3cad9', [0, 7.4, 5.55], [0.22, 1.6, 0.22]);
+    box(crossMast, '#ff4b4b', [0, 8.7, 5.55], [0.7, 2.2, 0.35]);
+    box(crossMast, '#ff4b4b', [0, 8.7, 5.55], [2.2, 0.7, 0.35]);
+    g.add(crossMast);
+    shopSign3d(g, {
+      label: 'Dyrlegen',
+      bg: '#3fa4ff',
+      y: 6.8,
+      z: 5.7,
+      w: 6.4,
+      logo: (lg) => {
+        box(lg, '#ff4b4b', [0, 0, 0], [0.45, 1.3, 0.25]);
+        box(lg, '#ff4b4b', [0, 0, 0], [1.3, 0.45, 0.25]);
+      },
+    });
     const inside = fillHospital(g);
     const f = front(P.vet, 0);
     stat.add(g);
@@ -316,7 +387,17 @@ export function buildTown(): Town {
   {
     const g = openBuilding(12, 9, 6, '#e2c6ff', '#ffd23f', '#ffffff');
     awning(g, 12, 5.4, 5.1, '#c88bff', '#ffffff');
-    sign(g, 'Eggbutikk', 7.5, 5.2, '#b05cff');
+    shopSign3d(g, {
+      label: 'Eggbutikk',
+      bg: '#b05cff',
+      y: 7.0,
+      z: 4.7,
+      w: 5.8,
+      logo: (lg) => {
+        sph(lg, '#fff4c2', [0, 0.1, 0], [1.0, 1.25, 1.0]);
+        for (let i = 0; i < 4; i++) sph(lg, '#ff8fc7', [Math.cos(i * 1.5) * 0.35, 0.2 + Math.sin(i) * 0.2, 0.45], [0.22, 0.22, 0.15]);
+      },
+    });
     sph(g, '#fff4c2', [0, 9.8, 0], [3, 3.8, 3]);
     for (let i = 0; i < 5; i++) sph(g, '#ff8fc7', [Math.cos(i * 1.26) * 1.4, 9.8 + Math.sin(i * 2) * 0.8, Math.sin(i * 1.26) * 1.4], [0.7, 0.7, 0.4]);
     solid(rbox(g, '#ffd23f', [0, 1, 1.2], [7, 2, 1.6]));
@@ -338,7 +419,18 @@ export function buildTown(): Town {
     const g = openBuilding(18, 13, 7, '#dfe8ff', '#3fa4ff', '#ffffff', { door: 5.2, roofSeparate: true });
     const roofG = g.userData.roof as THREE.Group;
     awning(roofG, 18, 6.0, 7.2, '#3fa4ff', '#ffffff');
-    sign(roofG, 'Bilbutikk', 8.2, 7.4, '#3fa4ff', 8);
+    shopSign3d(g, {
+      label: 'Bilbutikk',
+      bg: '#3fa4ff',
+      y: 7.6,
+      z: 6.7,
+      w: 7.5,
+      logo: (lg) => {
+        rbox(lg, '#ff8fb1', [0, 0, 0], [1.6, 0.55, 0.7]);
+        rbox(lg, '#bfe9ff', [0.1, 0.35, 0], [0.9, 0.4, 0.6], undefined, 0.2);
+        for (const s of [-1, 1]) cyl(lg, '#2b2b38', [s * 0.45, -0.35, 0.35], [0.35, 0.2, 0.35], [0, 0, Math.PI / 2]);
+      },
+    });
     const inside = fillCarShop(g);
     const f = front(P.cars, 0);
     stat.add(g);
@@ -355,7 +447,20 @@ export function buildTown(): Town {
     const g = openBuilding(16, 12, 6.5, '#ffe0ef', '#ff8fb1', '#ffffff', { door: 4.8, roofSeparate: true });
     const roofG = g.userData.roof as THREE.Group;
     awning(roofG, 16, 5.6, 6.6, '#ff8fb1', '#ffffff');
-    sign(roofG, 'Dyrebutikk', 7.8, 6.8, '#ff8fb1', 8);
+    shopSign3d(g, {
+      label: 'Dyrebutikk',
+      bg: '#ff8fb1',
+      y: 7.2,
+      z: 6.1,
+      w: 7.2,
+      logo: (lg) => {
+        // paw print
+        sph(lg, '#ffffff', [0, -0.1, 0.1], [0.55, 0.45, 0.2]);
+        for (const [ox, oy] of [[-0.45, 0.35], [-0.15, 0.5], [0.15, 0.5], [0.45, 0.35]]) {
+          sph(lg, '#ffffff', [ox, oy, 0.1], [0.28, 0.28, 0.15]);
+        }
+      },
+    });
     const inside = fillPetShop(g);
     const f = front(P.pets, 0);
     stat.add(g);
@@ -378,7 +483,18 @@ export function buildTown(): Town {
       sph(g, '#ffffff', [-2.5 + i * 3, 1.8, 3.25], [0.25, 0.25, 0.2]);
       part(g, G.star(), '#ffffff', [-3 + i * 3, 4.3, 3.1], [0.6, 0.6, 0.3]);
     });
-    sign(g, 'Dørspillet', 7.6, 3.6, '#ff4fa8', 6);
+    shopSign3d(g, {
+      label: 'Dørspillet',
+      bg: '#ff4fa8',
+      y: 7.2,
+      z: 3.2,
+      w: 5.6,
+      logo: (lg) => {
+        rbox(lg, '#ffe066', [0, 0, 0], [0.9, 1.3, 0.2]);
+        sph(lg, '#ffffff', [0.25, 0, 0.15], [0.15, 0.15, 0.1]);
+        part(lg, G.star(), '#ff6f6f', [0, 0.85, 0.05], [0.35, 0.35, 0.1]);
+      },
+    });
     const f = front(P.doors, 0);
     g.position.set(P.doors.x, 0, P.doors.z);
     g.rotation.y = f.rot;
@@ -476,7 +592,7 @@ export function buildTown(): Town {
       solid(box(g, '#f2f2f8', [Math.cos(a2) * r, 0.95, Math.sin(a2) * r], [len, 0.18, 0.14], [0, -a2 + Math.PI / 2, 0]));
       box(g, '#f2f2f8', [Math.cos(a2) * r, 0.45, Math.sin(a2) * r], [len, 0.14, 0.12], [0, -a2 + Math.PI / 2, 0]);
     }
-    sign(g, 'Lekeplass', 3, 11.5, '#54c45e', 6).rotation.y = 0;
+    // no logo/sign on the playground (Thomas)
     const f = front(P.play, 0);
     g.position.set(P.play.x, 0, P.play.z);
     g.rotation.y = f.rot;
@@ -510,21 +626,20 @@ export function buildTown(): Town {
     seed = (seed * 16807) % 2147483647;
     return seed / 2147483647;
   };
+  /** Keep solid props far enough apart so walkers cannot wedge between them. */
+  const solids: { x: number; z: number; r: number }[] = [];
+  const tooClose = (x: number, z: number, r: number) => solids.some((s) => Math.hypot(x - s.x, z - s.z) < s.r + r + 1.3);
   const blocked = (x: number, z: number) =>
-    Math.hypot(x, z) < 16 ||
+    Math.hypot(x, z) < PLAZA_R + 3 ||
     Object.values(P).some((p) => Math.hypot(x - p.x, z - p.z) < 16) ||
-    Object.values(P).some((p) => {
-      // near the road line
-      const len = Math.hypot(p.x, p.z);
-      const t = Math.max(0, Math.min(1, (x * p.x + z * p.z) / (len * len)));
-      return Math.hypot(x - p.x * t, z - p.z * t) < 6;
-    });
+    onRoad(x, z, roads, 2.5);
   for (let i = 0; i < 140; i++) {
     const x = (rnd() - 0.5) * SIZE * 0.95;
     const z = (rnd() - 0.5) * SIZE * 0.95;
-    if (blocked(x, z)) continue;
     const s = 0.8 + rnd() * 0.6;
+    if (blocked(x, z) || tooClose(x, z, 0.9 * s)) continue;
     tree(stat, x, z, s, Math.floor(rnd() * 4), true);
+    solids.push({ x, z, r: 0.9 * s });
   }
   // a ring of trees on the edge
   for (let i = 0; i < 70; i++) {
@@ -537,36 +652,45 @@ export function buildTown(): Town {
     const x = (rnd() - 0.5) * SIZE * 0.9;
     const z = (rnd() - 0.5) * SIZE * 0.9;
     if (blocked(x, z)) continue;
-    if (i % 4 === 0) solid(sph(stat, '#5cc36b', [x, 0.5, z], [2, 1.4, 2]), 'circle', 0.1);
-    else {
+    if (i % 4 === 0) {
+      if (tooClose(x, z, 1.2)) continue;
+      solid(sph(stat, '#5cc36b', [x, 0.5, z], [2, 1.4, 2]), 'circle', 0.1);
+      solids.push({ x, z, r: 1.2 });
+    } else {
       box(stat, '#3fbf5a', [x, 0.3, z], [0.08, 0.6, 0.08]);
       sph(stat, flowerCols[i % 5], [x, 0.65, z], [0.35, 0.3, 0.35]);
     }
   }
-  // lamps sit OFF the roads (between road wedges), benches have legs and are sit-targets
-  for (let i = 0; i < 8; i++) {
-    const a = (i / 8) * Math.PI * 2 + 0.4;
-    // place between plaza and buildings, but offset from road spokes
-    const x = Math.cos(a + 0.22) * 18;
-    const z = Math.sin(a + 0.22) * 18;
-    solid(cyl(stat, '#555a75', [x, 2.5, z], [0.25, 5, 0.25]), 'circle', 0.25, 5.5);
-    sph(stat, '#fff4c2', [x, 5.2, z], [0.8, 0.8, 0.8], undefined, 0.6);
-    if (i % 2 === 0) {
-      const ba = a + 0.55;
-      const bx = Math.cos(ba) * 16;
-      const bz = Math.sin(ba) * 16;
-      const rot = -ba + Math.PI / 2;
-      // legs
-      for (const sx of [-1.1, 1.1]) for (const sz of [-0.35, 0.35]) {
-        const lx = bx + Math.cos(rot) * sx - Math.sin(rot) * sz;
-        const lz = bz - Math.sin(rot) * sx + Math.cos(rot) * sz;
-        solid(cyl(stat, '#8a5a3c', [lx, 0.35, lz], [0.16, 0.7, 0.16]), 'circle', 0.05, 0.8);
-      }
-      // seat + back
-      solid(box(stat, '#c98a55', [bx, 0.85, bz], [2.8, 0.18, 0.95], [0, rot, 0]), 'rect', 0.05, 1.0);
-      solid(box(stat, '#c98a55', [bx - Math.sin(rot) * 0.45, 1.35, bz - Math.cos(rot) * 0.45], [2.8, 0.7, 0.14], [0, rot, 0]), 'rect', 0.05, 1.8);
-      benches.push({ x: bx, z: bz, yaw: rot + Math.PI });
+  // lamps and benches from the layout helper – never on a road
+  for (const L of lampSpots(roads)) {
+    solid(cyl(stat, '#555a75', [L.x, 2.5, L.z], [0.25, 5, 0.25]), 'circle', 0.25, 5.5);
+    sph(stat, '#fff4c2', [L.x, 5.2, L.z], [0.8, 0.8, 0.8], undefined, 0.6);
+  }
+  for (const b of benchSpots(roads)) {
+    // b.yaw = sit facing (away from the backrest). Backrest sits behind that.
+    const sitYaw = b.yaw;
+    const bx = b.x;
+    const bz = b.z;
+    for (const sx of [-1.1, 1.1]) for (const sz of [-0.35, 0.35]) {
+      const lx = bx + Math.cos(sitYaw) * sx - Math.sin(sitYaw) * sz;
+      const lz = bz - Math.sin(sitYaw) * sx + Math.cos(sitYaw) * sz;
+      solid(cyl(stat, '#8a5a3c', [lx, 0.35, lz], [0.16, 0.7, 0.16]), 'circle', 0.05, 0.8);
     }
+    solid(box(stat, '#c98a55', [bx, 0.85, bz], [2.8, 0.18, 0.95], [0, sitYaw, 0]), 'rect', 0.05, 1.0);
+    // backrest behind the sitter: opposite of forward (sin/cos of sitYaw)
+    solid(
+      box(
+        stat,
+        '#c98a55',
+        [bx - Math.sin(sitYaw) * 0.45, 1.35, bz - Math.cos(sitYaw) * 0.45],
+        [2.8, 0.7, 0.14],
+        [0, sitYaw, 0],
+      ),
+      'rect',
+      0.05,
+      1.8,
+    );
+    benches.push({ x: bx, z: bz, yaw: sitYaw });
   }
   // hills at the edge
   for (let i = 0; i < 10; i++) {
@@ -593,22 +717,12 @@ export function buildTown(): Town {
   const mergedClouds = mergeStatic(clouds);
   group.add(mergedClouds);
 
-  // neighbourhood: several house plots (plot 0 = local player)
-  const housePlots: { x: number; z: number; rot: number }[] = [
-    { x: P.home.x, z: P.home.z, rot: faceCenter(P.home.x, P.home.z) },
-    { x: P.home.x - 28, z: P.home.z + 6, rot: faceCenter(P.home.x - 28, P.home.z + 6) },
-    { x: P.home.x - 14, z: P.home.z - 28, rot: faceCenter(P.home.x - 14, P.home.z - 28) },
-    { x: P.home.x + 14, z: P.home.z - 30, rot: faceCenter(P.home.x + 14, P.home.z - 30) },
-    { x: P.home.x + 30, z: P.home.z + 4, rot: faceCenter(P.home.x + 30, P.home.z + 4) },
-    { x: P.home.x - 36, z: P.home.z - 18, rot: faceCenter(P.home.x - 36, P.home.z - 18) },
-  ];
-  // short roads from plaza toward each plot (after merge: add to group)
-  for (const plot of housePlots.slice(1)) {
-    const len = Math.hypot(plot.x, plot.z);
-    const ang = Math.atan2(plot.x, plot.z);
-    const road = box(group, ROAD, [plot.x / 2, 0.04, plot.z / 2], [4.5, 0.05, len], [0, ang, 0]);
-    road.receiveShadow = true;
-  }
+  // neighbourhood: several house plots (plot 0 = local player). Roads already in network.
+  const housePlots: { x: number; z: number; rot: number }[] = HOUSE_PLOTS.map((plot) => ({
+    x: plot.x,
+    z: plot.z,
+    rot: faceCenter(plot.x, plot.z),
+  }));
   type PlotState = { holder: THREE.Group; rects: RectCollider[]; circles: CircleCollider[]; zone: Zone | null };
   const plots: PlotState[] = housePlots.map((plot, i) => {
     const holder = new THREE.Group();
@@ -621,7 +735,7 @@ export function buildTown(): Town {
   });
   if (plots[0].zone) zones.push(plots[0].zone);
 
-  function mountHouseOn(plotIdx: number, style: HouseStyle | null, label?: string) {
+  function mountHouseOn(plotIdx: number, style: HouseStyle | null, label?: string, locked = false) {
     const plot = housePlots[plotIdx];
     const st = plots[plotIdx];
     if (!plot || !st) return;
@@ -645,8 +759,8 @@ export function buildTown(): Town {
       }
       return;
     }
-    const ext = homeExterior(style);
-    if (label) sign(ext, label.slice(0, 10), 8.0, (ext.userData.size as { d: number }).d / 2 + 0.12, '#54c45e', 3.6);
+    const ext = homeExterior(style, locked);
+    if (label) sign(ext, (locked ? '🔒 ' : '') + label.slice(0, 8), 8.0, (ext.userData.size as { d: number }).d / 2 + 0.12, locked ? '#555a75' : '#54c45e', 3.6);
     const size = ext.userData.size as { w: number; d: number };
     st.holder.add(ext);
     const hc = collectColliders(ext);
@@ -664,12 +778,12 @@ export function buildTown(): Town {
       entrances.home = { x: plot.x + Math.sin(plot.rot) * (dist + 2), z: plot.z + Math.cos(plot.rot) * (dist + 2), yaw: plot.rot };
     }
   }
-  function setHomeStyle(style: HouseStyle) {
-    mountHouseOn(0, style);
+  function setHomeStyle(style: HouseStyle, locked = false) {
+    mountHouseOn(0, style, undefined, locked);
   }
-  function setPlotHouse(plot: number, style: HouseStyle | null, label?: string) {
+  function setPlotHouse(plot: number, style: HouseStyle | null, label?: string, locked = false) {
     if (plot <= 0 || plot >= housePlots.length) return;
-    mountHouseOn(plot, style, label);
+    mountHouseOn(plot, style, label, locked);
   }
   setHomeStyle('hytte');
 
@@ -692,6 +806,7 @@ export function buildTown(): Town {
     circles,
     surfaces,
     benches,
+    roads,
     housePlots,
     get spawn() {
       return { x: entrances.home.x, z: entrances.home.z, yaw: entrances.home.yaw };

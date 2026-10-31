@@ -28,14 +28,17 @@ export interface MpHost {
     insideBuilding(x: number, z: number): 'shop' | 'vet' | 'cars' | 'pets' | null;
     seatWorld(id: string, u: number): { x: number; y: number; z: number; yaw: number };
     housePlots: { x: number; z: number; rot: number }[];
-    setPlotHouse(plot: number, style: HouseStyle | null, label?: string): void;
+    setPlotHouse(plot: number, style: HouseStyle | null, label?: string, locked?: boolean): void;
   };
   mainPet(): PetState | null;
   activeHouseStyle(): HouseStyle;
   onVisitAsk(from: string, fromName: string, fromPlayerId: string): void;
   onVisitReply(from: string, ok: boolean, house?: HouseWire): void;
   onRemoteHouse(id: string, house: HouseWire): void;
+  onRemoteLeft?(id: string): void;
   onRemoteActivity(id: string, kind: ActivityKind): void;
+  /** Local player's house (style + furniture) for the room. */
+  getHouseWire(): HouseWire;
 }
 
 export class MpClient {
@@ -58,11 +61,14 @@ export class MpClient {
       onVisitAsk: (from, fromName, fromPlayerId) => this.game.onVisitAsk(from, fromName, fromPlayerId),
       onVisitReply: (from, ok, house) => this.game.onVisitReply(from, ok, house),
       onHouse: (id, house) => this.game.onRemoteHouse(id, house),
+      onLeft: (id) => this.game.onRemoteLeft?.(id),
       onActivity: (id, kind) => this.game.onRemoteActivity(id, kind),
     });
   }
 
   openMenu() {
+    // Carry our house + furniture into the room so peers can place it on a free plot.
+    this.session.pendingHouse = this.game.getHouseWire();
     openMpSheet(
       this.session,
       () => this.game.save.avatar,
@@ -78,6 +84,7 @@ export class MpClient {
   leave() {
     this.session.leave();
     this.remotes.clear();
+    this.clearAllRemotePlots();
     this.updateBadge();
   }
 
@@ -151,26 +158,30 @@ export class MpClient {
     this.syncHousePlots();
   }
 
-  /** Put each remote player's house on its own neighbourhood plot using their real style. */
+  /**
+   * Place each remote player's house on their assigned plot (never plot 0 = local home).
+   * Uses server-assigned `plot` so hosts and joiners never share a plot; free plots clear on leave.
+   */
   private syncHousePlots() {
     const plots = this.game.town.housePlots;
     if (!plots?.length) return;
-    const remotes = [...this.session.remotes.values()];
-    const fallback = ['villa', 'gard', 'moderne', 'trehus', 'sjohus', 'slott'] as const;
-    for (let i = 1; i < plots.length; i++) {
-      const r = remotes[i - 1];
-      if (!r) {
-        this.game.town.setPlotHouse(i, null);
-        continue;
-      }
-      let style = r.houseStyle;
-      if (!style) {
-        let h = 0;
-        for (let k = 0; k < r.id.length; k++) h = (h * 31 + r.id.charCodeAt(k)) | 0;
-        style = fallback[Math.abs(h) % fallback.length];
-      }
-      this.game.town.setPlotHouse(i, style, r.name);
+    const used = new Set<number>();
+    for (const r of this.session.remotes.values()) {
+      const plot = r.plot && r.plot >= 1 && r.plot < plots.length ? r.plot : null;
+      if (!plot) continue;
+      used.add(plot);
+      const style = r.house?.style ?? r.houseStyle;
+      if (style) this.game.town.setPlotHouse(plot, style, r.name, !!r.house?.locked);
     }
+    for (let i = 1; i < plots.length; i++) {
+      if (!used.has(i)) this.game.town.setPlotHouse(i, null);
+    }
+  }
+
+  private clearAllRemotePlots() {
+    const plots = this.game.town.housePlots;
+    if (!plots?.length) return;
+    for (let i = 1; i < plots.length; i++) this.game.town.setPlotHouse(i, null);
   }
 
   private currentPlace(): PlaceWire {

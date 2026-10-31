@@ -28,6 +28,8 @@ export interface House {
   floorColor: string;
   items: PlacedItem[];
   createdAt: number;
+  /** When true, other players cannot walk in (owner always can). Synced in multiplayer. */
+  locked: boolean;
 }
 
 export const MIN_SCALE = 0.5;
@@ -47,7 +49,7 @@ export function newHouse(style: HouseStyle, ownerId: string, now = Date.now()): 
     { uid: uid('it'), itemId: 'rundtteppe', x: 0, z: d / 2 - 5, rot: 0, scale: 1, color: '#ff9ccf', floor: 0 },
     { uid: uid('it'), itemId: 'potteplante', x: w / 2 - 1, z: d / 2 - 1.2, rot: 0, scale: 1, color: '#5cc36b', floor: 0 },
   ];
-  return { id: uid('house'), style, ownerId, editors: [], editRequests: [], wallColor: '#fff1e0', floorColor: '#d9a066', items, createdAt: now };
+  return { id: uid('house'), style, ownerId, editors: [], editRequests: [], wallColor: '#fff1e0', floorColor: '#d9a066', items, createdAt: now, locked: false };
 }
 
 export function canEdit(house: House, playerId: string): boolean {
@@ -165,8 +167,15 @@ export function deserializeHouse(json: string): House | null {
       floorColor: typeof raw.floorColor === 'string' ? raw.floorColor : '#d9a066',
       items,
       createdAt: Number(raw.createdAt) || Date.now(),
+      locked: !!raw.locked,
     };
   } catch {
     return null;
   }
+}
+
+/** Owner toggles the front-door lock (does not affect the owner). */
+export function setHouseLocked(house: House, locked: boolean): House {
+  if (house.locked === locked) return house;
+  return { ...house, locked };
 }

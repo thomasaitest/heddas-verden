@@ -55,8 +55,15 @@ export const BOTTOMS = [
   { id: 'bukse', name: 'Bukse' },
   { id: 'shorts', name: 'Shorts' },
   { id: 'skjort', name: 'Skjørt' },
+  { id: 'miniskjort', name: 'Miniskjørt' },
+  { id: 'langtskort', name: 'Langt skjørt' },
+  { id: 'tutu', name: 'Tutu' },
+  { id: 'plissert', name: 'Plissert skjørt' },
   { id: 'kjole', name: 'Kjole' },
+  { id: 'ballkjole', name: 'Ballkjole' },
   { id: 'overall', name: 'Overall' },
+  { id: 'jeans', name: 'Jeans' },
+  { id: 'joggebukse', name: 'Joggebukse' },
 ] as const;
 export const SHOES = [
   { id: 'sko', name: 'Sko' },
@@ -89,19 +96,29 @@ export const ACCESSORIES = [
   { id: 'ingen', name: 'Ingen' },
   { id: 'briller', name: 'Briller' },
   { id: 'vinger', name: 'Feevinger' },
+  { id: 'vinger-engel', name: 'Englevinger' },
+  { id: 'vinger-regnbue', name: 'Regnbuevinger' },
   { id: 'sekk', name: 'Ryggsekk' },
+  { id: 'sekk-stjerne', name: 'Stjerneryggsekk' },
+  { id: 'sekk-rosa', name: 'Rosa ryggsekk' },
   { id: 'skjerf', name: 'Skjerf' },
   { id: 'kappe', name: 'Kappe' },
   { id: 'glorie', name: 'Glorie' },
   { id: 'solbriller', name: 'Solbriller' },
   { id: 'hodetelefoner', name: 'Hodetelefoner' },
   { id: 'halskjede', name: 'Halskjede' },
+  { id: 'perlekjede', name: 'Perlekjede' },
+  { id: 'oreringer', name: 'Øreringer' },
+  { id: 'armband', name: 'Armbånd' },
   { id: 'sommerfugl', name: 'Sommerfugl' },
   { id: 'maske', name: 'Maske' },
   { id: 'ballong', name: 'Ballong' },
   { id: 'veske', name: 'Veske' },
+  { id: 'veske-hjerte', name: 'Hjerteveske' },
+  { id: 'veske-gul', name: 'Gul veske' },
   { id: 'stjernekappe', name: 'Stjernekappe' },
   { id: 'skjerfstripete', name: 'Stripete skjerf' },
+  { id: 'klokke', name: 'Klokke' },
 ] as const;
 
 export interface Avatar {
@@ -145,6 +162,8 @@ export const OUTFIT_PRESETS: { id: string; name: string; patch: Partial<Avatar> 
   { id: 'fe', name: 'Fe', patch: { hat: 'blomster', shirt: '#e0b8ff', print: 'blomst', pants: '#ffa6d5', bottom: 'kjole', shoes: '#ffffff', shoeStyle: 'sko', accessory: 'vinger', hair: 'fletter', hairColor: '#c88bff' } },
   { id: 'kokk', name: 'Kokk', patch: { hat: 'kokkelue', shirt: '#ffffff', print: 'ingen', pants: '#555a75', bottom: 'bukse', shoes: '#2b2b38', shoeStyle: 'sko', accessory: 'ingen', hair: 'kort', hairColor: '#a0632f' } },
   { id: 'enhjorn', name: 'Enhjørning', patch: { hat: 'enhjorn', shirt: '#ff8fb1', print: 'enhjorn', pants: '#c88bff', bottom: 'overall', shoes: '#ffe066', shoeStyle: 'sneakers', accessory: 'sommerfugl', hair: 'lang', hairColor: '#ff8fc7' } },
+  { id: 'ballerina', name: 'Ballerina', patch: { hat: 'bandeau', shirt: '#ffa6d5', print: 'ingen', pants: '#ff8fb1', bottom: 'tutu', shoes: '#ffffff', shoeStyle: 'sko', accessory: 'vinger-engel', hair: 'bob', hairColor: '#2b2118' } },
+  { id: 'shopper', name: 'Shopper', patch: { hat: 'ingen', shirt: '#ffe066', print: 'hjerte', pants: '#ff4f7f', bottom: 'miniskjort', shoes: '#ffffff', shoeStyle: 'sneakers', accessory: 'veske-hjerte', hair: 'hestehale', hairColor: '#a0632f' } },
 ];
 
 export function randomAvatar(rng: Rng): Avatar {

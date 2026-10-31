@@ -4,6 +4,7 @@ import { sameVisibility } from '../logic/collision.ts';
 import { animateAvatar, buildAvatar, type AvatarPose, type AvatarRig } from '../three/avatarModel.ts';
 import { animatePet, buildPet, type PetRig } from '../three/petModel.ts';
 import { blobShadow } from '../three/kit.ts';
+import { buildCar, buildPram, CAR_SEAT_Y, PRAM_PULL_BACK } from '../three/vehicles.ts';
 import { EMOTE_BY_ID, type EmoteId, type MountWire, type PlaceWire } from './protocol.ts';
 import type { MpSession } from './session.ts';
 
@@ -16,6 +17,8 @@ interface RemoteActor {
   nameSpr: THREE.Sprite;
   bubble: THREE.Sprite;
   pet: { key: string; rig: PetRig; shadow: THREE.Mesh } | null;
+  vehicleKey: string | null;
+  vehicle: THREE.Group | null;
   label: string;
 }
 
@@ -120,7 +123,7 @@ export class RemotePlayers {
         const bubble = makeEmoteSprite('hei');
         bubble.visible = false;
         this.scene.add(holder, shadow, nameSpr, bubble);
-        actor = { id: r.id, avatarKey: key, avatar, holder, shadow, nameSpr, bubble, pet: null, label: r.name };
+        actor = { id: r.id, avatarKey: key, avatar, holder, shadow, nameSpr, bubble, pet: null, vehicleKey: null, vehicle: null, label: r.name };
         this.actors.set(r.id, actor);
       } else if (actor.avatarKey !== key) {
         actor.holder.clear();
@@ -211,15 +214,40 @@ export class RemotePlayers {
       if (r.equip === 'sklie') actor.holder.rotation.x = -0.35;
       else if (r.equip === 'vippe') actor.holder.rotation.x = 0.15;
       else actor.holder.rotation.x = 0;
-      if (driving) {
-        pose = 'sit';
-        actor.holder.position.y = Math.max(actor.holder.position.y, 0.55);
-      } else if (pramming) {
-        if (pose === 'idle') pose = 'walk';
+      // Vehicle mesh (car / pram) – same models as local player, avatar sits inside the cabin
+      const wantVehicle = !hidden && ((driving && r.vehicle) || (pramming && r.vehicle)) ? `${mount}:${r.vehicle}` : null;
+      if (wantVehicle !== actor.vehicleKey) {
+        if (actor.vehicle) {
+          this.scene.remove(actor.vehicle);
+          actor.vehicle = null;
+        }
+        actor.vehicleKey = wantVehicle;
+        if (wantVehicle && r.vehicle) {
+          actor.vehicle = mount === 'drive' ? buildCar(r.vehicle) : buildPram(r.vehicle);
+          this.scene.add(actor.vehicle);
+        }
+      }
+      if (actor.vehicle) {
+        if (driving) {
+          actor.vehicle.position.set(x, 0, z);
+          actor.vehicle.rotation.y = yaw;
+          pose = 'drive';
+          actor.holder.position.y = CAR_SEAT_Y;
+          actor.holder.scale.setScalar(0.72);
+          actor.shadow.visible = false;
+        } else if (pramming) {
+          actor.vehicle.position.set(x - Math.sin(yaw) * PRAM_PULL_BACK, 0, z - Math.cos(yaw) * PRAM_PULL_BACK);
+          actor.vehicle.rotation.y = yaw;
+          if (pose === 'idle') pose = 'walk';
+        }
+        actor.vehicle.visible = !hidden;
+      } else if (!driving) {
+        actor.holder.scale.setScalar(1);
+        actor.shadow.visible = !hidden;
       }
       animateAvatar(actor.avatar, now / 1000, pose, r.speed, pose === 'hold' || mount === 'hold');
       actor.shadow.position.set(x, 0.025, z);
-      actor.nameSpr.position.set(x, y + 3.2, z);
+      actor.nameSpr.position.set(x, y + (driving ? 2.6 : 3.2), z);
 
       if (r.emote && !hidden) {
         const cached = this.emoteCache.get(r.emote);
@@ -243,6 +271,7 @@ export class RemotePlayers {
       if (live.has(id)) continue;
       this.scene.remove(a.holder, a.shadow, a.nameSpr, a.bubble);
       if (a.pet) this.scene.remove(a.pet.rig.root, a.pet.shadow);
+      if (a.vehicle) this.scene.remove(a.vehicle);
       this.actors.delete(id);
     }
   }
@@ -251,6 +280,7 @@ export class RemotePlayers {
     for (const a of this.actors.values()) {
       this.scene.remove(a.holder, a.shadow, a.nameSpr, a.bubble);
       if (a.pet) this.scene.remove(a.pet.rig.root, a.pet.shadow);
+      if (a.vehicle) this.scene.remove(a.vehicle);
     }
     this.actors.clear();
   }

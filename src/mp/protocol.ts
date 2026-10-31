@@ -9,7 +9,7 @@ import { parseHouseStyle, parseHouseWire, type HouseWire } from '../logic/houseW
 export const MP_VERSION = 1;
 export const MAX_PLAYERS = 8;
 export const STATE_HZ = 10;
-export const MAX_MSG_BYTES = 4096;
+export const MAX_MSG_BYTES = 16384;
 /** Max client→server messages per second per socket (state + emotes). */
 export const MAX_MSG_PER_SEC = 20;
 
@@ -31,6 +31,7 @@ export type AvatarPoseWire =
   | 'walk'
   | 'jump'
   | 'sit'
+  | 'sleep'
   | 'hold'
   | 'wave'
   | 'fly'
@@ -71,6 +72,10 @@ export interface PlayerSnapshot {
   mount: MountWire;
   /** Exterior house style shown on the player's neighbourhood plot. */
   houseStyle: HouseStyle | null;
+  /** Full house (style + furniture) carried into the room; others place it on `plot`. */
+  house: HouseWire | null;
+  /** Neighbourhood plot index 1..N for remotes (0 = local home on each client, never assigned). */
+  plot: number | null;
   /** Vehicle catalog id when mount is drive/pram. */
   vehicle: string | null;
   emote: EmoteId | null;
@@ -79,7 +84,7 @@ export interface PlayerSnapshot {
 
 /** Client → server */
 export type ClientMsg =
-  | { t: 'hello'; v: number; name: string; avatar: Avatar; playerId: string }
+  | { t: 'hello'; v: number; name: string; avatar: Avatar; playerId: string; house?: HouseWire }
   | {
       t: 'state';
       x: number;
@@ -161,7 +166,7 @@ export function decodeServer(raw: string): ServerMsg | null {
 
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const isStr = (v: unknown): v is string => typeof v === 'string';
-const POSES: AvatarPoseWire[] = ['idle', 'walk', 'jump', 'sit', 'hold', 'wave', 'fly', 'swing', 'slide', 'seesaw', 'spin', 'dance', 'drive'];
+const POSES: AvatarPoseWire[] = ['idle', 'walk', 'jump', 'sit', 'sleep', 'hold', 'wave', 'fly', 'swing', 'slide', 'seesaw', 'spin', 'dance', 'drive'];
 const PLACES: PlaceWire[] = ['town', 'house', 'shop', 'vet', 'cars', 'pets'];
 const MOUNTS: MountWire[] = ['none', 'ride', 'hold', 'fly', 'drive', 'pram'];
 const ACTIVITY_KINDS: ActivityKind[] = ['dance', 'parade'];
@@ -192,7 +197,12 @@ export function parseClient(data: unknown): ClientMsg | null {
   if (o.t === 'hello') {
     if (!isNum(o.v) || o.v !== MP_VERSION) return null;
     if (!isStr(o.name) || !isStr(o.playerId) || o.playerId.length > 64) return null;
-    return { t: 'hello', v: MP_VERSION, name: o.name, avatar: cleanAvatar(o.avatar), playerId: o.playerId };
+    let house: HouseWire | undefined;
+    if (o.house !== undefined) {
+      const h = parseHouseWire(o.house);
+      if (h) house = h;
+    }
+    return { t: 'hello', v: MP_VERSION, name: o.name, avatar: cleanAvatar(o.avatar), playerId: o.playerId, ...(house ? { house } : {}) };
   }
   if (o.t === 'state') {
     if (!isNum(o.x) || !isNum(o.y) || !isNum(o.z) || !isNum(o.yaw) || !isNum(o.speed)) return null;
@@ -282,6 +292,8 @@ export function snapshotFromHello(id: string, name: string, avatar: Avatar): Pla
     equip: null,
     mount: 'none',
     houseStyle: null,
+    house: null,
+    plot: null,
     vehicle: null,
     emote: null,
     emoteUntil: 0,
@@ -298,6 +310,8 @@ export function normalizeSnapshot(raw: Partial<PlayerSnapshot> & { id: string; n
     area: raw.area ?? null,
     mount: parseMount(raw.mount),
     houseStyle: parseHouseStyle(raw.houseStyle),
+    house: raw.house ? parseHouseWire(raw.house) : null,
+    plot: typeof raw.plot === 'number' && raw.plot >= 1 && raw.plot <= 8 ? (raw.plot | 0) : null,
     vehicle: typeof raw.vehicle === 'string' ? raw.vehicle : null,
     place: (PLACES.includes(raw.place as PlaceWire) ? raw.place : 'town') as PlaceWire,
   };
