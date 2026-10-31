@@ -61,15 +61,43 @@ export const roomDoorZ = (d: number): number => -d / 2 + 2.6;
 
 const cache = new Map<string, HouseLayout>();
 
+/** Per-style plan knobs so each house feels different inside. */
+function planParams(style: HouseStyle): {
+  room: number;
+  frontRoom: number;
+  sideNook: boolean;
+  names: { sleep: string; play: string; guest: string; hobby: string; living: string };
+} {
+  switch (style) {
+    case 'villa':
+      return { room: 8, frontRoom: 7.5, sideNook: false, names: { sleep: 'Master', play: 'Bad 2', guest: 'Gjesterom', hobby: 'Bibliotek', living: 'Stue og kjøkken' } };
+    case 'gard':
+      return { room: 6.2, frontRoom: 6, sideNook: true, names: { sleep: 'Soverom', play: 'Vaskerom', guest: 'Barnerom', hobby: 'Verksted', living: 'Stue' } };
+    case 'moderne':
+      return { room: 5.5, frontRoom: 8.5, sideNook: true, names: { sleep: 'Soverom', play: 'Bad', guest: 'Kontor', hobby: 'Mediarom', living: 'Åpen stue' } };
+    case 'trehus':
+      return { room: 7.4, frontRoom: 6.8, sideNook: false, names: { sleep: 'Soverom', play: 'Lekerom', guest: 'Gjesterom', hobby: 'Hobbyrom', living: 'Stue og kjøkken' } };
+    case 'sjohus':
+      return { room: 6, frontRoom: 7.2, sideNook: true, names: { sleep: 'Soverom', play: 'Bad', guest: 'Utsikt', hobby: 'Fiskebu', living: 'Stue' } };
+    case 'slott':
+      return { room: 9, frontRoom: 8, sideNook: true, names: { sleep: 'Kongesuite', play: 'Tronsal', guest: 'Ballsal', hobby: 'Skattkammer', living: 'Festsal' } };
+    default: // hytte
+      return { room: 7, frontRoom: 7, sideNook: false, names: { sleep: 'Soverom', play: 'Lekerom', guest: 'Gjesterom', hobby: 'Hobbyrom', living: 'Stue og kjøkken' } };
+  }
+}
+
 export function houseLayout(style: HouseStyle): HouseLayout {
   const hit = cache.get(style);
   if (hit) return hit;
   const info = HOUSE_BY_STYLE[style] ?? HOUSE_BY_STYLE.hytte;
   const { w, d } = info;
+  const plan = planParams(style);
+  const room = Math.min(plan.room, d * 0.42);
+  const frontDepth = Math.min(plan.frontRoom, d * 0.4);
   const zTop = -d / 2 + 4.2;
   const stairs: Stairs = { x0: -STAIR_HALF_W, x1: STAIR_HALF_W, zTop, zBottom: zTop + STAIR_LEN };
-  const ax = w / 2 - ROOM; // inner side of the corner rooms
-  const bz = -d / 2 + ROOM; // front side of the back rooms
+  const ax = w / 2 - room;
+  const bz = -d / 2 + room;
   const floor0: RectCollider[] = [];
   const floor1: RectCollider[] = [];
   for (const out of [floor0, floor1]) {
@@ -78,18 +106,27 @@ export function houseLayout(style: HouseStyle): HouseLayout {
     wallZ(out, bz, -w / 2, -ax, []);
     wallZ(out, bz, ax, w / 2, []);
   }
-  // upstairs the front is split in two too
-  wallX(floor1, 0, d / 2 - ROOM, d / 2, [d / 2 - 3.6]);
+  // Optional living-room side wall (does not enclose a pocket — leaves a wide gap so the whole stue stays reachable)
+  if (plan.sideNook) {
+    const nookX = w / 2 - 4.5;
+    wallX(floor0, nookX, bz + 2.0, d / 2 - 1.5, []); // solid stub wall, open at both ends of the living room
+  }
+  // Upstairs front split (depth varies by style)
+  wallX(floor1, 0, d / 2 - frontDepth, d / 2, [d / 2 - 3.6]);
+  // Extra hall cross-wall for some styles (door at centre so stairs remain reachable)
+  if (style === 'moderne' || style === 'slott' || style === 'sjohus') {
+    wallZ(floor1, d / 2 - frontDepth, -ax, ax, [0]);
+  }
   const rooms: Room[] = [
-    { id: 'f0-sove', name: 'Soverom', floor: 0, x0: -w / 2, x1: -ax, z0: -d / 2, z1: bz },
+    { id: 'f0-sove', name: plan.names.sleep, floor: 0, x0: -w / 2, x1: -ax, z0: -d / 2, z1: bz },
     { id: 'f0-bad', name: 'Bad', floor: 0, x0: ax, x1: w / 2, z0: -d / 2, z1: bz },
     { id: 'f0-gang', name: 'Gang', floor: 0, x0: -ax, x1: ax, z0: -d / 2, z1: bz },
-    { id: 'f0-stue', name: 'Stue og kjøkken', floor: 0, x0: -w / 2, x1: w / 2, z0: bz, z1: d / 2 },
+    { id: 'f0-stue', name: plan.names.living, floor: 0, x0: -w / 2, x1: w / 2, z0: bz, z1: d / 2 },
     { id: 'f1-sove', name: 'Soverom 2', floor: 1, x0: -w / 2, x1: -ax, z0: -d / 2, z1: bz },
-    { id: 'f1-lek', name: 'Lekerom', floor: 1, x0: ax, x1: w / 2, z0: -d / 2, z1: bz },
-    { id: 'f1-gang', name: 'Gang', floor: 1, x0: -ax, x1: ax, z0: -d / 2, z1: d / 2 - ROOM },
-    { id: 'f1-gjest', name: 'Gjesterom', floor: 1, x0: -w / 2, x1: 0, z0: d / 2 - ROOM, z1: d / 2 },
-    { id: 'f1-hobby', name: 'Hobbyrom', floor: 1, x0: 0, x1: w / 2, z0: d / 2 - ROOM, z1: d / 2 },
+    { id: 'f1-lek', name: plan.names.play, floor: 1, x0: ax, x1: w / 2, z0: -d / 2, z1: bz },
+    { id: 'f1-gang', name: 'Gang', floor: 1, x0: -ax, x1: ax, z0: -d / 2, z1: d / 2 - frontDepth },
+    { id: 'f1-gjest', name: plan.names.guest, floor: 1, x0: -w / 2, x1: 0, z0: d / 2 - frontDepth, z1: d / 2 },
+    { id: 'f1-hobby', name: plan.names.hobby, floor: 1, x0: 0, x1: w / 2, z0: d / 2 - frontDepth, z1: d / 2 },
   ];
   const layout: HouseLayout = { style, w, d, stairs, rooms, walls: [floor0, floor1], door: { x: 0, z: d / 2 - 1.4 } };
   cache.set(style, layout);

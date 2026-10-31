@@ -7,7 +7,7 @@ import { addCare, completeNeed, newPetState, rollNeed, SICK_AFTER, stageIndex, s
 import { canEdit, clampToRoom, deserializeHouse, grantEdit, newHouse, placeItem, requestEdit, revokeEdit, rotateItem, roomSize, serializeHouse, snapToWall, updateItem, MAX_SCALE, MIN_SCALE } from './house.ts';
 import { cleanAvatar, DEFAULT_AVATAR, randomAvatar } from './avatar.ts';
 import { freshSave, parseSave, MAX_EQUIPPED, START_BUCKS } from './save.ts';
-import { activeHouse, buyAndHatch, buyFood, buyFurniture, buyHouse, buyPotion, careAt, feed, placeFromInventory, storeItem, tickSave, toggleEquip, usePotion } from './economy.ts';
+import { activeHouse, buyAndHatch, buyFood, buyFurniture, buyHouse, buyPotion, careAt, feed, maybeDropPotionFromFlight, placeFromInventory, storeItem, tickSave, toggleEquip, usePotion } from './economy.ts';
 
 describe('catalog', () => {
   it('has 60+ furniture items with unique ids in known categories', () => {
@@ -233,14 +233,29 @@ describe('economy and save', () => {
     expect(r.done).toBe(true);
     expect(r.save.stats.tasks).toBe(1);
   });
-  it('potions make pets fly or ride', () => {
+  it('potions are not buyable in shops', () => {
+    const s = { ...freshSave(0), bucks: 10_000 };
+    expect(buyPotion(s, 'flygedrikk').ok).toBe(false);
+    expect(buyPotion(s, 'ridedrikk').ok).toBe(false);
+  });
+  it('potions make pets fly or ride (granted, not bought)', () => {
     let s = { ...buyAndHatch(freshSave(0), 'egg-start', seeded(9), 0).save, bucks: 1000 };
     const uid = s.pets[0].uid;
     expect(usePotion(s, 'flygedrikk', uid).ok).toBe(false);
-    s = buyPotion(s, 'flygedrikk').save;
+    s = { ...s, bag: { ...s.bag, flygedrikk: 1 } };
     s = usePotion(s, 'flygedrikk', uid).save;
     expect(s.pets[0].flyable).toBe(true);
     expect(s.bag.flygedrikk).toBeUndefined();
+  });
+  it('flying pets sometimes drop potions (luck)', () => {
+    const base = freshSave(0);
+    let hits = 0;
+    for (let i = 0; i < 80; i++) {
+      const r = maybeDropPotionFromFlight(base, seeded(i + 3));
+      if (r.ok) hits++;
+    }
+    expect(hits).toBeGreaterThan(5);
+    expect(hits).toBeLessThan(40);
   });
   it('only one pet follows at a time; a new follower replaces the old one; only the follower gets needs', () => {
     let s = { ...freshSave(0), bucks: 10_000 };

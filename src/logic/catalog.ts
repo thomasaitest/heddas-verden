@@ -150,8 +150,8 @@ export interface Potion {
   text: string;
 }
 export const POTIONS: Potion[] = [
-  { id: 'ridedrikk', name: 'Ridedrikk', emoji: '🧪', price: 250, text: 'Gjør et dyr til et ridedyr' },
-  { id: 'flygedrikk', name: 'Flygedrikk', emoji: '🪽', price: 350, text: 'Gjør et dyr til et flygedyr' },
+  { id: 'ridedrikk', name: 'Ridedrikk', emoji: '🧪', price: 0, text: 'Gjør et dyr til et ridedyr (finnes hos flygedyr)' },
+  { id: 'flygedrikk', name: 'Flygedrikk', emoji: '🪽', price: 0, text: 'Gjør et dyr til et flygedyr (finnes hos flygedyr)' },
 ];
 
 export type HouseStyle = 'hytte' | 'villa' | 'gard' | 'slott' | 'moderne' | 'trehus' | 'sjohus';
@@ -223,10 +223,10 @@ export interface CarItem {
   text: string;
 }
 export const CARS: CarItem[] = [
-  { id: 'bil-rosa', name: 'Rosa bil', emoji: '🚗', price: 250, color: '#ff8fb1', text: 'En søt bil å kjøre rundt i' },
-  { id: 'bil-gul', name: 'Gul bil', emoji: '🚕', price: 250, color: '#ffe066', text: 'Lys og glad taxi-stil' },
-  { id: 'bil-bla', name: 'Blå bil', emoji: '🚙', price: 300, color: '#5cc3f2', text: 'Romslig familiebil' },
-  { id: 'bil-gronn', name: 'Grønn bil', emoji: '🛻', price: 280, color: '#7ccf6a', text: 'Liten pickup til turer' },
-  { id: 'bil-lilla', name: 'Lilla bil', emoji: '🏎️', price: 400, color: '#c88bff', text: 'Rask sportsbil' },
+  { id: 'bil-rosa', name: 'Rosa cabriolet', emoji: '🚗', price: 250, color: '#ff8fb1', text: 'Åpen cabriolet med vindskjerm' },
+  { id: 'bil-gul', name: 'Gul boble', emoji: '🚕', price: 250, color: '#ffe066', text: 'Rund boblebil – koselig og kompakt' },
+  { id: 'bil-bla', name: 'Blå varebil', emoji: '🚙', price: 300, color: '#5cc3f2', text: 'Høy varebil med masse plass' },
+  { id: 'bil-gronn', name: 'Grønn jeep', emoji: '🛻', price: 280, color: '#7ccf6a', text: 'Jeep med reservedekk og lysbar' },
+  { id: 'bil-lilla', name: 'Lilla sportsbil', emoji: '🏎️', price: 400, color: '#c88bff', text: 'Lav sportsbil med spoiler' },
 ];
 export const CAR_BY_ID = Object.fromEntries(CARS.map((c) => [c.id, c]));

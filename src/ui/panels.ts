@@ -2,7 +2,7 @@ import { sfx } from '../audio.ts';
 import { ACCESSORIES, BOTTOMS, CLOTH_COLORS, FACES, HAIR_COLORS, HAIR_STYLES, HATS, OUTFIT_PRESETS, randomAvatar, SHIRT_PRINTS, SHOES, SKIN, type Avatar } from '../logic/avatar.ts';
 import { CARS, FLOOR_COLORS, FOODS, FOOD_BY_ID, FURN_BY_ID, FURN_CATS, FURNITURE, HOUSES, PALETTE, PET_SHOP, POTIONS, TOYS, WALL_COLORS, type FurnCat } from '../logic/catalog.ts';
 import { POINTS, ITEM_INFO, newGame, openDoor, useMagnifier, type DoorGame } from '../logic/doors.ts';
-import { activeHouse, addBucks, buyAndHatch, buyCar, buyFood, buyFurniture, buyHouse, buyPetShopItem, buyPotion, buyToy, editHouse, placeFromInventory, renamePet, storeItem, toggleEquip, usePotion } from '../logic/economy.ts';
+import { activeHouse, addBucks, buyAndHatch, buyCar, buyFood, buyFurniture, buyHouse, buyPetShopItem, buyToy, editHouse, placeFromInventory, renamePet, storeItem, toggleEquip, usePotion } from '../logic/economy.ts';
 import { rotateItem, updateItem } from '../logic/house.ts';
 import { joyNow, NEED_INFO, stageOf, stageProgress, STAGES, type PetState } from '../logic/needs.ts';
 import { EGGS, RARITY_INFO, SPECIES_BY_ID, type EggType } from '../logic/pets.ts';
@@ -37,6 +37,8 @@ export function openShop(game: Game) {
   const render = () => {
     s.body.replaceChildren(
       el('p', { class: 'lead' }, 'Mat og drikke til dyrene dine. Gi det til dem når de er sultne eller tørste!'),
+      el('h3', {}, 'Trylledrikker'),
+      el('p', { class: 'hint' }, 'Trylledrikker kjøpes ikke her. Fly med et flygedyr – noen ganger mister de en drikk! 🪽'),
       el(
         'div',
         { class: 'grid' },
@@ -127,33 +129,6 @@ export function openEggs(game: Game) {
               s.close();
               game.commit(r.save, { pets: true });
               showHatch(game, r.pet, e);
-            }, 'btn buy'),
-          ),
-        ),
-      ),
-      el('h3', {}, 'Trylledrikker'),
-      el(
-        'div',
-        { class: 'grid' },
-        ...POTIONS.map((p) =>
-          el(
-            'div',
-            { class: 'card' },
-            el('div', { class: 'big-emoji' }, p.emoji),
-            el('b', {}, p.name),
-            el('small', {}, p.text),
-            el('small', { class: 'owned' }, `Du har ${game.save.bag[p.id] ?? 0}`),
-            button(price(p.price), () => {
-              const r = buyPotion(game.save, p.id);
-              if (!r.ok) {
-                toast(failText(r.reason), 'bad');
-                sfx.nope();
-                return;
-              }
-              sfx.buy();
-              game.commit(r.save);
-              toast('Bruk drikken fra 🐾 Dyr', 'ok');
-              render();
             }, 'btn buy'),
           ),
         ),

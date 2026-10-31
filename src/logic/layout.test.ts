@@ -245,3 +245,17 @@ describe('furniture and walls', () => {
     expect(roomAt(L, 1, 0, L.d / 2 - 2)).toBeTruthy();
   });
 });
+
+describe('house styles differ inside', () => {
+  it('styles have distinct floor plans (walls and room names)', () => {
+    const sig = (style: HouseStyle) => {
+      const L = houseLayout(style);
+      const walls = L.walls.flat().map((w) => [w.x.toFixed(2), w.z.toFixed(2), w.hw.toFixed(2), w.hd.toFixed(2)].join(',')).sort().join('|');
+      const rooms = L.rooms.map((r) => `${r.floor}:${r.name}:${r.x0.toFixed(1)}`).sort().join('|');
+      return walls + '##' + rooms;
+    };
+    const all = styles.map(sig);
+    expect(new Set(all).size).toBe(styles.length);
+  });
+});
+

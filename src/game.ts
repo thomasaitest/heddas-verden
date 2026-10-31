@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { sfx, setSoundEnabled, setLocationAmbient, startMusic, stopMusic, musicPlaying } from './audio.ts';
 import { CAR_BY_ID, FURN_BY_ID, HOUSE_BY_STYLE, PET_SHOP_BY_ID, TOYS, TOY_BY_ID, type HouseStyle } from './logic/catalog.ts';
-import { activeHouse, buyFurniture, careAt, editHouse, feed, placeFromInventory, playWithToy, tickSave } from './logic/economy.ts';
+import { activeHouse, buyFurniture, careAt, editHouse, feed, maybeDropPotionFromFlight, placeFromInventory, playWithToy, tickSave } from './logic/economy.ts';
 import { playDone, startPlay, stepPlay, type PlayState } from './logic/toyplay.ts';
 import { buildToy } from './three/toys.ts';
 import { EQUIP_BY_ID, SIT_DROP, canUse, wantsOff } from './logic/playground.ts';
@@ -108,6 +108,8 @@ export class Game {
   holding: string | null = null;
   riding: string | null = null;
   flying = false;
+  /** Seconds of flight since last potion drop roll. */
+  private flyDropAcc = 0;
   /** Catalog id of the car you are driving, or null. */
   driving: string | null = null;
   /** Catalog id of the pram you are pushing, or null. */
@@ -444,7 +446,7 @@ export class Game {
     const p = this.mainPet();
     if (!p || !p.flyable) return;
     this.holding = null;
-    if (this.flying) this.flying = false;
+    if (this.flying) { this.flying = false; this.flyDropAcc = 0; }
     else {
       this.riding = p.uid;
       this.flying = true;
@@ -602,7 +604,7 @@ export class Game {
         break;
       case 'bench':
         this.resting = { x: z.x, z: z.z, yaw: z.yaw };
-        this.player.pos.set(z.x, 0.85, z.z);
+        this.player.pos.set(z.x, 0.42, z.z);
         this.player.yaw = z.yaw;
         this.player.vy = 0;
         this.player.grounded = true;
@@ -969,6 +971,16 @@ export class Game {
       p.vy = 0;
       p.grounded = true;
     } else if (this.flying) {
+      this.flyDropAcc += dt;
+      if (this.flyDropAcc >= 4) {
+        this.flyDropAcc = 0;
+        const r = maybeDropPotionFromFlight(this.save, this.rng);
+        if (r.ok) {
+          this.commit(r.save);
+          toast(r.potionId === 'flygedrikk' ? 'Flygedrikken falt ned fra skyene! 🪽' : 'Ridedrikk fra flyveturen! 🧪', 'ok');
+          sfx.buy();
+        }
+      }
       if (inp.jump && !frozen) p.vy = Math.min(p.vy + 40 * dt, 9);
       else p.vy = Math.max(p.vy - 14 * dt, -4);
       p.pos.y += p.vy * dt;
@@ -981,7 +993,7 @@ export class Game {
         p.vy = 0;
       }
     } else if (this.resting) {
-      p.pos.set(this.resting.x, 0.78, this.resting.z);
+      p.pos.set(this.resting.x, 0.42, this.resting.z);
       p.yaw = this.resting.yaw;
       p.vy = 0;
       p.grounded = true;

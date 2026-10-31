@@ -87,26 +87,27 @@ function sign(parent: THREE.Object3D, text: string, y: number, z: number, bg: st
 }
 
 /** Unique 3D shop signboard with logo mesh, mounted on posts (stays when roof lifts). */
+/** 3D shop signboard that sits ON TOP of the roof (never inside the roof slab). */
 function shopSign3d(
   parent: THREE.Object3D,
-  opts: { label: string; bg: string; y: number; z: number; w?: number; logo: (g: THREE.Group) => void },
+  opts: { label: string; bg: string; /** Roof-top Y (above roof slab). */ y: number; z?: number; w?: number; logo: (g: THREE.Group) => void },
 ) {
   const w = opts.w ?? 6.5;
+  const z = opts.z ?? 0; // centre of roof by default so it is never under the front overhang
   const g = new THREE.Group();
-  // posts into the facade / ground relative to building
+  // Short posts standing on the roof surface
   for (const s of [-1, 1]) {
-    cyl(g, '#8a5a3c', [s * (w / 2 - 0.35), opts.y - 1.2, opts.z - 0.15], [0.18, 2.6, 0.18]);
+    cyl(g, '#8a5a3c', [s * (w / 2 - 0.35), opts.y - 0.55, z], [0.18, 1.1, 0.18]);
   }
-  // board
-  rbox(g, opts.bg, [0, opts.y, opts.z], [w, 1.5, 0.35]);
-  rbox(g, '#ffffff', [0, opts.y, opts.z + 0.2], [w - 0.35, 1.15, 0.08]);
+  // board above the roof
+  rbox(g, opts.bg, [0, opts.y, z], [w, 1.5, 0.35]);
+  rbox(g, '#ffffff', [0, opts.y, z + 0.2], [w - 0.35, 1.15, 0.08]);
   const tex = textTexture(opts.label, { bg: opts.bg, fg: '#ffffff', stroke: '#00000044', w: 512, h: 128 });
   const plate = new THREE.Mesh(new THREE.PlaneGeometry(w - 0.8, 0.7), new THREE.MeshBasicMaterial({ map: tex, transparent: true }));
-  plate.position.set(0, opts.y - 0.15, opts.z + 0.26);
+  plate.position.set(0, opts.y - 0.15, z + 0.26);
   g.add(plate);
-  // unique logo above the board
   const logo = new THREE.Group();
-  logo.position.set(0, opts.y + 1.35, opts.z);
+  logo.position.set(0, opts.y + 1.35, z);
   opts.logo(logo);
   g.add(logo);
   parent.add(g);
@@ -153,7 +154,7 @@ function openBuilding(w: number, d: number, h: number, wall: string, roof: strin
     }
     g.userData.shell = shell;
   } else for (const s of [-1, 1]) solid(box(g, trim, [s * (w / 2 - 0.3), h / 2, d / 2 - 0.2], [0.9, h, 0.9]));
-  rbox(roofG, roof, [0, h + 0.4, 0], [w + 1.2, 0.8, d + 1.2]).userData.noCast = true;
+  rbox(roofG, roof, [0, h + 0.4, 0], [w + 2.2, 0.8, d + 2.2]).userData.noCast = true;
   box(roofG, trim, [0, h - 0.4, d / 2 - 0.1], [w, 0.8, 0.4]).userData.noCast = true;
   g.userData.roof = roofG;
   return g;
@@ -175,7 +176,7 @@ function homeExterior(style: HouseStyle, locked = false): THREE.Group {
   if (style === 'slott') {
     for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
       solid(cyl(g, info.wall, [sx * w / 2, h / 2 + 1.5, sz * d / 2], [3, h + 2, 3]), 'circle', 0, 14);
-      cone(g, info.roof, [sx * w / 2, h + 4.2, sz * d / 2], [3.6, 3.5, 3.6]);
+      cone(g, info.roof, [sx * w / 2, h + 4.2, sz * d / 2], [4.4, 3.8, 4.4]);
     }
     for (let i = 0; i < 7; i++) box(g, info.wall, [-w / 2 + 1 + i * ((w - 2) / 6), h + 0.9, d / 2], [1, 0.8, 0.8]);
     part(g, G.heart(), '#ff8fb1', [0, h - 0.8, d / 2 + 0.1], [2, 2, 0.6]);
@@ -184,11 +185,13 @@ function homeExterior(style: HouseStyle, locked = false): THREE.Group {
     const roofMesh = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1, 4), new THREE.MeshLambertMaterial({ color: info.roof }));
     roofMesh.position.set(0, h + 2.6, 0);
     roofMesh.rotation.y = Math.PI / 4;
-    roofMesh.scale.set(w * 1.15, 4.0, d * 1.15);
+    roofMesh.scale.set(w * 1.52, 4.4, d * 1.52); // eaves overhang past the walls
     roofMesh.castShadow = true;
     g.add(roofMesh);
     // thin ceiling slab under the roof so the 2nd floor is closed
     box(g, info.wall, [0, h + 0.15, 0], [w + 0.2, 0.3, d + 0.2]).userData.noCast = true;
+    // fascia / eave band so the overhang reads clearly from the street
+    box(g, info.roof, [0, h + 0.55, 0], [w * 1.42, 0.28, d * 1.42]).userData.noCast = true;
     if (style === 'gard' || style === 'trehus') for (const s of [-1, 1]) box(g, '#ffffff', [s * 3, 3.2, d / 2 + 0.02], [2.4, 0.3, 0.1], [0, 0, s * 0.8]);
     if (style !== 'moderne') cyl(g, '#b46a50', [w / 4, h + 3.2, -d / 6], [0.9, 2.6, 0.9]);
   }
@@ -285,6 +288,27 @@ export function buildTown(): Town {
   surfaces.push({ x: 0, z: 0, r: 4.2, top: 1.15 }); // rim
   surfaces.push({ x: 0, z: 0, r: 1.9, top: 3.85 }); // upper bowl
   const water = sph(group, '#bff0ff', [0, 4.2, 0], [1.6, 1.6, 1.6], undefined, 0.3);
+  // Cheap water jets that pulse on/off (cylinders + droplets — readable on iPhone)
+  const jets: THREE.Mesh[] = [];
+  for (let i = 0; i < 6; i++) {
+    const ang = (i / 6) * Math.PI * 2;
+    const j = cyl(group, '#7fd8ff', [Math.cos(ang) * 0.5, 5.4, Math.sin(ang) * 0.5], [0.35, 1.8, 0.35]);
+    j.userData.noCast = true;
+    (j.material as THREE.MeshLambertMaterial).transparent = true;
+    (j.material as THREE.MeshLambertMaterial).opacity = 0.75;
+    jets.push(j as THREE.Mesh);
+  }
+  const centerJet = cyl(group, '#bfefff', [0, 6.0, 0], [0.55, 2.4, 0.55]);
+  centerJet.userData.noCast = true;
+  (centerJet.material as THREE.MeshLambertMaterial).transparent = true;
+  (centerJet.material as THREE.MeshLambertMaterial).opacity = 0.8;
+  jets.push(centerJet as THREE.Mesh);
+  for (let i = 0; i < 4; i++) {
+    const ang = (i / 4) * Math.PI * 2 + 0.4;
+    const d = sph(group, '#9ae6ff', [Math.cos(ang) * 1.5, 5.0, Math.sin(ang) * 1.5], [0.45, 0.45, 0.45]);
+    d.userData.noCast = true;
+    jets.push(d as THREE.Mesh);
+  }
 
   // road network (ring + approaches + neighbourhood) – never through buildings
   for (const s of roads) {
@@ -324,12 +348,12 @@ export function buildTown(): Town {
     const g = openBuilding(14, 10, 6, '#ffe8a8', '#ff6f6f', '#ffffff', { door: 4.4, roofSeparate: true });
     const roofG = g.userData.roof as THREE.Group;
     awning(roofG, 14, 5.4, 5.6, '#ff6f6f', '#ffffff');
-    // 3D sign on the front shell (stays when roof lifts)
-    shopSign3d(g, {
+    // 3D sign ON TOP of the roof (stays with roof when it lifts)
+    shopSign3d(roofG, {
       label: 'Butikk',
       bg: '#ff6f6f',
-      y: 7.2,
-      z: 5.3,
+      y: 8.0,
+      z: 0,
       w: 6.2,
       logo: (lg) => {
         rbox(lg, '#ffffff', [0, 0, 0], [1.1, 0.9, 0.35]);
@@ -362,11 +386,11 @@ export function buildTown(): Town {
     box(crossMast, '#ffffff', [0, 9.4, 5.7], [3.1, 1.15, 0.2]);
     box(crossMast, '#ffffff', [0, 9.4, 5.7], [1.15, 3.1, 0.2]);
     g.add(crossMast);
-    shopSign3d(g, {
+    shopSign3d(roofG, {
       label: 'Dyrlegen',
       bg: '#3fa4ff',
-      y: 6.6,
-      z: 5.95,
+      y: 8.4,
+      z: 0,
       w: 7.0,
       logo: (lg) => {
         box(lg, '#ff4b4b', [0, 0, 0], [0.55, 1.5, 0.3]);
@@ -392,8 +416,8 @@ export function buildTown(): Town {
     shopSign3d(g, {
       label: 'Eggbutikk',
       bg: '#b05cff',
-      y: 7.0,
-      z: 4.7,
+      y: 11.2,
+      z: 0,
       w: 5.8,
       logo: (lg) => {
         sph(lg, '#fff4c2', [0, 0.1, 0], [1.0, 1.25, 1.0]);
@@ -421,11 +445,11 @@ export function buildTown(): Town {
     const g = openBuilding(18, 13, 7, '#dfe8ff', '#3fa4ff', '#ffffff', { door: 5.2, roofSeparate: true });
     const roofG = g.userData.roof as THREE.Group;
     awning(roofG, 18, 6.0, 7.2, '#3fa4ff', '#ffffff');
-    shopSign3d(g, {
+    shopSign3d(roofG, {
       label: 'Bilbutikk',
       bg: '#3fa4ff',
-      y: 7.6,
-      z: 6.7,
+      y: 9.0,
+      z: 0,
       w: 7.5,
       logo: (lg) => {
         rbox(lg, '#ff8fb1', [0, 0, 0], [1.6, 0.55, 0.7]);
@@ -449,11 +473,11 @@ export function buildTown(): Town {
     const g = openBuilding(16, 12, 6.5, '#ffe0ef', '#ff8fb1', '#ffffff', { door: 4.8, roofSeparate: true });
     const roofG = g.userData.roof as THREE.Group;
     awning(roofG, 16, 5.6, 6.6, '#ff8fb1', '#ffffff');
-    shopSign3d(g, {
+    shopSign3d(roofG, {
       label: 'Dyrebutikk',
       bg: '#ff8fb1',
-      y: 7.2,
-      z: 6.1,
+      y: 8.6,
+      z: 0,
       w: 7.2,
       logo: (lg) => {
         // paw print
@@ -488,8 +512,8 @@ export function buildTown(): Town {
     shopSign3d(g, {
       label: 'Dørspillet',
       bg: '#ff4fa8',
-      y: 7.2,
-      z: 3.2,
+      y: 11.0,
+      z: 0,
       w: 5.6,
       logo: (lg) => {
         rbox(lg, '#ffe066', [0, 0, 0], [0.9, 1.3, 0.2]);
@@ -677,23 +701,23 @@ export function buildTown(): Town {
     const fz = Math.cos(sitYaw);
     const rx = Math.cos(sitYaw);
     const rz = -Math.sin(sitYaw);
-    // Seat centre in world; sitter sits slightly toward the backrest so their back touches it.
+    // Seat centre in world; sitter sits toward the backrest so their back touches it.
     const seatX = b.x;
     const seatZ = b.z;
-    const sitX = seatX - fx * 0.18;
-    const sitZ = seatZ - fz * 0.18;
+    const sitX = seatX - fx * 0.22;
+    const sitZ = seatZ - fz * 0.22;
     for (const sx of [-1.15, 1.15]) for (const sz of [-0.32, 0.32]) {
       const lx = seatX + rx * sx + fx * sz;
       const lz = seatZ + rz * sx + fz * sz;
       solid(cyl(stat, '#8a5a3c', [lx, 0.35, lz], [0.16, 0.7, 0.16]), 'circle', 0.05, 0.8);
     }
-    solid(box(stat, '#c98a55', [seatX, 0.85, seatZ], [2.8, 0.18, 0.95], [0, sitYaw, 0]), 'rect', 0.05, 1.0);
+    solid(box(stat, '#c98a55', [seatX, 0.88, seatZ], [2.8, 0.16, 0.95], [0, sitYaw, 0]), 'rect', 0.05, 1.0);
     // backrest at the rear edge of the seat
     solid(
       box(
         stat,
         '#c98a55',
-        [seatX - fx * 0.48, 1.35, seatZ - fz * 0.48],
+        [seatX - fx * 0.48, 1.38, seatZ - fz * 0.48],
         [2.8, 0.75, 0.14],
         [0, sitYaw, 0],
       ),
@@ -736,7 +760,7 @@ export function buildTown(): Town {
     // Neighbourhood plots face north (+Z) onto the EW street belt
     rot: 0,
   }));
-  type PlotState = { holder: THREE.Group; rects: RectCollider[]; circles: CircleCollider[]; zone: Zone | null };
+  type PlotState = { holder: THREE.Group; rects: RectCollider[]; circles: CircleCollider[]; zone: Zone | null; mountedKey: string | null };
   const plots: PlotState[] = housePlots.map((plot, i) => {
     const holder = new THREE.Group();
     holder.position.set(plot.x, 0, plot.z);
@@ -744,7 +768,7 @@ export function buildTown(): Town {
     group.add(holder);
     // empty lot pad
     box(holder, GRASS, [0, 0.015, 0], [15, 0.03, 11]).userData.noCast = true;
-    return { holder, rects: [], circles: [], zone: i === 0 ? ({ kind: 'home', x: 0, z: 0, r: 3.5, label: 'Gå inn 🏠' } as Zone) : null };
+    return { holder, rects: [], circles: [], zone: i === 0 ? ({ kind: 'home', x: 0, z: 0, r: 3.5, label: 'Gå inn 🏠' } as Zone) : null, mountedKey: null };
   });
   if (plots[0].zone) zones.push(plots[0].zone);
 
@@ -752,6 +776,9 @@ export function buildTown(): Town {
     const plot = housePlots[plotIdx];
     const st = plots[plotIdx];
     if (!plot || !st) return;
+    const key = style ? `${style}|${label ?? ''}|${locked ? 1 : 0}` : '';
+    if (st.mountedKey === key) return; // idempotent — MP syncs every tick
+    st.mountedKey = key;
     for (const r of st.rects) {
       const i = rects.indexOf(r);
       if (i >= 0) rects.splice(i, 1);
@@ -883,6 +910,23 @@ export function buildTown(): Town {
       }
       mergedClouds.position.x = Math.sin(t * 0.02) * 20;
       water.position.y = 4.2 + Math.sin(t * 3) * 0.15;
+      // Jets on for ~2.2s, off for ~1.8s
+      const jetOn = (t % 4) < 2.2;
+      for (let i = 0; i < jets.length; i++) {
+        const j = jets[i]!;
+        j.visible = jetOn;
+        if (jetOn) {
+          const pulse = 0.85 + Math.sin(t * 8 + i * 1.1) * 0.15;
+          const base = i < 6 ? 5.2 : i === 6 ? 5.8 : 4.8;
+          j.position.y = base + Math.abs(Math.sin(t * 6 + i)) * (i < 7 ? 0.85 : 0.4);
+          if (i >= 7) {
+            const ang = ((i - 7) / 4) * Math.PI * 2 + 0.4 + t * 1.5;
+            j.position.x = Math.cos(ang) * (1.2 + Math.sin(t * 4 + i) * 0.35);
+            j.position.z = Math.sin(ang) * (1.2 + Math.sin(t * 4 + i) * 0.35);
+          }
+          j.scale.setScalar(pulse);
+        }
+      }
     },
   };
 }

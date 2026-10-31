@@ -1,4 +1,4 @@
-import { CAR_BY_ID, FOOD_BY_ID, FURN_BY_ID, HOUSE_BY_STYLE, PET_SHOP_BY_ID, POTIONS, TOY_BY_ID, type HouseStyle } from './catalog.ts';
+import { CAR_BY_ID, FOOD_BY_ID, FURN_BY_ID, HOUSE_BY_STYLE, PET_SHOP_BY_ID, TOY_BY_ID, type HouseStyle } from './catalog.ts';
 import { canEdit, newHouse, placeItem, removeItem, type House } from './house.ts';
 import { addCare, addJoy, CARE_AMOUNT, completeNeed, joyNow, newPetState, NEED_INFO, tickPet, type CareWhere, type PetState } from './needs.ts';
 import { cleanPetName, EGG_BY_ID, hatch } from './pets.ts';
@@ -71,11 +71,20 @@ const joyOf = (save: SaveData, uid: string, now: number): number => {
   return p ? joyNow(p, now) : 0;
 };
 
-export function buyPotion(save: SaveData, id: string): Result {
-  const p = POTIONS.find((x) => x.id === id);
-  if (!p) return fail(save, 'unknown');
-  if (save.bucks < p.price) return fail(save, 'too-expensive');
-  return { ok: true, save: { ...save, bucks: save.bucks - p.price, bag: add(save.bag, id, 1) } };
+/** Potions are not sold — kept only so old saves / cheats fail cleanly. */
+export function buyPotion(save: SaveData, _id: string): Result {
+  return fail(save, 'unknown');
+}
+
+/** Chance a flying pet drops a potion when rolled (modest luck). */
+export const POTION_FLY_DROP_CHANCE = 0.18;
+
+/** Roll a potion drop from flying with a flyable pet. Prefer flygedrikk if missing, else ridedrikk. */
+export function maybeDropPotionFromFlight(save: SaveData, rng: Rng): Result<{ potionId: 'flygedrikk' | 'ridedrikk' }> {
+  if (rng() > POTION_FLY_DROP_CHANCE) return fail(save, 'empty');
+  const preferFly = !save.bag.flygedrikk || (save.bag.flygedrikk ?? 0) <= (save.bag.ridedrikk ?? 0);
+  const potionId: 'flygedrikk' | 'ridedrikk' = preferFly ? 'flygedrikk' : 'ridedrikk';
+  return { ok: true, save: { ...save, bag: add(save.bag, potionId, 1) }, potionId };
 }
 
 export function usePotion(save: SaveData, id: 'flygedrikk' | 'ridedrikk', petUid: string): Result {
