@@ -802,10 +802,20 @@ export function animateAvatar(rig: AvatarRig, t: number, pose: AvatarPose, speed
     la.rotation.set(0, 0, -2.6);
     ra.rotation.set(0, 0, 2.6);
   } else if (pose === 'sit' || pose === 'fly') {
-    l.rotation.set(-1.5, 0, 0.35);
-    r.rotation.set(-1.5, 0, -0.35);
-    la.rotation.set(-0.9, 0, pose === 'fly' ? -0.6 : 0);
-    ra.rotation.set(-0.9, 0, pose === 'fly' ? 0.6 : 0);
+    // Bench sit: thighs nearly horizontal, lower legs hang down (single-bone approx).
+    // Fly keeps the old tucked pose.
+    if (pose === 'fly') {
+      l.rotation.set(-1.5, 0, 0.35);
+      r.rotation.set(-1.5, 0, -0.35);
+      la.rotation.set(-0.9, 0, -0.6);
+      ra.rotation.set(-0.9, 0, 0.6);
+    } else {
+      // ~-70° at hip so thighs rest on the seat; slight outward; feet below seat front
+      l.rotation.set(-1.15, 0.12, 0.08);
+      r.rotation.set(-1.15, -0.12, -0.08);
+      la.rotation.set(-0.55, 0, -0.15);
+      ra.rotation.set(-0.55, 0, 0.15);
+    }
     rig.body.position.y = 0;
   } else if (pose === 'wave') {
     ra.rotation.set(0, 0, 2.6 + Math.sin(t * 10) * 0.35);

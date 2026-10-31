@@ -981,7 +981,7 @@ export class Game {
         p.vy = 0;
       }
     } else if (this.resting) {
-      p.pos.set(this.resting.x, 0.85, this.resting.z);
+      p.pos.set(this.resting.x, 0.78, this.resting.z);
       p.yaw = this.resting.yaw;
       p.vy = 0;
       p.grounded = true;

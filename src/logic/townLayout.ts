@@ -7,9 +7,11 @@ export interface Place {
   id: string;
   x: number;
   z: number;
-  /** Half-width / half-depth of the building footprint in local space (facing plaza). */
+  /** Half-width / half-depth of the building footprint in local space (door on +Z). */
   hw: number;
   hd: number;
+  /** Explicit street-facing yaw (cardinal). Door faces this way onto a grid street. */
+  rot: number;
 }
 
 export interface RoadSeg {
@@ -29,16 +31,26 @@ export interface BuildingFoot {
   id: string;
 }
 
-/** Landmark centres (world). */
+/**
+ * Landmark centres on the orthogonal grid.
+ * Each building sits on a grass lot beside a main street and faces that street
+ * (door along local +Z after `rot`). No diagonal plaza-facing.
+ */
 export const PLACES: Record<string, Place> = {
-  home: { id: 'home', x: -38, z: -34, hw: 8, hd: 7 },
-  shop: { id: 'shop', x: 38, z: -34, hw: 7, hd: 5 },
-  eggs: { id: 'eggs', x: 0, z: -50, hw: 6, hd: 4.5 },
-  vet: { id: 'vet', x: 46, z: 12, hw: 7, hd: 5.5 },
-  play: { id: 'play', x: -44, z: 16, hw: 11, hd: 11 },
-  doors: { id: 'doors', x: 4, z: 46, hw: 5, hd: 3 },
-  cars: { id: 'cars', x: 52, z: -8, hw: 9, hd: 6.5 },
-  pets: { id: 'pets', x: -52, z: -8, hw: 8, hd: 6 },
+  // South of EW -22 (doors face north onto street)
+  home: { id: 'home', x: -38, z: -34, hw: 8, hd: 7, rot: 0 },
+  shop: { id: 'shop', x: 38, z: -34, hw: 7, hd: 5, rot: 0 },
+  // South on x=0 corridor, door faces north onto the corridor stub
+  eggs: { id: 'eggs', x: 0, z: -48, hw: 6, hd: 4.5, rot: 0 },
+  // West / east of NS ±22, door curb lands on the street
+  pets: { id: 'pets', x: -34, z: -8, hw: 8, hd: 6, rot: Math.PI / 2 },
+  cars: { id: 'cars', x: 34, z: -8, hw: 9, hd: 6.5, rot: -Math.PI / 2 },
+  // Playground west of plaza
+  play: { id: 'play', x: -44, z: 16, hw: 11, hd: 11, rot: Math.PI / 2 },
+  // North of EW 22
+  doors: { id: 'doors', x: 0, z: 46, hw: 5, hd: 3, rot: Math.PI },
+  // North of EW 22, door faces south onto that street
+  vet: { id: 'vet', x: 38, z: 30, hw: 7, hd: 5.5, rot: Math.PI },
 };
 
 export const PLAZA_R = 13;
@@ -46,13 +58,37 @@ export const RING_R = 17;
 export const ROAD_W = 4.8;
 export const APPROACH_W = 4.6;
 
+/** Cardinal facing: 0=+Z (north), π/2=+X (east), π=-Z (south), -π/2=-X (west). */
+export type Cardinal = 0 | number;
+
+/** Look up the explicit street-facing yaw for a landmark, or infer for plots. */
+export function faceStreet(x: number, z: number): number {
+  for (const p of Object.values(PLACES)) {
+    if (Math.hypot(p.x - x, p.z - z) < 0.5) return p.rot;
+  }
+  // House plots / free points: face the nearest main street
+  const ews = [-22, 22, -55, -40, -6, 34, 0];
+  const nss = [-22, 22, -55, 55, 0];
+  let best = { d: Infinity, rot: 0 };
+  for (const sz of ews) {
+    const d = Math.abs(z - sz);
+    if (d < best.d) best = { d, rot: sz > z ? 0 : Math.PI };
+  }
+  for (const sx of nss) {
+    const d = Math.abs(x - sx);
+    if (d < best.d) best = { d, rot: sx > x ? Math.PI / 2 : -Math.PI / 2 };
+  }
+  return best.rot;
+}
+
+/** @deprecated Alias of faceStreet (grid cardinals). */
 export function faceCenter(x: number, z: number) {
-  return Math.atan2(-x, -z);
+  return faceStreet(x, z);
 }
 
 /** Point in front of a place (local +z is the door side after rotation). */
-export function frontOf(p: { x: number; z: number }, dist: number) {
-  const rot = faceCenter(p.x, p.z);
+export function frontOf(p: { x: number; z: number; rot?: number }, dist: number) {
+  const rot = p.rot ?? faceStreet(p.x, p.z);
   return { x: p.x + Math.sin(rot) * dist, z: p.z + Math.cos(rot) * dist, rot };
 }
 
@@ -62,11 +98,11 @@ export function frontOf(p: { x: number; z: number }, dist: number) {
  */
 export const HOUSE_PLOTS: { x: number; z: number }[] = [
   { x: -38, z: -34 },
-  { x: -68, z: -40 },
-  { x: -58, z: -68 },
-  { x: -28, z: -68 },
-  { x: -12, z: -42 },
-  { x: -78, z: -58 },
+  { x: -58, z: -34 },
+  { x: -58, z: -50 },
+  { x: -38, z: -50 },
+  { x: -70, z: -50 },
+  { x: -70, z: -34 },
 ];
 
 function len(x1: number, z1: number, x2: number, z2: number) {
@@ -114,7 +150,7 @@ export function buildingsFromPlaces(): BuildingFoot[] {
     z: p.z,
     hw: p.hw,
     hd: p.hd,
-    rot: faceCenter(p.x, p.z),
+    rot: p.rot,
   }));
 }
 
@@ -140,80 +176,60 @@ export function buildRoadNetwork(): RoadSeg[] {
   const buildings = buildingsFromPlaces();
   const roads: RoadSeg[] = [];
 
+  const addForce = (x1: number, z1: number, x2: number, z2: number, width = ROAD_W) => {
+    roads.push({ x1, z1, x2, z2, width });
+  };
   const add = (x1: number, z1: number, x2: number, z2: number, width = ROAD_W) => {
     pushClear(roads, { x1, z1, x2, z2, width }, buildings);
   };
 
-  // --- Plaza square (around the fountain), not a spoke ring ---
+  // Plaza square
   const P = 14;
-  add(-P, -P, P, -P, 5.0);
-  add(P, -P, P, P, 5.0);
-  add(P, P, -P, P, 5.0);
-  add(-P, P, -P, -P, 5.0);
+  addForce(-P, -P, P, -P, 5.0);
+  addForce(P, -P, P, P, 5.0);
+  addForce(P, P, -P, P, 5.0);
+  addForce(-P, P, -P, -P, 5.0);
 
-  // --- Main streets (axis-aligned) ---
-  // East–West corridors
-  add(-70, -22, 70, -22, 5.2); // south of plaza: pets ↔ home/shop ↔ cars
-  add(-60, 22, 60, 22, 5.0); // north of plaza: play ↔ doors/vet belt
-  add(-80, -55, -10, -55, 4.6); // neighbourhood south belt
-  add(-80, -40, -20, -40, 4.4); // neighbourhood mid belt
+  // Main streets — pushClear so they never clip buildings
+  add(-70, -22, 70, -22, 5.2);
+  add(-60, 22, 60, 22, 5.0);
+  add(-80, -55, -10, -55, 4.6);
+  add(-80, -40, -20, -40, 4.4);
+  add(-22, -78, -22, 50, 5.0);
+  add(22, -60, 22, 50, 5.0);
+  // neighbourhood west spine (clear of pets which sit on x=-34)
+  add(-55, -78, -55, -20, 4.6);
+  add(0, -P, 0, -42, 4.8); // plaza → eggs corridor
+  add(0, P, 0, 40, 4.8); // plaza → doors
+  add(-P, 0, -22, 0, 4.8); // plaza west to NS -22
+  add(P, 0, 22, 0, 4.8); // plaza east to NS 22
 
-  // North–South corridors
-  add(-22, -78, -22, 40, 5.0); // west spine: houses / play
-  add(22, -60, 22, 50, 5.0); // east spine: eggs/shop/vet/doors
-  add(-55, -78, -55, 10, 4.6); // far-west neighbourhood
-  add(55, -40, 55, 20, 4.6); // far-east: cars / vet
-
-  // Extra cross links (still axis-aligned; form a real network)
-  add(-22, -22, 22, -22, 5.2); // already on EW but ensure plaza connector
-  add(0, -P, 0, -48, 4.8); // plaza south → eggs
-  add(0, P, 0, 42, 4.8); // plaza north → doors
-  add(-P, 0, -48, 0, 4.8); // plaza west → pets/play approach
-  add(P, 0, 50, 0, 4.8); // plaza east → cars/vet approach
-
-  // --- Short stubs: from nearest main street to each building door (L-shaped, axis-aligned) ---
-  // Landmark doors (front side facing plaza)
+  // --- Short stubs: door → street (curb lands on the facing main street) ---
   for (const p of Object.values(PLACES)) {
-    if (p.id === 'home') continue; // plot stub below
-    const door = frontOf(p, p.hd + 3.2);
-    // Snap stub to nearest cardinal main street
-    const candidates: { sx?: number; sz?: number; d: number }[] = [
-      { sz: -22, d: Math.abs(door.z - -22) },
-      { sz: 22, d: Math.abs(door.z - 22) },
-      { sz: -55, d: Math.abs(door.z - -55) },
-      { sz: 0, d: Math.abs(door.z - 0) },
-      { sx: -22, d: Math.abs(door.x - -22) },
-      { sx: 22, d: Math.abs(door.x - 22) },
-      { sx: -55, d: Math.abs(door.x - -55) },
-      { sx: 55, d: Math.abs(door.x - 55) },
-      { sx: 0, d: Math.abs(door.x - 0) },
-    ];
-    candidates.sort((a, b) => a.d - b.d);
-    const best = candidates[0];
-    if (best.sz !== undefined) {
-      // vertical stub from EW street up to door, plus short EW jog from street x to door x
-      const along = best.sz;
-      add(door.x, along, door.x, door.z, APPROACH_W);
-    } else if (best.sx !== undefined) {
-      add(best.sx, door.z, door.x, door.z, APPROACH_W);
+    if (p.id === 'home' || p.id === 'play') continue;
+    const door = frontOf(p, p.hd + 0.5);
+    // Snap curb onto the street the building faces
+    let curbX = door.x;
+    let curbZ = door.z;
+    if (Math.abs(p.rot) < 0.01) {
+      // face +Z (north): walk to nearest EW street north of door
+      curbZ = p.id === 'eggs' ? -22 : -22;
+    } else if (Math.abs(p.rot - Math.PI) < 0.01) {
+      curbZ = 22; // face south onto EW 22
+    } else if (p.rot > 0) {
+      curbX = -22; // face east onto NS -22
+    } else {
+      curbX = 22; // face west onto NS 22
     }
+    add(door.x, door.z, curbX, curbZ, APPROACH_W);
   }
 
-  // House plot stubs → nearest neighbourhood belt
+  // House plots face north onto EW -22 or -40
   for (const plot of HOUSE_PLOTS) {
-    const rot = faceCenter(plot.x, plot.z);
-    const door = { x: plot.x + Math.sin(rot) * 10, z: plot.z + Math.cos(rot) * 10 };
-    // attach to closest of z=-40, z=-55, x=-22, x=-55
-    const opts = [
-      { sz: -40, d: Math.abs(door.z + 40) },
-      { sz: -55, d: Math.abs(door.z + 55) },
-      { sx: -22, d: Math.abs(door.x + 22) },
-      { sx: -55, d: Math.abs(door.x + 55) },
-    ];
-    opts.sort((a, b) => a.d - b.d);
-    const b = opts[0] as { sx?: number; sz?: number };
-    if (b.sz !== undefined) add(door.x, b.sz, door.x, door.z, 4.0);
-    else if (b.sx !== undefined) add(b.sx, door.z, door.x, door.z, 4.0);
+    const rot = 0; // face +Z (north) toward the street belt
+    const door = { x: plot.x + Math.sin(rot) * 9, z: plot.z + Math.cos(rot) * 9 };
+    const curb = { x: plot.x + Math.sin(rot) * 14, z: plot.z + Math.cos(rot) * 14 };
+    add(door.x, door.z, curb.x, curb.z, 4.0);
   }
 
   return roads;
@@ -274,10 +290,30 @@ export function benchSpots(roads: readonly RoadSeg[]): { x: number; z: number; y
   return out;
 }
 
+/**
+ * Bench forward vector (from backrest through seat front).
+ * Avatar facing MUST equal this yaw so their back is against the backrest.
+ * Game forward = (sin(yaw), cos(yaw)).
+ */
+export function benchForward(sitYaw: number): { x: number; z: number } {
+  return { x: Math.sin(sitYaw), z: Math.cos(sitYaw) };
+}
+
 /** World offset of the backrest relative to the sit point for a given sit yaw. */
 export function benchBackrestOffset(sitYaw: number, depth = 0.3): { x: number; z: number } {
   // Backrest is behind the sitter (opposite of forward).
-  return { x: -Math.sin(sitYaw) * depth, z: -Math.cos(sitYaw) * depth };
+  const f = benchForward(sitYaw);
+  return { x: -f.x * depth, z: -f.z * depth };
+}
+
+/**
+ * Assert sit facing matches bench forward: backrest is behind the avatar.
+ * Returns the signed forward·(sit→backrest) which must be negative.
+ */
+export function sitFacesAwayFromBackrest(sitYaw: number): number {
+  const f = benchForward(sitYaw);
+  const back = benchBackrestOffset(sitYaw);
+  return f.x * back.x + f.z * back.z;
 }
 
 /** Lamp posts along the plaza square and main streets, off the asphalt. */

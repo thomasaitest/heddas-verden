@@ -54,7 +54,7 @@ export const EQUIPMENT: EquipDef[] = [
   ...SWING_XS.map((x, i): EquipDef => ({ id: `swing${i + 1}`, kind: 'swing', label: 'huska', x, z: SWING_Z, reach: 3.2, exit: { x, z: -0.9, yaw: 0 } })),
   { id: 'slide', kind: 'slide', label: 'sklia', x: SLIDE.x, z: SLIDE.z + 1.2, reach: 4.4, exit: { x: SLIDE.x, z: 3.4, yaw: 0 } },
   { id: 'seesaw', kind: 'seesaw', label: 'vippa', x: SEESAW.x, z: SEESAW.z, reach: 3.6, exit: { x: SEESAW.x, z: 7.1, yaw: Math.PI } },
-  { id: 'merry', kind: 'merry', label: 'karusellen', x: MERRY.x, z: MERRY.z, reach: 3.7, exit: { x: MERRY.x, z: 4.8, yaw: Math.PI } },
+  { id: 'merry', kind: 'merry', label: 'karusellen', x: MERRY.x, z: MERRY.z, reach: 3.7, exit: { x: MERRY.x, z: 4.2, yaw: Math.PI } },
   { id: 'tramp', kind: 'tramp', label: 'trampolinen', x: TRAMP.x, z: TRAMP.z, reach: 3.2, exit: { x: TRAMP.x, z: TRAMP.z + 3.2, yaw: Math.PI } },
 ];
 export const EQUIP_BY_ID: Record<string, EquipDef> = Object.fromEntries(EQUIPMENT.map((e) => [e.id, e]));

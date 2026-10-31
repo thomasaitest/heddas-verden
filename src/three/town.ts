@@ -7,7 +7,6 @@ import {
   PLAZA_R,
   benchSpots,
   buildRoadNetwork,
-  faceCenter,
   frontOf,
   lampSpots,
   onRoad,
@@ -580,8 +579,10 @@ export function buildTown(): Town {
     }
     anim.add(trampGroup);
     tag(trampGroup, 'tramp');
-    // fence: posts joined by rails, with a gap (gate) facing the plaza
-    const inGate = (a: number) => Math.abs(Math.atan2(Math.sin(a - faceCenter(P.play.x, P.play.z) + Math.PI / 2), Math.cos(a - faceCenter(P.play.x, P.play.z) + Math.PI / 2))) < 0.35;
+    // fence built in local space; group later rotates by play.rot. Local +Z
+    // becomes world forward, so the gate must open at a = π/2 (local +Z).
+    const gateA = Math.PI / 2;
+    const inGate = (a: number) => Math.abs(Math.atan2(Math.sin(a - gateA), Math.cos(a - gateA))) < 0.4;
     const FENCE_N = 28;
     for (let i = 0; i < FENCE_N; i++) {
       const a = (i / FENCE_N) * Math.PI * 2;
@@ -609,7 +610,7 @@ export function buildTown(): Town {
     circles.push(...ac.circles);
     playRot = f.rot;
     zones.push({ kind: 'play', x: P.play.x, z: P.play.z, r: 10.5, label: 'Lekeplassen ⚽' });
-    const pp = front(P.play, 0);
+    const pp = front(P.play, 13);
     entrances.play = { x: pp.x, z: pp.z, yaw: f.rot + Math.PI };
   }
 
@@ -732,7 +733,8 @@ export function buildTown(): Town {
   const housePlots: { x: number; z: number; rot: number }[] = HOUSE_PLOTS.map((plot) => ({
     x: plot.x,
     z: plot.z,
-    rot: faceCenter(plot.x, plot.z),
+    // Neighbourhood plots face north (+Z) onto the EW street belt
+    rot: 0,
   }));
   type PlotState = { holder: THREE.Group; rects: RectCollider[]; circles: CircleCollider[]; zone: Zone | null };
   const plots: PlotState[] = housePlots.map((plot, i) => {
@@ -741,7 +743,7 @@ export function buildTown(): Town {
     holder.rotation.y = plot.rot;
     group.add(holder);
     // empty lot pad
-    box(holder, '#cfe8b8', [0, 0.02, 0], [16, 0.04, 12]).userData.noCast = true;
+    box(holder, GRASS, [0, 0.015, 0], [15, 0.03, 11]).userData.noCast = true;
     return { holder, rects: [], circles: [], zone: i === 0 ? ({ kind: 'home', x: 0, z: 0, r: 3.5, label: 'Gå inn 🏠' } as Zone) : null };
   });
   if (plots[0].zone) zones.push(plots[0].zone);
@@ -761,7 +763,10 @@ export function buildTown(): Town {
     st.rects = [];
     st.circles = [];
     st.holder.clear();
-    box(st.holder, '#cfe8b8', [0, 0.02, 0], [16, 0.04, 12]).userData.noCast = true;
+    // Keep holder synced to (possibly relocated) plot coords — used by MP proofs too.
+    st.holder.position.set(plot.x, 0, plot.z);
+    st.holder.rotation.y = plot.rot;
+    box(st.holder, GRASS, [0, 0.015, 0], [15, 0.03, 11]).userData.noCast = true;
     if (!style) {
       if (st.zone && plotIdx !== 0) {
         const zi = zones.indexOf(st.zone);
