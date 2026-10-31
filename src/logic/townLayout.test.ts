@@ -6,6 +6,7 @@ import {
   buildRoadNetwork,
   buildingsFromPlaces,
   faceStreet,
+  HOUSE_PLOTS,
   onRoad,
   roadHitsBuilding,
   sitFacesAwayFromBackrest,
@@ -90,6 +91,18 @@ describe('bench sit facing math', () => {
       // vector from sit toward backrest should be opposite forward
       expect(back.x).toBeCloseTo(-f.x * 0.48, 8);
       expect(back.z).toBeCloseTo(-f.z * 0.48, 8);
+    }
+  });
+});
+
+describe('house plots', () => {
+  it('HOUSE_PLOTS clear of shops and playground (centres ≥ 22 m apart)', () => {
+    const buildings = buildingsFromPlaces().filter((b) => b.id !== 'home');
+    for (const plot of HOUSE_PLOTS) {
+      for (const b of buildings) {
+        const gap = Math.hypot(plot.x - b.x, plot.z - b.z) - Math.hypot(b.hw, b.hd) - 10;
+        expect(gap, `plot ${plot.x},${plot.z} vs ${b.id}`).toBeGreaterThan(0);
+      }
     }
   });
 });

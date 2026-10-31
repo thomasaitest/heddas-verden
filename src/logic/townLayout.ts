@@ -38,12 +38,12 @@ export interface BuildingFoot {
  */
 export const PLACES: Record<string, Place> = {
   // South of EW -22 (doors face north onto street)
-  home: { id: 'home', x: -38, z: -34, hw: 8, hd: 7, rot: 0 },
+  home: { id: 'home', x: -62, z: -58, hw: 8, hd: 7, rot: 0 },
   shop: { id: 'shop', x: 38, z: -34, hw: 7, hd: 5, rot: 0 },
   // South on x=0 corridor, door faces north onto the corridor stub
   eggs: { id: 'eggs', x: 0, z: -48, hw: 6, hd: 4.5, rot: 0 },
   // West / east of NS ±22, door curb lands on the street
-  pets: { id: 'pets', x: -34, z: -8, hw: 8, hd: 6, rot: Math.PI / 2 },
+  pets: { id: 'pets', x: -28, z: -8, hw: 8, hd: 6, rot: Math.PI / 2 },
   cars: { id: 'cars', x: 34, z: -8, hw: 9, hd: 6.5, rot: -Math.PI / 2 },
   // Playground west of plaza
   play: { id: 'play', x: -44, z: 16, hw: 11, hd: 11, rot: Math.PI / 2 },
@@ -67,8 +67,8 @@ export function faceStreet(x: number, z: number): number {
     if (Math.hypot(p.x - x, p.z - z) < 0.5) return p.rot;
   }
   // House plots / free points: face the nearest main street
-  const ews = [-22, 22, -55, -40, -6, 34, 0];
-  const nss = [-22, 22, -55, 55, 0];
+  const ews = [-22, 22, -48, -70, -6, 34, 0];
+  const nss = [-22, 22, -72, -90, 55, 0];
   let best = { d: Infinity, rot: 0 };
   for (const sz of ews) {
     const d = Math.abs(z - sz);
@@ -97,12 +97,13 @@ export function frontOf(p: { x: number; z: number; rot?: number }, dist: number)
  * Kept clear of shop/vet/play footprints.
  */
 export const HOUSE_PLOTS: { x: number; z: number }[] = [
-  { x: -38, z: -34 },
-  { x: -58, z: -34 },
-  { x: -58, z: -50 },
-  { x: -38, z: -50 },
-  { x: -70, z: -50 },
-  { x: -70, z: -34 },
+  // SW neighbourhood — well clear of pets/shop/play (min ~25 m gap)
+  { x: -62, z: -58 }, // plot 0 = local home (matches PLACES.home)
+  { x: -82, z: -58 },
+  { x: -82, z: -76 },
+  { x: -62, z: -76 },
+  { x: -98, z: -76 },
+  { x: -98, z: -58 },
 ];
 
 function len(x1: number, z1: number, x2: number, z2: number) {
@@ -193,12 +194,13 @@ export function buildRoadNetwork(): RoadSeg[] {
   // Main streets — pushClear so they never clip buildings
   add(-70, -22, 70, -22, 5.2);
   add(-60, 22, 60, 22, 5.0);
-  add(-80, -55, -10, -55, 4.6);
-  add(-80, -40, -20, -40, 4.4);
+  add(-100, -48, -40, -48, 4.6); // neighbourhood street north of house plots
+  add(-100, -70, -50, -70, 4.4); // back lane between plot rows
   add(-22, -78, -22, 50, 5.0);
   add(22, -60, 22, 50, 5.0);
-  // neighbourhood west spine (clear of pets which sit on x=-34)
-  add(-55, -78, -55, -20, 4.6);
+  // neighbourhood west spines (clear of pets at x=-28)
+  add(-72, -90, -72, -30, 4.6);
+  add(-90, -90, -90, -40, 4.4);
   add(0, -P, 0, -42, 4.8); // plaza → eggs corridor
   add(0, P, 0, 40, 4.8); // plaza → doors
   add(-P, 0, -22, 0, 4.8); // plaza west to NS -22
@@ -224,12 +226,10 @@ export function buildRoadNetwork(): RoadSeg[] {
     add(door.x, door.z, curbX, curbZ, APPROACH_W);
   }
 
-  // House plots face north onto EW -22 or -40
+  // House plots face north onto neighbourhood EW -48
   for (const plot of HOUSE_PLOTS) {
-    const rot = 0; // face +Z (north) toward the street belt
-    const door = { x: plot.x + Math.sin(rot) * 9, z: plot.z + Math.cos(rot) * 9 };
-    const curb = { x: plot.x + Math.sin(rot) * 14, z: plot.z + Math.cos(rot) * 14 };
-    add(door.x, door.z, curb.x, curb.z, 4.0);
+    const door = { x: plot.x, z: plot.z + 9 };
+    add(door.x, door.z, door.x, -48, 4.0);
   }
 
   return roads;

@@ -809,16 +809,18 @@ export function animateAvatar(rig: AvatarRig, t: number, pose: AvatarPose, speed
       r.rotation.set(-1.5, 0, -0.35);
       la.rotation.set(-0.9, 0, -0.6);
       ra.rotation.set(-0.9, 0, 0.6);
+      rig.body.position.set(0, 0, 0);
     } else {
-      // Thighs ~horizontal on the seat; shins hang over the front edge; lean into the backrest.
-      l.rotation.set(-1.22, 0.08, 0.05);
-      r.rotation.set(-1.22, -0.08, -0.05);
+      // Thighs nearly horizontal; lower legs hang over the seat front.
+      // Hip pivot body-local y=0.9; seat ~0.78 → drop body so butt meets seat.
+      l.rotation.set(-1.48, 0.04, 0.02);
+      r.rotation.set(-1.48, -0.04, -0.02);
       la.rotation.set(-0.25, 0, -0.1);
       ra.rotation.set(-0.25, 0, 0.1);
-      rig.body.rotation.x = -0.18;
-      rig.body.position.z = -0.06; // settle toward backrest
+      rig.body.rotation.x = -0.05;
+      // Drop onto seat (with resting holder y≈0.18); lean slightly into backrest
+      rig.body.position.set(0, -0.22, -0.08);
     }
-    rig.body.position.y = 0;
   } else if (pose === 'wave') {
     ra.rotation.set(0, 0, 2.6 + Math.sin(t * 10) * 0.35);
   } else if (pose === 'swing') {

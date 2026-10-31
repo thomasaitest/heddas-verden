@@ -91,6 +91,8 @@ export class Game {
   player = { pos: new THREE.Vector3(), vy: 0, yaw: 0, grounded: true, speed: 0, energy: ENERGY_MAX };
   /** Sitting on an outdoor bench to rest. */
   resting: { x: number; z: number; yaw: number } | null = null;
+  /** Proof/debug: lock orbit camera to an explicit pose. */
+  freezeCam: { x: number; y: number; z: number; lx: number; ly: number; lz: number } | null = null;
   /** Lying in a house bed (does not change time of day). */
   sleeping: SleepSpot | null = null;
   private sleepZzz: THREE.Sprite | null = null;
@@ -604,7 +606,7 @@ export class Game {
         break;
       case 'bench':
         this.resting = { x: z.x, z: z.z, yaw: z.yaw };
-        this.player.pos.set(z.x, 0.42, z.z);
+        this.player.pos.set(z.x, 0.0, z.z);
         this.player.yaw = z.yaw;
         this.player.vy = 0;
         this.player.grounded = true;
@@ -993,7 +995,8 @@ export class Game {
         p.vy = 0;
       }
     } else if (this.resting) {
-      p.pos.set(this.resting.x, 0.42, this.resting.z);
+      // Seat top is ~0.78; keep feet-origin a bit up so sit pose lands on the plank
+      p.pos.set(this.resting.x, 0.18, this.resting.z);
       p.yaw = this.resting.yaw;
       p.vy = 0;
       p.grounded = true;
@@ -1033,7 +1036,7 @@ export class Game {
       }
       if (mlen > 0.05) p.energy = drainWalk(p.energy, dt, true);
     }
-    if (!this.using) this.collide();
+    if (!this.using && !this.resting && !this.sleeping) this.collide();
     const moved = this.using ? 0 : Math.hypot(p.pos.x - prev.x, p.pos.z - prev.z);
 
     this.hud.setEnergy(this.player.energy);
@@ -1147,6 +1150,11 @@ export class Game {
     this.updateZones(dt, moved, now);
 
     // camera
+    if (this.freezeCam) {
+      const f = this.freezeCam;
+      this.camera.position.set(f.x, f.y, f.z);
+      this.camera.lookAt(f.lx, f.ly, f.lz);
+    } else {
     const target = new THREE.Vector3(p.pos.x, p.pos.y + (ride ? 3.5 : 2.4), p.pos.z);
     // on a swing or the merry-go-round the camera watches the whole piece, not the (moving) rider
     if (seat) target.set(seat.focus.x, seat.focus.y, seat.focus.z);
@@ -1172,6 +1180,7 @@ export class Game {
       if (this.camera.position.y < 0.6) this.camera.position.y = 0.6;
       this.camera.lookAt(target);
     }
+    } // end !freezeCam
     if (this.mode === 'house') {
       this.interior.updateWalls(this.camera.position, new THREE.Vector3(p.pos.x, p.pos.y, p.pos.z), this.playerFloor());
       this.interior.update(t);

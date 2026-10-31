@@ -181,19 +181,34 @@ function homeExterior(style: HouseStyle, locked = false): THREE.Group {
     for (let i = 0; i < 7; i++) box(g, info.wall, [-w / 2 + 1 + i * ((w - 2) / 6), h + 0.9, d / 2], [1, 0.8, 0.8]);
     part(g, G.heart(), '#ff8fb1', [0, h - 0.8, d / 2 + 0.1], [2, 2, 0.6]);
   } else {
-    // Clean pyramid roof sized to the footprint (no z-fighting with the upper floor).
-    const roofMesh = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1, 4), new THREE.MeshLambertMaterial({ color: info.roof }));
-    roofMesh.position.set(0, h + 2.6, 0);
-    roofMesh.rotation.y = Math.PI / 4;
-    roofMesh.scale.set(w * 1.52, 4.4, d * 1.52); // eaves overhang past the walls
-    roofMesh.castShadow = true;
-    g.add(roofMesh);
-    // thin ceiling slab under the roof so the 2nd floor is closed
-    box(g, info.wall, [0, h + 0.15, 0], [w + 0.2, 0.3, d + 0.2]).userData.noCast = true;
-    // fascia / eave band so the overhang reads clearly from the street
-    box(g, info.roof, [0, h + 0.55, 0], [w * 1.42, 0.28, d * 1.42]).userData.noCast = true;
+    // Proper eaves: soffit overhang ~0.7 m past each wall + pitched roof on top
+    const eave = 0.7;
+    const rw = w + eave * 2;
+    const rd = d + eave * 2;
+    box(g, info.wall, [0, h + 0.12, 0], [w + 0.15, 0.24, d + 0.15]).userData.noCast = true; // ceiling
+    // soffit / eaves slab clearly past the walls (the visible overhang)
+    box(g, info.roof, [0, h + 0.38, 0], [rw, 0.28, rd]).userData.noCast = true;
+    // fascia boards under the eave lip
+    box(g, info.roof, [0, h + 0.22, 0], [rw + 0.2, 0.14, rd + 0.2]).userData.noCast = true;
+    if (style === 'moderne') {
+      // flat modern roof with a clear lip past the walls
+      box(g, info.roof, [0, h + 0.7, 0], [rw + 0.15, 0.45, rd + 0.15]).userData.noCast = true;
+    } else {
+      // Hip roof: pitched pyramid on the eaves slab — solid, no hollow attic, clear overhang
+      const rise = 3.4;
+      const roofMesh = new THREE.Mesh(
+        new THREE.ConeGeometry(0.5, 1, 4),
+        new THREE.MeshLambertMaterial({ color: info.roof }),
+      );
+      roofMesh.position.set(0, h + 0.38 + rise / 2, 0);
+      roofMesh.rotation.y = Math.PI / 4;
+      // Cone r=0.5 → scale X/Z so base matches eaves half-diagonal
+      roofMesh.scale.set(rw * Math.SQRT2, rise, rd * Math.SQRT2);
+      roofMesh.castShadow = true;
+      g.add(roofMesh);
+    }
     if (style === 'gard' || style === 'trehus') for (const s of [-1, 1]) box(g, '#ffffff', [s * 3, 3.2, d / 2 + 0.02], [2.4, 0.3, 0.1], [0, 0, s * 0.8]);
-    if (style !== 'moderne') cyl(g, '#b46a50', [w / 4, h + 3.2, -d / 6], [0.9, 2.6, 0.9]);
+    if (style !== 'moderne') cyl(g, '#b46a50', [w / 4, h + 2.4, -d / 6], [0.9, 2.2, 0.9]);
   }
   // door + windows
   rbox(g, '#a0632f', [0, 2.2, d / 2 + 0.05], [2.6, 3.6, 0.3]);
@@ -288,24 +303,20 @@ export function buildTown(): Town {
   surfaces.push({ x: 0, z: 0, r: 4.2, top: 1.15 }); // rim
   surfaces.push({ x: 0, z: 0, r: 1.9, top: 3.85 }); // upper bowl
   const water = sph(group, '#bff0ff', [0, 4.2, 0], [1.6, 1.6, 1.6], undefined, 0.3);
-  // Cheap water jets that pulse on/off (cylinders + droplets — readable on iPhone)
+  // Water jets: tall bright arcs (~2–2.5 m) that pulse on/off — readable on iPhone
   const jets: THREE.Mesh[] = [];
   for (let i = 0; i < 6; i++) {
     const ang = (i / 6) * Math.PI * 2;
-    const j = cyl(group, '#7fd8ff', [Math.cos(ang) * 0.5, 5.4, Math.sin(ang) * 0.5], [0.35, 1.8, 0.35]);
+    const j = cyl(group, '#7ef0ff', [Math.cos(ang) * 0.55, 5.9, Math.sin(ang) * 0.55], [0.38, 3.0, 0.38], undefined, 0.85);
     j.userData.noCast = true;
-    (j.material as THREE.MeshLambertMaterial).transparent = true;
-    (j.material as THREE.MeshLambertMaterial).opacity = 0.75;
     jets.push(j as THREE.Mesh);
   }
-  const centerJet = cyl(group, '#bfefff', [0, 6.0, 0], [0.55, 2.4, 0.55]);
+  const centerJet = cyl(group, '#f2ffff', [0, 6.7, 0], [0.72, 3.6, 0.72], undefined, 1.0);
   centerJet.userData.noCast = true;
-  (centerJet.material as THREE.MeshLambertMaterial).transparent = true;
-  (centerJet.material as THREE.MeshLambertMaterial).opacity = 0.8;
   jets.push(centerJet as THREE.Mesh);
-  for (let i = 0; i < 4; i++) {
-    const ang = (i / 4) * Math.PI * 2 + 0.4;
-    const d = sph(group, '#9ae6ff', [Math.cos(ang) * 1.5, 5.0, Math.sin(ang) * 1.5], [0.45, 0.45, 0.45]);
+  for (let i = 0; i < 8; i++) {
+    const ang = (i / 8) * Math.PI * 2 + 0.2;
+    const d = sph(group, '#c8f8ff', [Math.cos(ang) * 1.5, 5.4, Math.sin(ang) * 1.5], [0.42, 0.42, 0.42], undefined, 0.7);
     d.userData.noCast = true;
     jets.push(d as THREE.Mesh);
   }
@@ -704,26 +715,25 @@ export function buildTown(): Town {
     // Seat centre in world; sitter sits toward the backrest so their back touches it.
     const seatX = b.x;
     const seatZ = b.z;
-    const sitX = seatX - fx * 0.22;
-    const sitZ = seatZ - fz * 0.22;
+    // Sit on the front half of the seat so collision never shoves the avatar behind the backrest.
+    // (Backrest/seat are visual-only — no solid() — so resting can't be pushed through them.)
+    const sitX = seatX + fx * 0.12;
+    const sitZ = seatZ + fz * 0.12;
     for (const sx of [-1.15, 1.15]) for (const sz of [-0.32, 0.32]) {
       const lx = seatX + rx * sx + fx * sz;
       const lz = seatZ + rz * sx + fz * sz;
+      // short legs stay solid so you can't walk through the bench footprint
       solid(cyl(stat, '#8a5a3c', [lx, 0.35, lz], [0.16, 0.7, 0.16]), 'circle', 0.05, 0.8);
     }
-    solid(box(stat, '#c98a55', [seatX, 0.88, seatZ], [2.8, 0.16, 0.95], [0, sitYaw, 0]), 'rect', 0.05, 1.0);
-    // backrest at the rear edge of the seat
-    solid(
-      box(
-        stat,
-        '#c98a55',
-        [seatX - fx * 0.48, 1.38, seatZ - fz * 0.48],
-        [2.8, 0.75, 0.14],
-        [0, sitYaw, 0],
-      ),
-      'rect',
-      0.05,
-      1.8,
+    // seat plank — visual only (no collider)
+    box(stat, '#c98a55', [seatX, 0.78, seatZ], [2.8, 0.16, 1.0], [0, sitYaw, 0]);
+    // backrest — visual only (collider was shoving sitters behind the bench)
+    box(
+      stat,
+      '#c98a55',
+      [seatX - fx * 0.5, 1.35, seatZ - fz * 0.5],
+      [2.8, 0.9, 0.14],
+      [0, sitYaw, 0],
     );
     // Interaction / sit pose uses the centred sit point (not a corner of the bench).
     benches.push({ x: sitX, z: sitZ, yaw: sitYaw });
@@ -813,7 +823,10 @@ export function buildTown(): Town {
         }
       });
       for (const m of toRemove) m.parent?.remove(m);
-      sign(ext, (locked ? '🔒 ' : '') + label.slice(0, 8), 8.0, (ext.userData.size as { d: number }).d / 2 + 0.12, locked ? '#555a75' : '#54c45e', 3.6);
+      const size = ext.userData.size as { w: number; d: number };
+      const postZ = size.d / 2 + 2.4;
+      cyl(ext, '#8a5a3c', [0, 1.4, postZ], [0.18, 2.8, 0.18]);
+      sign(ext, (locked ? '🔒 ' : '') + label.slice(0, 8), 3.2, postZ + 0.05, locked ? '#555a75' : '#54c45e', 3.2);
     }
     const size = ext.userData.size as { w: number; d: number };
     // Parent first so collectColliders reads world-space footprints for the plot.
@@ -916,13 +929,13 @@ export function buildTown(): Town {
         const j = jets[i]!;
         j.visible = jetOn;
         if (jetOn) {
-          const pulse = 0.85 + Math.sin(t * 8 + i * 1.1) * 0.15;
-          const base = i < 6 ? 5.2 : i === 6 ? 5.8 : 4.8;
-          j.position.y = base + Math.abs(Math.sin(t * 6 + i)) * (i < 7 ? 0.85 : 0.4);
+          const pulse = 0.9 + Math.sin(t * 9 + i * 1.1) * 0.12;
+          const base = i < 6 ? 5.9 : i === 6 ? 6.7 : 5.4;
+          j.position.y = base + Math.abs(Math.sin(t * 7 + i)) * (i <= 6 ? 1.35 : 0.7);
           if (i >= 7) {
-            const ang = ((i - 7) / 4) * Math.PI * 2 + 0.4 + t * 1.5;
-            j.position.x = Math.cos(ang) * (1.2 + Math.sin(t * 4 + i) * 0.35);
-            j.position.z = Math.sin(ang) * (1.2 + Math.sin(t * 4 + i) * 0.35);
+            const ang = ((i - 7) / 8) * Math.PI * 2 + 0.2 + t * 2.0;
+            j.position.x = Math.cos(ang) * (1.5 + Math.sin(t * 5 + i) * 0.55);
+            j.position.z = Math.sin(ang) * (1.5 + Math.sin(t * 5 + i) * 0.55);
           }
           j.scale.setScalar(pulse);
         }

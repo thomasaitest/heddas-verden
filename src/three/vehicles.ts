@@ -103,12 +103,15 @@ export function buildCar(carId: string): THREE.Group {
       glassPanel(g, [s * (bodyW / 2 - 0.1), cabinBase + cabinH * 0.5, cabinZ], [0.06, cabinH * 0.8, cabinLen - 0.55]);
     }
   } else if (kind === 'convertible') {
-    // Open top: windshield only + roll bar
-    glassPanel(g, [0, 1.15, cabinZ + 0.7], [bodyW - 0.6, 0.85, 0.06], [-0.35, 0, 0]);
+    // Truly open top: low windshield frame only (no glass cabin), roll hoop
+    rbox(g, light, [0, 1.05, cabinZ + 0.85], [bodyW - 0.7, 0.08, 0.08], [-0.4, 0, 0]);
     for (const s of [-1, 1]) {
-      cyl(g, dark, [s * (bodyW / 2 - 0.35), 1.2, cabinZ - 0.4], [0.12, 0.9, 0.12]);
+      rbox(g, light, [s * (bodyW / 2 - 0.45), 0.95, cabinZ + 0.55], [0.08, 0.7, 0.08], [-0.25, 0, 0]);
     }
-    rbox(g, dark, [0, 1.65, cabinZ - 0.4], [bodyW - 0.5, 0.1, 0.12]);
+    for (const s of [-1, 1]) {
+      cyl(g, dark, [s * (bodyW / 2 - 0.4), 1.15, cabinZ - 0.55], [0.1, 0.85, 0.1]);
+    }
+    rbox(g, dark, [0, 1.55, cabinZ - 0.55], [bodyW - 0.55, 0.08, 0.1]);
   } else {
     // beetle windows carved as flat glass on the bubble
     glassPanel(g, [0, 1.15, 1.2], [bodyW * 0.55, 0.7, 0.08], [-0.4, 0, 0]);
