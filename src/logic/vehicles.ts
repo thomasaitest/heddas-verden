@@ -49,3 +49,12 @@ export function vehicleSpeed(opts: { driving: boolean; pramming: boolean; riding
   if (opts.pramming) return PRAM_SPEED;
   return WALK_SPEED;
 }
+
+
+/** Collision radius in town: cars need a wide body so shops/benches/props block them. */
+export function vehicleBodyRadius(opts: { driving: boolean; pramming: boolean; riding: boolean }): number {
+  if (opts.driving) return 2.45;
+  if (opts.pramming) return 1.35;
+  if (opts.riding) return 1.3;
+  return 0.55;
+}

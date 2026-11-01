@@ -14,7 +14,9 @@ import { movePlayer, resolve, surfaceUnder, type Colliders } from './logic/colli
 import { afterJump, canJump, drainWalk, ENERGY_MAX, restEnergy } from './logic/energy.ts';
 import { nearestBed, shouldWakeFromBed, type SleepSpot } from './logic/sleep.ts';
 import { skyAt, skyLabel, type SkyState } from './logic/weather.ts';
-import { canDrive, canPram, defaultCar, defaultPram, vehicleSpeed } from './logic/vehicles.ts';
+import { canDrive, canPram, defaultCar, defaultPram, vehicleBodyRadius, vehicleSpeed } from './logic/vehicles.ts';
+import { standInFrontOfBench } from './logic/benchStand.ts';
+import { MISSION_BY_KIND, missionDone, missionProgress, offerMission, type MissionState } from './logic/missions.ts';
 import { ACTIVITIES, activityPose, canStartActivity, nearPlaza, type ActivityKind } from './logic/activity.ts';
 import { acceptVisit, idleVisit, receiveAsk, startAsk, tickVisit, type VisitState } from './logic/visit.ts';
 import { guestHouseFromWire, houseToWire, type HouseWire } from './logic/houseWire.ts';
@@ -70,6 +72,7 @@ export interface PanelHooks {
   openEggs(): void;
   openDoors(): void;
   openVetInfo(): void;
+  openMissionSheet(def: { title: string; hint: string; emoji: string; reward: number }, progress: number, onNew: () => void): void;
   feedMenu(uid: string): void;
   toyMenu(): void;
 }
@@ -92,6 +95,12 @@ export class Game {
   player = { pos: new THREE.Vector3(), vy: 0, yaw: 0, grounded: true, speed: 0, energy: ENERGY_MAX };
   /** Sitting on an outdoor bench to rest. */
   resting: { x: number; z: number; yaw: number } | null = null;
+  /** Current player quest (Oppdrag), or null until the player asks for one. */
+  mission: MissionState | null = null;
+  /** Vet: player must press the prompt before the pet lies in the bed. */
+  vetHealUid: string | null = null;
+  /** Pet picking apples / dancing at the plaza. */
+  petJob: { uid: string; kind: 'epler' | 'fest'; until: number } | null = null;
   /** Proof/debug: lock orbit camera to an explicit pose. */
   freezeCam: { x: number; y: number; z: number; lx: number; ly: number; lz: number } | null = null;
   /** Lying in a house bed (does not change time of day). */
@@ -140,7 +149,7 @@ export class Game {
   private lastTickAt = 0;
   private stickyNear: Game['nearZone'] = null;
   private stickyNearUntil = 0;
-  private nearZone: Zone | { kind: 'exit'; label: string } | { kind: 'equip'; id: string; label: string } | { kind: 'equip-off'; label: string } | { kind: 'bench'; label: string; x: number; z: number; yaw: number } | { kind: 'bench-off'; label: string } | { kind: 'bed'; label: string; spot: SleepSpot } | { kind: 'bed-off'; label: string } | { kind: 'lock'; label: string } | { kind: 'visit'; label: string; peerId: string; peerName: string } | { kind: 'plaza'; label: string } | { kind: 'mini'; label: string } | null = null;
+  private nearZone: Zone | { kind: 'exit'; label: string } | { kind: 'equip'; id: string; label: string } | { kind: 'equip-off'; label: string } | { kind: 'bench'; label: string; x: number; z: number; yaw: number } | { kind: 'bench-off'; label: string } | { kind: 'bed'; label: string; spot: SleepSpot } | { kind: 'bed-off'; label: string } | { kind: 'lock'; label: string } | { kind: 'visit'; label: string; peerId: string; peerName: string } | { kind: 'plaza'; label: string } | { kind: 'mini'; label: string } | { kind: 'vet-heal'; label: string; uid: string } | { kind: 'pet-apple'; label: string; uid: string; x: number; z: number } | { kind: 'pet-fest'; label: string; uid: string } | null = null;
   /** The playground piece you are sitting on (swing, slide, seesaw, merry-go-round), if any. */
   using: { id: string; since: number } | null = null;
   private bubbleTex = new Map<string, THREE.Texture>();
@@ -205,6 +214,7 @@ export class Game {
       activity: () => this.toggleActivity(),
       mp: () => this.mp?.openMenu(),
       emote: () => this.mp?.openEmotes(),
+      mission: () => this.openMission(),
     });
     this.hud.soundBtn.textContent = this.save.sound ? '🔊' : '🔇';
     this.input = new Input(this.renderer.domElement, this.hud.joyBase, this.hud.joyKnob, this.hud.jump);
@@ -641,8 +651,7 @@ export class Game {
         toast('Hviler… Energien fylles opp 💤');
         break;
       case 'bench-off':
-        this.resting = null;
-        this.player.pos.y = 0;
+        this.standFromBench();
         break;
       case 'bed':
         this.sleeping = z.spot;
@@ -655,6 +664,17 @@ export class Game {
         break;
       case 'bed-off':
         this.wakeFromBed();
+        break;
+      case 'vet-heal':
+        this.vetHealUid = z.uid;
+        toast('Dyret legger seg i sengen for å bli friskt 🛏️', 'ok');
+        if (this.mission?.kind === 'dyrlege') this.bumpMission(0.35);
+        break;
+      case 'pet-apple':
+        this.startPetApple(z.uid, z.x, z.z);
+        break;
+      case 'pet-fest':
+        this.startPetFest(z.uid);
         break;
       case 'lock':
         this.toggleHouseLock();
@@ -1029,8 +1049,7 @@ export class Game {
       p.grounded = true;
       p.energy = restEnergy(p.energy, dt);
       if (inp.jumpPressed || mlen > 0.15) {
-        this.resting = null;
-        p.pos.y = 0;
+        this.standFromBench();
       }
     } else if (this.sleeping) {
       p.pos.set(this.sleeping.x, this.sleeping.y, this.sleeping.z);
@@ -1240,10 +1259,17 @@ export class Game {
   /** Player body size: smaller indoors so furniture doesn't feel like a maze. */
   private playerRadius(): number {
     if (this.mode === 'house') return this.riding ? 1.0 : 0.45;
-    return this.riding ? 1.3 : 0.55;
+    return vehicleBodyRadius({ driving: !!this.driving, pramming: !!this.pramming, riding: !!this.riding });
   }
   private colliders(): Colliders {
-    return this.mode === 'house' ? this.interior.collidersFor(this.playerFloor()) : this.town;
+    if (this.mode === 'house') return this.interior.collidersFor(this.playerFloor());
+    if (this.driving || this.pramming) {
+      return {
+        rects: [...this.town.rects, ...this.town.vehicleRects],
+        circles: [...this.town.circles, ...this.town.vehicleCircles],
+      };
+    }
+    return this.town;
   }
   /** Settle the player after jumping/placing furniture: push out of anything solid. */
   private collide() {
@@ -1289,6 +1315,81 @@ export class Game {
     this.player.pos.z = THREE.MathUtils.clamp(this.player.pos.z, -d, d);
   }
 
+
+  private bumpMission(amount: number) {
+    if (!this.mission) return;
+    this.mission = missionProgress(this.mission, amount);
+    if (missionDone(this.mission)) {
+      const def = MISSION_BY_KIND[this.mission.kind];
+      const reward = def.reward;
+      this.commit({ ...this.save, bucks: this.save.bucks + reward, stats: { ...this.save.stats, tasks: this.save.stats.tasks + 1 } });
+      toast(`Oppdrag klart! ${def.emoji} +${reward} bucks`, 'gold');
+      sfx.coin();
+      this.mission = null;
+      this.hud.setMission(null);
+    } else {
+      this.hud.setMission(this.mission);
+    }
+  }
+
+  /** Offer or show the current Oppdrag. */
+  openMission() {
+    if (this.mission && !missionDone(this.mission)) {
+      const def = MISSION_BY_KIND[this.mission.kind];
+      toast(`${def.emoji} ${def.title} — ${def.hint} (${Math.round(this.mission.progress * 100)}%)`, 'ok');
+      // Offer a replacement if they tap again while holding one: show panel-like choice via second toast path
+      this.panels.openMissionSheet(def, this.mission.progress, () => {
+        this.mission = offerMission(this.rng, this.mission?.kind ?? null);
+        this.hud.setMission(this.mission);
+        const n = MISSION_BY_KIND[this.mission.kind];
+        toast(`Nytt oppdrag: ${n.title} ${n.emoji}`, 'ok');
+      });
+      return;
+    }
+    this.mission = offerMission(this.rng, null);
+    this.hud.setMission(this.mission);
+    const def = MISSION_BY_KIND[this.mission.kind];
+    toast(`Nytt oppdrag: ${def.title} ${def.emoji}`, 'ok');
+    this.panels.openMissionSheet(def, 0, () => {
+      this.mission = offerMission(this.rng, this.mission?.kind ?? null);
+      this.hud.setMission(this.mission);
+      const n = MISSION_BY_KIND[this.mission.kind];
+      toast(`Nytt oppdrag: ${n.title} ${n.emoji}`, 'ok');
+    });
+  }
+
+  private startPetApple(uid: string, x: number, z: number) {
+    const a = this.actors.get(uid);
+    if (!a) return;
+    this.petJob = { uid, kind: 'epler', until: this.time + 4.5 };
+    a.care = { x, z, y: 0.2, pose: 'happy' };
+    a.happyUntil = this.time + 4.5;
+    toast('Plukker epler… 🍎', 'ok');
+    sfx.pop();
+  }
+
+  private startPetFest(uid: string) {
+    const a = this.actors.get(uid);
+    if (!a) return;
+    this.petJob = { uid, kind: 'fest', until: this.time + 8 };
+    a.care = { x: 0, z: 4.2, y: 0, pose: 'happy' };
+    a.happyUntil = this.time + 8;
+    toast('Fest på torget! 💃', 'ok');
+    sfx.pop();
+  }
+
+  /** Get up from a bench: stand in front of it, not inside the seat. */
+  private standFromBench() {
+    if (!this.resting) return;
+    const stand = standInFrontOfBench(this.resting);
+    this.player.pos.set(stand.x, 0, stand.z);
+    this.player.yaw = stand.yaw;
+    this.player.vy = 0;
+    this.player.grounded = true;
+    this.resting = null;
+    if (this.mission?.kind === 'benk') this.bumpMission(0.55);
+  }
+
   private wakeFromBed() {
     if (!this.sleeping) return;
     const y = this.mode === 'house' ? groundHeight(this.interior.layout, this.sleeping.x, this.sleeping.z, this.playerFloor()) : 0;
@@ -1317,7 +1418,7 @@ export class Game {
     this.sleepZzz = s;
   }
 
-    private updatePets(dt: number, t: number, _moved: number) {
+  private updatePets(dt: number, t: number, _moved: number) {
     const p = this.player;
     let followIdx = 0;
     for (const a of this.actors.values()) {
@@ -1344,6 +1445,20 @@ export class Game {
         a.yaw = p.yaw;
         pose = 'sleep';
         a.speed = p.speed;
+      } else if (this.driving && equipped) {
+        // Ride along in the car (passenger seats), visible inside the cabin.
+        const fy = p.yaw;
+        const side = followIdx % 2 === 0 ? 1 : -1;
+        const row = Math.floor(followIdx / 2);
+        a.pos.set(
+          p.pos.x + Math.cos(fy) * side * 0.55 - Math.sin(fy) * (0.15 + row * 0.55),
+          0.72,
+          p.pos.z - Math.sin(fy) * side * 0.55 - Math.cos(fy) * (0.15 + row * 0.55),
+        );
+        a.yaw = p.yaw;
+        pose = 'happy';
+        a.speed = p.speed;
+        followIdx++;
       } else {
         let target = new THREE.Vector3(a.pos.x, 0, a.pos.z);
         let stopDist = 0.3;
@@ -1554,6 +1669,26 @@ export class Game {
           }
         }
       }
+            // Vet: must press a button before the sick pet lies in the bed
+      if (!near && inVet && !this.driving) {
+        const sick = this.equippedPets().find((pet) => pet.need?.kind === 'syk');
+        if (sick && this.vetHealUid !== sick.uid) {
+          near = { kind: 'vet-heal', label: `Legg ${sick.name} i sengen 🛏️`, uid: sick.uid };
+        }
+      }
+      // Pet picks apples from a nearby tree
+      if (!near && this.mode === 'town' && !this.driving && !this.petJob) {
+        const pet = this.equippedPets()[0];
+        if (pet) {
+          const tree = this.town.appleTrees.find((tr) => Math.hypot(tr.x - p.x, tr.z - p.z) < 3.2);
+          if (tree) near = { kind: 'pet-apple', label: `Plukk epler med ${pet.name} 🍎`, uid: pet.uid, x: tree.x, z: tree.z };
+        }
+      }
+      // Pet joins the plaza party
+      if (!near && nearPlaza(p.x, p.z) && !this.driving && !this.petJob) {
+        const pet = this.equippedPets()[0];
+        if (pet) near = { kind: 'pet-fest', label: `Fest med ${pet.name} 💃`, uid: pet.uid };
+      }
       if (!near && nearPlaza(p.x, p.z) && !this.activity && !this.driving) {
         near = { kind: 'plaza', label: 'Fest 💃' } as Game['nearZone'];
       }
@@ -1593,16 +1728,20 @@ export class Game {
     for (const pet of this.equippedPets()) {
       const a = this.actors.get(pet.uid);
       if (!a) continue;
-      a.care = null;
+      const jobHold = this.petJob && this.petJob.uid === pet.uid;
+      if (!jobHold) a.care = null;
       if (!pet.need) continue;
+      if (jobHold) continue; // pet is busy picking apples / partying
       const where: CareWhere = NEED_INFO[pet.need.kind].where;
       let amount = 0;
       if (where === 'dyrlege' && inVet) {
-        amount = dt;
-        // the sick animal lies down in the hospital bed closest to you
-        const beds = [...this.town.vetBeds].sort((b1, b2) => Math.hypot(b1.x - p.x, b1.z - p.z) - Math.hypot(b2.x - p.x, b2.z - p.z));
-        const bed = beds[0];
-        a.care = { x: bed.x, z: bed.z, y: bed.y, pose: 'sleep' };
+        // Healing only after the player presses the vet prompt (vetHealUid).
+        if (this.vetHealUid === pet.uid) {
+          amount = dt;
+          const beds = [...this.town.vetBeds].sort((b1, b2) => Math.hypot(b1.x - p.x, b1.z - p.z) - Math.hypot(b2.x - p.x, b2.z - p.z));
+          const bed = beds[0];
+          a.care = { x: bed.x, z: bed.z, y: bed.y, pose: 'sleep' };
+        }
       } else if (where === 'lek' && inPlay) {
         amount = dt;
         a.care = { x: p.x + Math.sin(this.time * 2) * 2, z: p.z + Math.cos(this.time * 2) * 2, pose: 'happy' };
@@ -1625,10 +1764,36 @@ export class Game {
           save = r.save;
           changed = true;
         }
-        if (r.done) this.celebrate(pet, r.reward, r.grewUp, save);
+        if (r.done) {
+          if (this.vetHealUid === pet.uid) this.vetHealUid = null;
+          if (this.mission?.kind === 'dyrlege' && where === 'dyrlege') this.bumpMission(1);
+          this.celebrate(pet, r.reward, r.grewUp, save);
+        }
       }
     }
     if (changed) this.commit(save);
+
+    // Finish timed pet jobs (apples / plaza party) with a small reward.
+    if (this.petJob && this.time >= this.petJob.until) {
+      const job = this.petJob;
+      this.petJob = null;
+      const a = this.actors.get(job.uid);
+      if (a) a.care = null;
+      const pay = job.kind === 'epler' ? 8 : 12;
+      this.commit({ ...this.save, bucks: this.save.bucks + pay });
+      toast(job.kind === 'epler' ? `Epler plukket! +${pay} 🍎` : `Fest ferdig! +${pay} 💃`, 'gold');
+      sfx.coin();
+      if (this.mission?.kind === job.kind) this.bumpMission(1);
+    }
+
+    // Driving distance counts toward the drive mission.
+    if (this.driving && this.mission?.kind === 'kjør' && moved > 0) {
+      this.bumpMission(Math.min(0.08, moved * 0.02));
+    }
+    // Visiting the shop on foot.
+    if (!this.driving && this.town.insideBuilding(this.player.pos.x, this.player.pos.z) === 'shop' && this.mission?.kind === 'butikk') {
+      this.bumpMission(0.08);
+    }
   }
 
   celebrate(pet: PetState, reward: number, grewUp: boolean, save: SaveData) {
@@ -1852,11 +2017,28 @@ export class Game {
   }
 
   private clearVehicle() {
+    const wasDriving = !!this.driving;
+    const yaw = this.player.yaw;
+    const px = this.player.pos.x;
+    const pz = this.player.pos.z;
     this.driving = null;
     this.pramming = null;
     if (this.vehicleMesh) {
       this.scene.remove(this.vehicleMesh);
       this.vehicleMesh = null;
+    }
+    if (wasDriving) {
+      // Pets hop out beside the parked car.
+      let i = 0;
+      for (const uid of this.save.equipped) {
+        const a = this.actors.get(uid);
+        if (!a) continue;
+        const side = i % 2 === 0 ? 1.6 : -1.6;
+        a.pos.set(px + Math.cos(yaw) * side, 0, pz - Math.sin(yaw) * side);
+        a.care = null;
+        i++;
+      }
+      if (this.mission?.kind === 'kjør') this.bumpMission(0.4);
     }
     this.updateHud();
   }

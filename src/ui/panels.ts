@@ -889,3 +889,24 @@ export function starterFlow(game: Game) {
 export function foodName(id: string) {
   return FOOD_BY_ID[id]?.name ?? id;
 }
+
+
+/** Oppdrag sheet: show current quest and optionally roll a new one. */
+export function openMissionSheet(
+  _game: import('../game.ts').Game,
+  def: { title: string; hint: string; emoji: string; reward: number },
+  progress: number,
+  onNew: () => void,
+): void {
+  const s = sheet(`Oppdrag ${def.emoji}`, '#7b8cff');
+  s.body.replaceChildren(
+    el('p', { class: 'lead' }, def.title),
+    el('p', { class: 'hint' }, def.hint),
+    el('p', {}, `Fremgang: ${Math.round(progress * 100)}% · Belønning +${def.reward} bucks`),
+    button('Nytt oppdrag 🎲', () => {
+      onNew();
+      s.close();
+    }, 'btn buy'),
+    button('Lukk', () => s.close(), 'btn'),
+  );
+}

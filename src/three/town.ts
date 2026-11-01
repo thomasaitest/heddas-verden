@@ -66,6 +66,11 @@ export interface Town {
   surfaces: Surface[];
   /** Outdoor benches you can sit on to rest. */
   benches: { x: number; z: number; yaw: number }[];
+  /** Extra colliders used while driving/pramming (shop door plugs, bench boxes, …). */
+  vehicleRects: RectCollider[];
+  vehicleCircles: CircleCollider[];
+  /** Trees pets can pick apples from. */
+  appleTrees: { x: number; z: number }[];
   /** Road centre-line segments (for tests and props). */
   roads: RoadSeg[];
   /** Neighbourhood house plots (each multiplayer player gets one). */
@@ -295,10 +300,14 @@ export function buildTown(): Town {
   const surfaces: Surface[] = [];
   const roads = buildRoadNetwork();
   const benches: { x: number; z: number; yaw: number }[] = [];
+  const vehicleRects: RectCollider[] = [];
+  const vehicleCircles: CircleCollider[] = [];
+  const appleTrees: { x: number; z: number }[] = [];
 
   // plaza + fountain (outer wall jumpable; rim and upper bowl are landable)
   cyl(stat, ROAD, [0, 0.04, 0], [PLAZA_R * 2, 0.08, PLAZA_R * 2]);
   solid(cyl(stat, '#e6ecff', [0, 0.55, 0], [9, 1.1, 9]), 'circle', 0, 1.15);
+  vehicleCircles.push({ x: 0, z: 0, r: 5.2, h: 2.2 }); // cars cannot drive through the fountain
   cyl(stat, '#7fd8ff', [0, 1.1, 0], [8, 0.2, 8]);
   solid(cyl(stat, '#e6ecff', [0, 2.2, 0], [1.2, 3, 1.2]), 'circle', 0.1, 4.5);
   solid(cyl(stat, '#e6ecff', [0, 3.6, 0], [4, 0.5, 4]), 'circle', 0, 3.9);
@@ -511,6 +520,19 @@ export function buildTown(): Town {
     const door = front(P.pets, 9.5);
     entrances.pets = { x: door.x, z: door.z, yaw: f.rot };
   }
+  // Cars cannot drive in through shop doors: plug the doorway with a vehicle-only barrier.
+  for (const w of walkIns) {
+    const yaw = w.rot;
+    const fx = Math.sin(yaw);
+    const fz = Math.cos(yaw);
+    // Front of building in world (door face)
+    const doorX = w.x + fx * (w.hd - 0.2);
+    const doorZ = w.z + fz * (w.hd - 0.2);
+    vehicleRects.push({ x: doorX, z: doorZ, hw: Math.min(w.hw, 3.2), hd: 0.7, rot: yaw, h: 4 });
+    // Also a slightly deeper plug so a fast car cannot tunnel
+    vehicleRects.push({ x: w.x + fx * (w.hd * 0.55), z: w.z + fz * (w.hd * 0.55), hw: w.hw * 0.85, hd: w.hd * 0.35, rot: yaw, h: 4 });
+  }
+
   // door game hut
   {
     const g = new THREE.Group();
@@ -679,8 +701,11 @@ export function buildTown(): Town {
     const z = (rnd() - 0.5) * SIZE * 0.95;
     const s = 0.8 + rnd() * 0.6;
     if (blocked(x, z) || tooClose(x, z, 0.9 * s)) continue;
-    tree(stat, x, z, s, Math.floor(rnd() * 4), true);
+    const kind = Math.floor(rnd() * 4);
+    tree(stat, x, z, s, kind, true);
     solids.push({ x, z, r: 0.9 * s });
+    if (kind === 0 || kind === 2) appleTrees.push({ x, z }); // deciduous / blossom
+    vehicleCircles.push({ x, z, r: Math.max(1.1, 1.0 * s), h: 8 * s });
   }
   // a ring of trees on the edge
   for (let i = 0; i < 70; i++) {
@@ -706,6 +731,7 @@ export function buildTown(): Town {
   for (const L of lampSpots(roads)) {
     solid(cyl(stat, '#555a75', [L.x, 2.5, L.z], [0.25, 5, 0.25]), 'circle', 0.25, 5.5);
     sph(stat, '#fff4c2', [L.x, 5.2, L.z], [0.8, 0.8, 0.8], undefined, 0.6);
+    vehicleCircles.push({ x: L.x, z: L.z, r: 0.55, h: 5.5 });
   }
   for (const b of benchSpots(roads)) {
     // b.yaw = sit facing (away from the backrest). Avatar forward = (sin, cos).
@@ -739,6 +765,8 @@ export function buildTown(): Town {
     );
     // Interaction / sit pose uses the centred sit point (not a corner of the bench).
     benches.push({ x: sitX, z: sitZ, yaw: sitYaw });
+    // Cars (and prams) collide with the whole bench footprint — walkers still use tiny leg solids only.
+    vehicleRects.push({ x: seatX, z: seatZ, hw: 1.5, hd: 0.55, rot: sitYaw, h: 1.15 });
   }
   // hills at the edge
   for (let i = 0; i < 10; i++) {
@@ -878,6 +906,9 @@ export function buildTown(): Town {
     circles,
     surfaces,
     benches,
+    vehicleRects,
+    vehicleCircles,
+    appleTrees,
     roads,
     housePlots,
     get spawn() {

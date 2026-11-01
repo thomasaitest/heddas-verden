@@ -25,6 +25,7 @@ export interface HudActions {
   activity(): void;
   mp(): void;
   emote(): void;
+  mission(): void;
 }
 
 export interface PetActionState {
@@ -58,6 +59,8 @@ export class Hud {
   joyBase: HTMLElement;
   joyKnob: HTMLElement;
   jump: HTMLButtonElement;
+  missionBtn: HTMLButtonElement;
+  missionChip: HTMLElement;
   petBar: HTMLElement;
   private petBtns: Record<'hold' | 'ride' | 'fly' | 'feed' | 'play' | 'drive' | 'pram' | 'activity', HTMLButtonElement>;
 
@@ -93,6 +96,8 @@ export class Hud {
     this.joyBase = el('div', { class: 'joy-base' }, this.joyKnob);
     this.joyZone = el('div', { class: 'joy-zone' }, this.joyBase);
     this.jump = el('button', { class: 'btn jump', type: 'button' }, '⬆');
+    this.missionBtn = button(el('span', {}, '📜', el('b', {}, 'Oppdrag')), a.mission, 'btn mission-btn');
+    this.missionChip = el('div', { class: 'mission-chip hidden' }, '');
     this.petBtns = {
       hold: button('🤲 Hold', a.hold, 'btn pet-act'),
       ride: button('🐎 Ri', a.ride, 'btn pet-act'),
@@ -104,7 +109,7 @@ export class Hud {
       activity: button('💃 Fest', a.activity, 'btn pet-act'),
     };
     this.petBar = el('div', { class: 'pet-bar' }, this.petBtns.feed, this.petBtns.play, this.petBtns.hold, this.petBtns.ride, this.petBtns.fly, this.petBtns.drive, this.petBtns.pram, this.petBtns.activity);
-    this.root = el('div', { class: 'hud' }, top, this.tasks, this.prompt, dock, this.petBar, this.joyZone, this.jump);
+    this.root = el('div', { class: 'hud' }, top, this.tasks, this.missionChip, this.prompt, dock, this.petBar, this.joyZone, this.missionBtn, this.jump);
     host.append(this.root);
   }
 
@@ -123,6 +128,24 @@ export class Hud {
 
   setTasks(pets: PetState[], onTap: (uid: string) => void) {
     this.tasksPanel.update(pets, onTap);
+  }
+
+  setMission(m: { kind: string; progress: number } | null) {
+    if (!m) {
+      this.missionChip.classList.add('hidden');
+      this.missionChip.textContent = '';
+      return;
+    }
+    const titles: Record<string, string> = {
+      kjør: '🚗 Biltur',
+      benk: '🪑 Benk',
+      butikk: '🛒 Butikk',
+      epler: '🍎 Epler',
+      fest: '💃 Fest',
+      dyrlege: '🩺 Dyrlege',
+    };
+    this.missionChip.textContent = `${titles[m.kind] ?? 'Oppdrag'} · ${Math.round(m.progress * 100)}%`;
+    this.missionChip.classList.remove('hidden');
   }
 
   setPrompt(label: string | null) {

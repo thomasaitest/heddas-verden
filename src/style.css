@@ -326,3 +326,49 @@ body.building .jump, body.building .pet-bar, body.building .tasks, body.building
   .minimap-wrap { display: flex; justify-content: center; }
   .minimap { width: min(92vw, 340px) !important; height: min(92vw, 340px) !important; }
 }
+
+
+/* Oppdrag: bottom-left quest button (above joystick on touch) */
+.mission-btn {
+  position: absolute;
+  left: calc(14px + env(safe-area-inset-left));
+  bottom: calc(168px + env(safe-area-inset-bottom));
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 18px;
+  font-size: 22px;
+  --b: #7b8cff;
+  box-shadow: 0 4px 0 rgba(0,0,0,0.14);
+}
+.mission-btn b { font-size: 11px; font-weight: 800; letter-spacing: 0.02em; }
+.mission-chip {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  top: calc(58px + env(safe-area-inset-top));
+  z-index: 5;
+  background: rgba(123, 140, 255, 0.95);
+  color: #fff;
+  font-weight: 800;
+  font-size: 13px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  box-shadow: 0 3px 0 rgba(0,0,0,0.12);
+  pointer-events: none;
+  white-space: nowrap;
+  max-width: min(80vw, 320px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@media (hover: hover) and (pointer: fine) {
+  .mission-btn { bottom: calc(24px + env(safe-area-inset-bottom)); }
+}
+@media (max-width: 700px) {
+  .mission-btn { bottom: calc(200px + env(safe-area-inset-bottom)); padding: 8px 10px; font-size: 20px; }
+  .mission-chip { top: calc(52px + env(safe-area-inset-top)); font-size: 12px; }
+}
+body.building .mission-btn, body.building .mission-chip { display: none; }

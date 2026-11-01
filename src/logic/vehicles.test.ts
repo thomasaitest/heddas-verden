@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { freshSave } from './save.ts';
-import { canDrive, canPram, defaultCar, defaultPram, ownedCars, vehicleSpeed } from './vehicles.ts';
+import { canDrive, canPram, defaultCar, defaultPram, ownedCars, vehicleBodyRadius, vehicleSpeed } from './vehicles.ts';
 
 describe('vehicles', () => {
   it('detects owned cars and prams from the bag', () => {
@@ -15,6 +15,12 @@ describe('vehicles', () => {
   it('picks drive speed over walk', () => {
     expect(vehicleSpeed({ driving: true, pramming: false, riding: false, flying: false })).toBeGreaterThan(
       vehicleSpeed({ driving: false, pramming: false, riding: false, flying: false }),
+    );
+  });
+  it('uses a wide body radius while driving so props and shops block the car', () => {
+    expect(vehicleBodyRadius({ driving: true, pramming: false, riding: false })).toBeGreaterThan(2);
+    expect(vehicleBodyRadius({ driving: true, pramming: false, riding: false })).toBeGreaterThan(
+      vehicleBodyRadius({ driving: false, pramming: false, riding: false }),
     );
   });
 });
