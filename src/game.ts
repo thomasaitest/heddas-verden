@@ -1108,6 +1108,9 @@ export class Game {
     this.avatarHolder.position.copy(p.pos);
     if (this.driving) {
       this.avatarHolder.position.y = CAR_SEAT_Y;
+      // Driver sits slightly to the right so the pet passenger seat is clear on the left.
+      this.avatarHolder.position.x += Math.cos(p.yaw) * 0.32;
+      this.avatarHolder.position.z -= Math.sin(p.yaw) * 0.32;
       this.avatarHolder.scale.setScalar(0.72);
     } else {
       this.avatarHolder.scale.setScalar(1);
@@ -1362,7 +1365,9 @@ export class Game {
     const a = this.actors.get(uid);
     if (!a) return;
     this.petJob = { uid, kind: 'epler', until: this.time + 4.5 };
-    a.care = { x, z, y: 0.2, pose: 'happy' };
+    // Climb into the canopy so the pet is visibly at the tree, not just toast text.
+    a.care = { x, z, y: 1.35, pose: 'happy' };
+    a.pos.set(x, 1.35, z);
     a.happyUntil = this.time + 4.5;
     toast('Plukker epler… 🍎', 'ok');
     sfx.pop();
@@ -1372,8 +1377,12 @@ export class Game {
     const a = this.actors.get(uid);
     if (!a) return;
     this.petJob = { uid, kind: 'fest', until: this.time + 8 };
-    a.care = { x: 0, z: 4.2, y: 0, pose: 'happy' };
+    // Dance around the fountain with the avatar so the plaza party is visible, not toast-only.
+    a.care = { x: 3.2, z: 2.4, y: 0, pose: 'happy' };
+    a.pos.set(3.2, 0, 2.4);
     a.happyUntil = this.time + 8;
+    this.activity = { kind: 'dance', since: this.time, slot: 0 };
+    if (!musicPlaying()) startMusic();
     toast('Fest på torget! 💃', 'ok');
     sfx.pop();
   }
@@ -1428,6 +1437,23 @@ export class Game {
       const s = this.actorScale(a);
       a.rig.root.scale.setScalar(s);
       let pose: PetPose = 'idle';
+      // Keep the healing pet glued to the mattress for the whole heal (also helps proofs).
+      if (this.vetHealUid === a.uid && this.town.vetBeds.length) {
+        const beds = [...this.town.vetBeds].sort((b1, b2) => Math.hypot(b1.x - p.pos.x, b1.z - p.pos.z) - Math.hypot(b2.x - p.pos.x, b2.z - p.pos.z));
+        const bed = beds[0]!;
+        a.pos.set(bed.x, bed.y, bed.z);
+        a.care = { x: bed.x, z: bed.z, y: bed.y, pose: 'sleep' };
+        a.speed = 0;
+        pose = 'sleep';
+        a.pose = pose;
+        a.rig.root.position.copy(a.pos);
+        a.rig.root.rotation.y = a.yaw;
+        a.rig.root.rotation.x = -Math.PI / 2;
+        animatePet(a.rig, t + a.uid.length, pose, 0);
+        a.shadow.visible = false;
+        a.bubble.visible = false;
+        continue;
+      }
       if (this.riding === a.uid) {
         a.pos.copy(p.pos);
         a.yaw = p.yaw;
@@ -1446,18 +1472,22 @@ export class Game {
         pose = 'sleep';
         a.speed = p.speed;
       } else if (this.driving && equipped) {
-        // Ride along in the car (passenger seats), visible inside the cabin.
+        // Passenger seat: left of the driver (first pet), then right / back rows.
+        // Clear lateral offset so the pet is not stacked on the avatar.
         const fy = p.yaw;
-        const side = followIdx % 2 === 0 ? 1 : -1;
+        const side = followIdx % 2 === 0 ? -1 : 1;
         const row = Math.floor(followIdx / 2);
+        const lat = 0.9;
+        // Positive along = behind the driver (cabin), never on the hood.
+        const along = 0.45 + row * 0.65;
         a.pos.set(
-          p.pos.x + Math.cos(fy) * side * 0.55 - Math.sin(fy) * (0.15 + row * 0.55),
-          0.72,
-          p.pos.z - Math.sin(fy) * side * 0.55 - Math.cos(fy) * (0.15 + row * 0.55),
+          p.pos.x + Math.cos(fy) * side * lat - Math.sin(fy) * along,
+          0.52,
+          p.pos.z - Math.sin(fy) * side * lat - Math.cos(fy) * along,
         );
         a.yaw = p.yaw;
-        pose = 'happy';
-        a.speed = p.speed;
+        pose = 'sit';
+        a.speed = 0;
         followIdx++;
       } else {
         let target = new THREE.Vector3(a.pos.x, 0, a.pos.z);
@@ -1558,8 +1588,9 @@ export class Game {
             a.yaw += Math.sin(t) * 0.002;
           }
         }
-        // same collision as the avatar (town + house)
-        if (!flyingPet) resolve(a.pos, 0.5, this.colliders());
+        // same collision as the avatar (town + house) — skip while lying on a raised care bed (vet mattress)
+        const onCareBed = !!(a.care && (a.care.y ?? 0) > 0.4 && Math.hypot(a.care.x - a.pos.x, a.care.z - a.pos.z) < 1.5);
+        if (!flyingPet && !onCareBed) resolve(a.pos, 0.5, this.colliders());
         const near = a.care && Math.hypot(a.care.x - a.pos.x, a.care.z - a.pos.z) < 1.2;
         let targetY = near ? (a.care!.y ?? 0) : equipped && p.pos.y > 1 && !inHouse ? Math.max(0, p.pos.y - 0.5) : 0;
         if (inHouse && !near) targetY = groundHeight(lay, a.pos.x, a.pos.z, floorOfY(a.pos.y));
@@ -1569,17 +1600,19 @@ export class Game {
         if (a.pos.y > 1 && (flyingPet || pet.flyable) && !near) pose = 'fly';
         if (pet.need?.kind === 'syk' && pose === 'idle') pose = 'sick';
       }
-      if (t < a.happyUntil && pose !== 'held') pose = 'happy';
+      if (t < a.happyUntil && pose !== 'held' && pose !== 'sit' && pose !== 'sleep') pose = 'happy';
       a.pose = pose;
       a.rig.root.position.copy(a.pos);
       a.rig.root.rotation.y = a.yaw;
+      // Vet/house beds: tip the pet onto its side so "sleep" reads as lying down, not standing.
+      a.rig.root.rotation.x = pose === 'sleep' && (a.care?.y ?? 0) > 0.4 ? -Math.PI / 2 : 0;
       animatePet(a.rig, t + a.uid.length, pose, a.speed);
       a.shadow.position.set(a.pos.x, this.groundAt(a.pos.x, a.pos.y, a.pos.z) + 0.025, a.pos.z);
       a.shadow.scale.setScalar(s);
-      a.shadow.visible = this.riding !== a.uid && this.holding !== a.uid && !(this.pramming && equipped);
+      a.shadow.visible = this.riding !== a.uid && this.holding !== a.uid && !(this.pramming && equipped) && !(this.driving && equipped);
       // need bubble
       const kind = equipped && pet.need ? pet.need.kind : null;
-      a.bubble.visible = !!kind && this.riding !== a.uid;
+      a.bubble.visible = !!kind && this.riding !== a.uid && !(this.driving && equipped) && pose !== 'sleep';
       if (kind) {
         if (a.bubbleKind !== kind) {
           (a.bubble.material as THREE.SpriteMaterial).map = this.needTexture(kind);
@@ -1669,8 +1702,8 @@ export class Game {
           }
         }
       }
-            // Vet: must press a button before the sick pet lies in the bed
-      if (!near && inVet && !this.driving) {
+      // Vet: heal prompt overrides the plain "Dyrlegen" zone when a sick pet needs the bed button.
+      if (inVet && !this.driving) {
         const sick = this.equippedPets().find((pet) => pet.need?.kind === 'syk');
         if (sick && this.vetHealUid !== sick.uid) {
           near = { kind: 'vet-heal', label: `Legg ${sick.name} i sengen 🛏️`, uid: sick.uid };
@@ -1741,6 +1774,9 @@ export class Game {
           const beds = [...this.town.vetBeds].sort((b1, b2) => Math.hypot(b1.x - p.x, b1.z - p.z) - Math.hypot(b2.x - p.x, b2.z - p.z));
           const bed = beds[0];
           a.care = { x: bed.x, z: bed.z, y: bed.y, pose: 'sleep' };
+          // Snap onto the mattress so healing clearly reads as "lying in bed".
+          a.pos.set(bed.x, bed.y, bed.z);
+          a.speed = 0;
         }
       } else if (where === 'lek' && inPlay) {
         amount = dt;
@@ -1779,6 +1815,10 @@ export class Game {
       this.petJob = null;
       const a = this.actors.get(job.uid);
       if (a) a.care = null;
+      if (job.kind === 'fest' && this.activity?.kind === 'dance') {
+        this.activity = null;
+        stopMusic();
+      }
       const pay = job.kind === 'epler' ? 8 : 12;
       this.commit({ ...this.save, bucks: this.save.bucks + pay });
       toast(job.kind === 'epler' ? `Epler plukket! +${pay} 🍎` : `Fest ferdig! +${pay} 💃`, 'gold');

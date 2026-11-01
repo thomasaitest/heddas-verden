@@ -277,7 +277,7 @@ export function buildPet(sp: PetSpecies): PetRig {
   return rig as PetRig;
 }
 
-export type PetPose = 'idle' | 'walk' | 'sleep' | 'fly' | 'held' | 'happy' | 'sick';
+export type PetPose = 'idle' | 'walk' | 'sleep' | 'fly' | 'held' | 'happy' | 'sick' | 'sit';
 
 /** Animate a pet. `t` is seconds, `speed` 0–1 walking speed. */
 export function animatePet(rig: PetRig, t: number, pose: PetPose, speed = 0): void {
@@ -285,17 +285,22 @@ export function animatePet(rig: PetRig, t: number, pose: PetPose, speed = 0): vo
   const swing = Math.sin(t * 12) * 0.7 * walk;
   rig.legs.forEach((l, i) => {
     const phase = rig.biped ? (i % 2 ? 1 : -1) : i === 0 || i === 3 ? 1 : -1;
-    l.rotation.x = pose === 'sleep' ? 1.3 : pose === 'fly' ? 0.6 : swing * phase;
+    // Sit: tuck legs under like a passenger; sleep: stretch out.
+    l.rotation.x = pose === 'sleep' ? 1.3 : pose === 'sit' ? 1.05 : pose === 'fly' ? 0.6 : swing * phase;
   });
   const flap = pose === 'fly' ? Math.sin(t * 14) * 0.8 : Math.sin(t * 3) * 0.1;
   rig.wings.forEach((w) => (w.rotation.z = (w.userData.side as number) * (0.2 + flap)));
-  if (rig.tail) rig.tail.rotation.y = Math.sin(t * (pose === 'happy' ? 18 : 6)) * (pose === 'sleep' ? 0.05 : 0.4);
+  if (rig.tail) rig.tail.rotation.y = Math.sin(t * (pose === 'happy' ? 18 : 6)) * (pose === 'sleep' || pose === 'sit' ? 0.05 : 0.4);
   let y = 0;
   let tilt = 0;
   if (pose === 'walk') y = Math.abs(Math.sin(t * 12)) * 0.08 * walk;
   else if (pose === 'idle') y = Math.sin(t * 2.5) * 0.02;
   else if (pose === 'happy') y = Math.abs(Math.sin(t * 7)) * 0.3;
-  else if (pose === 'sleep') {
+  else if (pose === 'sit') {
+    // Lowered body in a car / bench seat — clearly not standing or hopping.
+    y = -0.22;
+    tilt = 0.12;
+  } else if (pose === 'sleep') {
     y = -0.12;
     tilt = 0;
   } else if (pose === 'sick') {
@@ -305,6 +310,6 @@ export function animatePet(rig: PetRig, t: number, pose: PetPose, speed = 0): vo
   if (pose !== 'sick') rig.body.rotation.z = 0;
   rig.body.position.y = y;
   rig.body.rotation.x = tilt;
-  rig.head.rotation.x = pose === 'sleep' ? 0.35 : pose === 'sick' ? 0.25 : Math.sin(t * 1.7) * 0.06;
+  rig.head.rotation.x = pose === 'sleep' ? 0.35 : pose === 'sit' ? 0.08 : pose === 'sick' ? 0.25 : Math.sin(t * 1.7) * 0.06;
   rig.head.rotation.y = pose === 'idle' ? Math.sin(t * 0.7) * 0.25 : 0;
 }

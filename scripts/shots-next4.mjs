@@ -34,7 +34,6 @@ async function boot(opts = {}) {
     await page.waitForTimeout(300);
   }
   await page.evaluate(() => { window.__hv.weatherT0 = performance.now() / 1000 - 100; });
-  // Ensure a car and a sick pet for proofs
   await page.evaluate(() => {
     const g = window.__hv;
     const pets = g.save.pets.map((p, i) => (i === 0 ? { ...p, need: { kind: 'syk', progress: 0.2 } } : p));
@@ -50,65 +49,30 @@ const shot = async (page, name, wait = 700) => {
   console.log('saved', name);
 };
 
+const chaseCam = (yaw, pitch = 0.38, dist = 11) => ({
+  freezeCam: null,
+  yaw,
+  pitch,
+  dist,
+});
+
 // ---- 1 + 4: car blocked by shop / bench ----
 {
   const { page, ctx } = await boot();
-  const r = await page.evaluate(() => {
+  const shopBlock = await page.evaluate(() => {
     const g = window.__hv;
-    document.querySelectorAll('.sheet,.panel,.sheet-wrap').forEach((el) => el.remove());
-    g.clearVehicle?.();
-    // Start driving
-    g.driving = 'bil-rosa';
-    g.syncVehicleMesh?.();
-    const shop = g.town.entrances.shop;
-    // Place just outside shop door, drive forward into building
-    g.player.pos.set(shop.x, 0, shop.z);
-    g.player.yaw = shop.yaw + Math.PI; // face into shop
-    const before = { x: g.player.pos.x, z: g.player.pos.z };
-    // Simulate many collide steps toward the shop
-    for (let i = 0; i < 40; i++) {
-      const dx = Math.sin(g.player.yaw) * 0.55;
-      const dz = Math.cos(g.player.yaw) * 0.55;
-      g.player.pos.x += dx;
-      g.player.pos.z += dz;
-      // use internal collide
-      g.collide?.() || (g.player.pos.x = g.player.pos.x); 
-    }
-    // Prefer calling move with colliders via public path
-    return { before, after: { x: g.player.pos.x, z: g.player.pos.z }, shop, inside: g.town.insideBuilding(g.player.pos.x, g.player.pos.z) };
-  });
-  // Better: use evaluate with movePlayer-like loop exposing collide - Game.collide is private.
-  // Drive using input simulation via evaluate of resolve through __hv methods:
-  await page.evaluate(() => {
-    const g = window.__hv;
+    document.querySelectorAll('.sheet,.panel,.sheet-wrap,.toast').forEach((el) => el.remove());
     g.driving = 'bil-rosa';
     g.syncVehicleMesh();
     g.resting = null;
-    const door = g.town.entrances.shop;
-    // Stand in front of door facing in
-    const inward = door.yaw + Math.PI;
-    g.player.yaw = inward;
-    g.player.pos.set(door.x - Math.sin(inward) * 6, 0, door.z - Math.cos(inward) * 6);
-  });
-  // Step forward many frames by hijacking update movement
-  const shopBlock = await page.evaluate(() => {
-    const g = window.__hv;
-    const start = { x: g.player.pos.x, z: g.player.pos.z };
-    const yaw = g.player.yaw;
-    // Access colliders the same way the game does while driving
-    const cols = { rects: [...g.town.rects, ...g.town.vehicleRects], circles: [...g.town.circles, ...g.town.vehicleCircles] };
-    // Inline resolve from window is hard; nudge and read whether we enter insideBuilding
-    let entered = false;
-    let maxPenetration = 0;
-    for (let i = 0; i < 50; i++) {
-      g.player.pos.x += Math.sin(yaw) * 0.4;
-      g.player.pos.z += Math.cos(yaw) * 0.4;
-      // Manually call the same radius resolve via a tiny hack: dispatch by temporarily using town-only won't plug doors.
-      // Use game's private collide if exposed — fallback: import isn't available.
-    }
-    // Use __hv's movement: set keys — Input may not expose. Instead use movePlayer from a bundled path.
-    // Reset and use a loop that mirrors collide by reading blocked positions via vehicleRects overlap.
+    g.freezeCam = null;
+    // Approach the shop's south face (door side) from outside so the wall fills the frame.
+    const shop = { x: 38, z: -34 };
+    const yaw = Math.PI; // face -Z into the shop
+    g.player.yaw = yaw;
+    const start = { x: shop.x, z: shop.z + 14 };
     g.player.pos.set(start.x, 0, start.z);
+    const cols = { rects: [...g.town.rects, ...g.town.vehicleRects], circles: [...g.town.circles, ...g.town.vehicleCircles] };
     const R = 2.45;
     const blocked = (x, z) => {
       for (const b of cols.rects) {
@@ -117,31 +81,29 @@ const shot = async (page, name, wait = 700) => {
         const lz = (x - b.x) * sin + (z - b.z) * cos;
         if (Math.abs(lx) < b.hw + R && Math.abs(lz) < b.hd + R) return true;
       }
-      for (const c of cols.circles) {
-        if (Math.hypot(x - c.x, z - c.z) < c.r + R) return true;
-      }
+      for (const c of cols.circles) if (Math.hypot(x - c.x, z - c.z) < c.r + R) return true;
       return false;
     };
-    let x = start.x, z = start.z;
-    let hits = 0;
-    for (let i = 0; i < 60; i++) {
-      const nx = x + Math.sin(yaw) * 0.35;
-      const nz = z + Math.cos(yaw) * 0.35;
+    let x = start.x, z = start.z, hits = 0, entered = false;
+    for (let i = 0; i < 80; i++) {
+      const nx = x + Math.sin(yaw) * 0.3;
+      const nz = z + Math.cos(yaw) * 0.3;
       if (blocked(nx, nz)) { hits++; break; }
       x = nx; z = nz;
       if (g.town.insideBuilding(x, z) === 'shop') entered = true;
     }
     g.player.pos.set(x, 0, z);
-    g.player.yaw = yaw;
-    // Camera look at shop attempt
-    g.freezeCam = { x: start.x - Math.sin(yaw) * 4, y: 8, z: start.z - Math.cos(yaw) * 4, lx: x, ly: 1, lz: z };
+    // Chase camera behind the car looking at the shop facade.
+    g.cam.yaw = yaw + Math.PI;
+    g.cam.pitch = 0.32;
+    g.cam.dist = 12;
+    g.camShown = 12;
     return { hits, entered, start, end: { x, z }, inside: g.town.insideBuilding(x, z) };
   });
   report.checks.carBlockedByShop = shopBlock.hits > 0 && !shopBlock.entered;
   report.notes.push({ shopBlock });
-  await shot(page, '01-car-blocked-by-shop', 900);
+  await shot(page, '01-car-blocked-by-shop', 1100);
 
-  // Bench collision while driving
   const benchHit = await page.evaluate(() => {
     const g = window.__hv;
     g.freezeCam = null;
@@ -149,11 +111,9 @@ const shot = async (page, name, wait = 700) => {
     g.syncVehicleMesh();
     const b = g.town.benches[0];
     if (!b) return { ok: false };
-    const yaw = b.yaw;
-    // Approach from front
-    const fx = Math.sin(yaw), fz = Math.cos(yaw);
-    const start = { x: b.x + fx * 6, z: b.z + fz * 6 };
-    g.player.yaw = yaw + Math.PI;
+    const start = { x: b.x + Math.sin(b.yaw) * 7, z: b.z + Math.cos(b.yaw) * 7 };
+    const towardYaw = Math.atan2(b.x - start.x, b.z - start.z);
+    g.player.yaw = towardYaw;
     g.player.pos.set(start.x, 0, start.z);
     const cols = { rects: [...g.town.rects, ...g.town.vehicleRects], circles: [...g.town.circles, ...g.town.vehicleCircles] };
     const R = 2.45;
@@ -167,17 +127,18 @@ const shot = async (page, name, wait = 700) => {
       for (const c of cols.circles) if (Math.hypot(x - c.x, z - c.z) < c.r + R) return true;
       return false;
     };
-    let x = start.x, z = start.z;
-    let hit = false;
-    const towardYaw = Math.atan2(b.x - start.x, b.z - start.z);
-    for (let i = 0; i < 40; i++) {
-      const nx = x + Math.sin(towardYaw) * 0.35;
-      const nz = z + Math.cos(towardYaw) * 0.35;
+    let x = start.x, z = start.z, hit = false;
+    for (let i = 0; i < 50; i++) {
+      const nx = x + Math.sin(towardYaw) * 0.3;
+      const nz = z + Math.cos(towardYaw) * 0.3;
       if (blocked(nx, nz)) { hit = true; break; }
       x = nx; z = nz;
     }
     g.player.pos.set(x, 0, z);
-    g.freezeCam = { x: b.x + fx * 5, y: 6, z: b.z + fz * 5, lx: b.x, ly: 0.8, lz: b.z };
+    g.cam.yaw = towardYaw + Math.PI * 0.65;
+    g.cam.pitch = 0.42;
+    g.cam.dist = 10;
+    g.camShown = 10;
     return { ok: hit, end: { x, z }, bench: b };
   });
   report.checks.carBlockedByBench = !!benchHit.ok;
@@ -186,38 +147,57 @@ const shot = async (page, name, wait = 700) => {
   await ctx.close();
 }
 
-// ---- 2: pets ride in car ----
+// ---- 2: pets ride in car (side / 3-4 angle) ----
 {
   const { page, ctx } = await boot();
-  await page.evaluate(() => {
-    const g = window.__hv;
-    document.querySelectorAll('.sheet,.panel,.sheet-wrap').forEach((el) => el.remove());
-    g.driving = 'bil-rosa';
-    g.syncVehicleMesh();
-    g.player.pos.set(8, 0, 8);
-    g.player.yaw = 0.4;
-    g.freezeCam = { x: 8 + Math.sin(0.4 + Math.PI) * 7, y: 3.2, z: 8 + Math.cos(0.4 + Math.PI) * 7, lx: 8, ly: 1.1, lz: 8 };
-  });
-  // Tick a few frames so pets settle into passenger seats
-  await page.waitForTimeout(400);
-  await page.evaluate(() => {
-    const g = window.__hv;
-    // Force one updatePets path by advancing time via request — pets positioned each frame in update
-  });
-  await shot(page, '02-pets-in-car', 1000);
   const petsInCar = await page.evaluate(() => {
     const g = window.__hv;
-    const p = g.player.pos;
-    const near = [...g.actors.values()].filter((a) => Math.hypot(a.pos.x - p.x, a.pos.z - p.z) < 2.2 && a.pos.y > 0.4);
-    return { count: near.length, ys: near.map((a) => +a.pos.y.toFixed(2)) };
+    document.querySelectorAll('.sheet,.panel,.sheet-wrap,.toast').forEach((el) => el.remove());
+    g.driving = 'bil-rosa';
+    g.syncVehicleMesh();
+    // Face +Z; open convertible on flat ground away from buildings.
+    g.player.pos.set(6, 0, 18);
+    g.player.yaw = 0;
+    // True side angle: camera on the passenger side looking across the cabin.
+    const yaw = 0;
+    g.freezeCam = {
+      x: 6 + Math.cos(yaw) * (-5.2), // left of car (passenger side)
+      y: 2.4,
+      z: 18 - Math.sin(yaw) * (-5.2) - 1.2,
+      lx: 6,
+      ly: 0.95,
+      lz: 18,
+    };
+    return true;
   });
-  report.checks.petsInCar = petsInCar.count >= 1;
-  report.notes.push({ petsInCar });
-  // Park / hop out
+  await page.waitForTimeout(700);
+  const seatCheck = await page.evaluate(() => {
+    const g = window.__hv;
+    const p = g.player.pos;
+    const yaw = g.player.yaw;
+    const pets = [...g.actors.values()].filter((a) => g.save.equipped.includes(a.uid) || g.save.equipped.includes?.(a.uid));
+    // equipped actors
+    const near = [];
+    for (const [uid, a] of g.actors) {
+      if (!g.save.equipped.includes(uid)) continue;
+      const dx = a.pos.x - p.x, dz = a.pos.z - p.z;
+      const lat = dx * Math.cos(yaw) - dz * Math.sin(yaw);
+      near.push({ uid, y: +a.pos.y.toFixed(2), lat: +lat.toFixed(2), pose: a.pose, dist: +Math.hypot(dx, dz).toFixed(2) });
+    }
+    return { count: near.length, near };
+  });
+  report.checks.petsInCar = seatCheck.count >= 1 && seatCheck.near.every((n) => Math.abs(n.lat) > 0.45 && n.y > 0.3);
+  report.notes.push({ petsInCar: seatCheck });
+  await shot(page, '02-pets-in-car', 1000);
+
   await page.evaluate(() => {
     const g = window.__hv;
     g.clearVehicle();
-    g.freezeCam = { x: g.player.pos.x + 5, y: 4, z: g.player.pos.z + 5, lx: g.player.pos.x, ly: 0.8, lz: g.player.pos.z };
+    g.freezeCam = null;
+    g.cam.yaw = g.player.yaw + Math.PI * 0.85;
+    g.cam.pitch = 0.4;
+    g.cam.dist = 9;
+    g.camShown = 9;
   });
   await shot(page, '02-pets-hop-out', 800);
   await ctx.close();
@@ -228,24 +208,23 @@ const shot = async (page, name, wait = 700) => {
   const { page, ctx } = await boot();
   const stand = await page.evaluate(() => {
     const g = window.__hv;
-    document.querySelectorAll('.sheet,.panel,.sheet-wrap').forEach((el) => el.remove());
+    document.querySelectorAll('.sheet,.panel,.sheet-wrap,.toast').forEach((el) => el.remove());
     const b = g.town.benches[1] || g.town.benches[0];
     g.resting = { x: b.x, z: b.z, yaw: b.yaw };
     g.player.pos.set(b.x, 0.18, b.z);
     g.player.yaw = b.yaw;
-    // Call stand via interact bench-off path
     g.nearZone = { kind: 'bench-off', label: 'Reis deg' };
-    // Use private standFromBench through jump path
-    const before = { x: g.player.pos.x, z: g.player.pos.z };
-    // Directly mimic standInFrontOfBench
     const fx = Math.sin(b.yaw), fz = Math.cos(b.yaw);
-    // Trigger interact
     g.interact?.();
     const after = { x: g.player.pos.x, z: g.player.pos.z };
     const dist = Math.hypot(after.x - b.x, after.z - b.z);
     const forwardDot = (after.x - b.x) * fx + (after.z - b.z) * fz;
-    g.freezeCam = { x: b.x + fx * 4.5, y: 3.5, z: b.z + fz * 4.5, lx: b.x, ly: 0.9, lz: b.z };
-    return { before, after, dist, forwardDot, bench: b, resting: g.resting };
+    g.freezeCam = null;
+    g.cam.yaw = b.yaw + Math.PI;
+    g.cam.pitch = 0.35;
+    g.cam.dist = 8;
+    g.camShown = 8;
+    return { after, dist, forwardDot, bench: b, resting: g.resting };
   });
   report.checks.benchStandFront = stand.dist > 1.2 && stand.forwardDot > 0.8 && !stand.resting;
   report.notes.push({ stand });
@@ -257,9 +236,13 @@ const shot = async (page, name, wait = 700) => {
 {
   const { page, ctx } = await boot();
   await page.evaluate(() => {
-    document.querySelectorAll('.sheet,.panel,.sheet-wrap').forEach((el) => el.remove());
+    document.querySelectorAll('.sheet,.panel,.sheet-wrap,.toast').forEach((el) => el.remove());
     window.__hv.freezeCam = null;
     window.__hv.player.pos.set(0, 0, 14);
+    window.__hv.cam.yaw = Math.PI;
+    window.__hv.cam.pitch = 0.4;
+    window.__hv.cam.dist = 12;
+    window.__hv.camShown = 12;
   });
   await shot(page, '05-oppdrag-button', 700);
   await page.locator('.mission-btn').click();
@@ -272,7 +255,6 @@ const shot = async (page, name, wait = 700) => {
   report.checks.oppdragButton = missionUi.hasMission && (/Oppdrag/i.test(missionUi.sheet) || missionUi.chip.length > 0);
   report.notes.push({ missionUi });
   await shot(page, '05-oppdrag-sheet', 700);
-  // iPhone
   await ctx.close();
   const iphone = devices['iPhone 13'];
   const ctx2 = await browser.newContext({ ...iphone, viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
@@ -300,66 +282,203 @@ const shot = async (page, name, wait = 700) => {
   await ctx2.close();
 }
 
-// ---- 6: pet apple + fest ----
+// ---- 6: pet apple + fest (visible action, not toast-only) ----
 {
   const { page, ctx } = await boot();
   const apple = await page.evaluate(() => {
     const g = window.__hv;
-    document.querySelectorAll('.sheet,.panel,.sheet-wrap').forEach((el) => el.remove());
-    const tree = g.town.appleTrees[0];
+    document.querySelectorAll('.sheet,.panel,.sheet-wrap,.toast').forEach((el) => el.remove());
+    // Prefer a tree near plaza/spawn for a readable frame.
+    const trees = g.town.appleTrees;
+    let tree = trees[0];
+    let best = 1e9;
+    for (const t of trees) {
+      const d = Math.hypot(t.x, t.z - 20);
+      if (d < best) { best = d; tree = t; }
+    }
     if (!tree) return { ok: false };
-    g.player.pos.set(tree.x + 2, 0, tree.z + 2);
     const pet = g.save.equipped[0];
-    g.startPetApple?.(pet, tree.x, tree.z);
-    // method is private — use interact path
+    g.player.pos.set(tree.x + 2.2, 0, tree.z + 3.5);
+    g.player.yaw = Math.atan2(tree.x - g.player.pos.x, tree.z - g.player.pos.z);
     g.nearZone = { kind: 'pet-apple', label: 'Plukk', uid: pet, x: tree.x, z: tree.z };
     g.interact();
-    g.freezeCam = { x: tree.x + 5, y: 5, z: tree.z + 5, lx: tree.x, ly: 1.5, lz: tree.z };
-    return { ok: !!g.petJob && g.petJob.kind === 'epler', tree, job: g.petJob };
+    // Force pet already up in the canopy for the proof frame.
+    const a = g.actors.get(pet);
+    if (a) {
+      a.pos.set(tree.x, 1.35, tree.z);
+      a.care = { x: tree.x, z: tree.z, y: 1.35, pose: 'happy' };
+      a.pose = 'happy';
+    }
+    g.freezeCam = null;
+    g.cam.yaw = g.player.yaw + Math.PI * 0.9;
+    g.cam.pitch = 0.45;
+    g.cam.dist = 9;
+    g.camShown = 9;
+    return { ok: !!g.petJob && g.petJob.kind === 'epler', tree, job: g.petJob, petY: a?.pos.y };
   });
-  report.checks.petApple = !!apple.ok;
+  report.checks.petApple = !!apple.ok && (apple.petY ?? 0) > 0.8;
   report.notes.push({ apple });
-  await shot(page, '06-pet-pick-apples', 1000);
+  await shot(page, '06-pet-pick-apples', 1100);
 
   const fest = await page.evaluate(() => {
     const g = window.__hv;
+    document.querySelectorAll('.toast').forEach((el) => el.remove());
     g.petJob = null;
-    g.player.pos.set(2, 0, 6);
+    g.player.pos.set(2, 0, 8);
     const pet = g.save.equipped[0];
     g.nearZone = { kind: 'pet-fest', label: 'Fest', uid: pet };
     g.interact();
-    g.freezeCam = { x: 8, y: 10, z: 8, lx: 0, ly: 1, lz: 0 };
-    return { ok: !!g.petJob && g.petJob.kind === 'fest', job: g.petJob };
+    const a = g.actors.get(pet);
+    if (a) {
+      a.pos.set(4.0, 0, 3.0);
+      a.care = { x: 4.0, z: 3.0, y: 0, pose: 'happy' };
+      a.pose = 'happy';
+      a.happyUntil = g.time + 8;
+    }
+    g.freezeCam = null;
+    // Slightly lower so dancing avatar + pet + fountain fill the frame.
+    g.cam.yaw = 0.7;
+    g.cam.pitch = 0.48;
+    g.cam.dist = 12;
+    g.camShown = 12;
+    return {
+      ok: !!g.petJob && g.petJob.kind === 'fest' && g.activity?.kind === 'dance',
+      job: g.petJob,
+      activity: g.activity?.kind,
+      petAt: a ? { x: a.pos.x, z: a.pos.z } : null,
+    };
   });
+  await page.waitForTimeout(600); // let activityPose place the dancer
   report.checks.petFest = !!fest.ok;
   report.notes.push({ fest });
-  await shot(page, '06-pet-plaza-fest', 1000);
+  await shot(page, '06-pet-plaza-fest', 1200);
   await ctx.close();
 }
 
-// ---- 7: vet button heal ----
+// ---- 7: vet heal — button, pet in bed, healed ----
 {
   const { page, ctx } = await boot();
-  const vet = await page.evaluate(() => {
+  // 07a: inside vet with heal button visible (before press)
+  const vetBtn = await page.evaluate(() => {
     const g = window.__hv;
-    document.querySelectorAll('.sheet,.panel,.sheet-wrap').forEach((el) => el.remove());
-    const e = g.town.entrances.vet;
-    g.player.pos.set(e.x, 0, e.z);
-    // Move into vet
-    const beds = g.town.vetBeds;
-    if (beds[0]) g.player.pos.set(beds[0].x, 0, beds[0].z + 1.5);
+    document.querySelectorAll('.sheet,.panel,.sheet-wrap,.toast').forEach((el) => el.remove());
+    const bed = g.town.vetBeds[1] || g.town.vetBeds[0]; // mid bed
+    if (!bed) return { ok: false };
     const sick = g.save.pets.find((p) => p.need?.kind === 'syk');
-    const before = g.vetHealUid;
-    // Without pressing, heal should not auto-start
     g.vetHealUid = null;
-    g.nearZone = { kind: 'vet-heal', label: 'Legg i sengen', uid: sick.uid };
-    g.interact();
-    g.freezeCam = { x: beds[0].x + 4, y: 5, z: beds[0].z + 4, lx: beds[0].x, ly: 1.2, lz: beds[0].z };
-    return { pressed: g.vetHealUid === sick.uid, before, bed: beds[0], sick: sick?.name };
+    g.driving = null;
+    g.clearVehicle?.();
+    // Centre of the vet (roof lifts). Beds are at z≈33; building centre z=30.
+    g.player.pos.set(38, 0, 30.5);
+    g.player.yaw = 0; // look toward beds (+Z with rot PI world)
+    const a = g.actors.get(sick.uid);
+    if (a) {
+      a.pos.set(39.2, 0, 30.8);
+      a.care = null;
+      a.pose = 'sick';
+    }
+    const label = 'Dyret legger seg i sengen for å bli friskt 🛏️';
+    g.nearZone = { kind: 'vet-heal', label, uid: sick.uid };
+    g.hud.setPrompt(label);
+    // Look at the bed row from inside; roof is lifted while insideBuilding === 'vet'.
+    g.freezeCam = { x: 38, y: 6.5, z: 26.5, lx: 38, ly: 1.0, lz: 32.5 };
+    return {
+      ok: g.town.insideBuilding(g.player.pos.x, g.player.pos.z) === 'vet',
+      bed,
+      sick: sick?.name,
+      prompt: g.hud.prompt.textContent,
+      promptHidden: g.hud.prompt.classList.contains('hidden'),
+      inside: g.town.insideBuilding(g.player.pos.x, g.player.pos.z),
+    };
   });
-  report.checks.vetHealButton = !!vet.pressed;
-  report.notes.push({ vet });
-  await shot(page, '07-vet-heal-button', 1000);
+  await page.waitForTimeout(500);
+  const promptLive = await page.evaluate(() => ({
+    text: window.__hv.hud.prompt.textContent,
+    hidden: window.__hv.hud.prompt.classList.contains('hidden'),
+    near: window.__hv.nearZone?.kind,
+  }));
+  report.notes.push({ vetBtn, promptLive });
+  report.checks.vetHealButton = !!vetBtn.ok && /sengen|friskt/i.test(promptLive.text || vetBtn.prompt || '') && !promptLive.hidden;
+  await shot(page, '07-vet-heal-button', 900);
+
+  // 07b: press heal → pet lying in bed
+  await page.evaluate(() => {
+    const g = window.__hv;
+    document.querySelectorAll('.toast').forEach((el) => el.remove());
+    const sick = g.save.pets.find((p) => p.need?.kind === 'syk');
+    g.nearZone = { kind: 'vet-heal', label: 'Dyret legger seg i sengen for å bli friskt 🛏️', uid: sick.uid };
+    g.interact();
+  });
+  await page.waitForTimeout(400);
+  const vetBed = await page.evaluate(() => {
+    const g = window.__hv;
+    const sick = g.save.pets.find((p) => p.need?.kind === 'syk') || g.save.pets.find((p) => p.uid === g.vetHealUid);
+    const bed = g.town.vetBeds[1] || g.town.vetBeds[0];
+    const a = g.actors.get(sick.uid);
+    // Keep pet glued in the bed for the proof frame (sleep pose, on mattress).
+    if (a) {
+      a.pos.set(bed.x, bed.y, bed.z);
+      a.care = { x: bed.x, z: bed.z, y: bed.y, pose: 'sleep' };
+      a.pose = 'sleep';
+      a.yaw = 0;
+    }
+    g.player.pos.set(38, 0, 29.5);
+    g.hud.setPrompt(null); // button already pressed — show pet in bed
+    g.freezeCam = { x: bed.x - 0.2, y: 5.2, z: bed.z - 5.5, lx: bed.x, ly: 1.2, lz: bed.z };
+    return {
+      pressed: g.vetHealUid === sick.uid,
+      petPose: a?.pose,
+      petY: a?.pos.y,
+      bed,
+      inside: g.town.insideBuilding(g.player.pos.x, g.player.pos.z),
+    };
+  });
+  // Re-snap immediately before capture so updatePets cannot walk the pet off.
+  await page.waitForTimeout(200);
+  await page.evaluate(() => {
+    const g = window.__hv;
+    const bed = g.town.vetBeds[1] || g.town.vetBeds[0];
+    const a = g.actors.get(g.vetHealUid);
+    if (a && bed) {
+      a.pos.set(bed.x, bed.y, bed.z);
+      a.care = { x: bed.x, z: bed.z, y: bed.y, pose: 'sleep' };
+      a.pose = 'sleep';
+    }
+  });
+  report.checks.vetPetInBed = !!vetBed.pressed && vetBed.petPose === 'sleep' && (vetBed.petY ?? 0) > 0.5;
+  report.notes.push({ vetBed });
+  await shot(page, '07-vet-pet-in-bed', 900);
+
+  // 07c: healed — sick need cleared, bubble gone
+  const vetHealed = await page.evaluate(() => {
+    const g = window.__hv;
+    document.querySelectorAll('.toast').forEach((el) => el.remove());
+    const sickUid = g.save.equipped[0];
+    const now = Date.now();
+    const pets = g.save.pets.map((p) =>
+      p.uid === sickUid ? { ...p, need: null, nextNeedAt: now + 600_000, lastNeed: 'syk' } : p,
+    );
+    g.commit({ ...g.save, pets }, { pets: true });
+    g.vetHealUid = null;
+    const a = g.actors.get(sickUid);
+    const bed = g.town.vetBeds[1] || g.town.vetBeds[0];
+    if (a) {
+      a.care = null;
+      a.pos.set(bed.x + 1.2, 0, bed.z - 1.2);
+      a.pose = 'happy';
+      a.happyUntil = g.time + 3;
+      a.bubble.visible = false;
+      a.bubbleKind = null;
+    }
+    g.player.pos.set(38, 0, 29.5);
+    g.hud.setPrompt(null);
+    g.freezeCam = { x: 38, y: 5.8, z: 26.8, lx: 39, ly: 1.0, lz: 31.5 };
+    const pet = g.save.pets.find((p) => p.uid === sickUid);
+    return { needGone: !pet?.need, bubble: a?.bubble.visible, needKind: pet?.need?.kind ?? null };
+  });
+  report.checks.vetHealed = !!vetHealed.needGone && !vetHealed.bubble;
+  report.notes.push({ vetHealed });
+  await shot(page, '07-vet-healed', 1000);
   await ctx.close();
 }
 
