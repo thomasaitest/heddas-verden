@@ -24,7 +24,9 @@ function glassPanel(
 }
 
 /** Avatar root Y while driving – sunk so hips sit on the bench. */
-export const CAR_SEAT_Y = 0.48;
+export const CAR_SEAT_Y = 0.35;
+/** Local +X (right) offset for the driver so the passenger seat stays clear. */
+export const CAR_DRIVER_LAT = 0.38;
 export const PRAM_PULL_BACK = 1.45;
 
 function hexMix(a: string, b: string, t: number): string {

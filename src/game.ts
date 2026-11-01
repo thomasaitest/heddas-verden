@@ -23,7 +23,7 @@ import { guestHouseFromWire, houseToWire, type HouseWire } from './logic/houseWi
 import { canEnterHouse, doorPrompt, lockLabel } from './logic/houseLock.ts';
 import { friendDoorPos, HOME_ENTER_RADIUS, isRemotePlot, nearFriendDoor } from './logic/visitDoor.ts';
 import { miniReward, startMini, stepMini, type MiniState } from './logic/minigames.ts';
-import { buildCar, buildPram, CAR_SEAT_Y } from './three/vehicles.ts';
+import { buildCar, buildPram, CAR_DRIVER_LAT, CAR_SEAT_Y } from './three/vehicles.ts';
 import { Input } from './input.ts';
 import { animateAvatar, buildAvatar, type AvatarPose, type AvatarRig } from './three/avatarModel.ts';
 import { createInterior, type Interior } from './three/interior.ts';
@@ -1124,8 +1124,8 @@ export class Game {
     if (this.driving) {
       this.avatarHolder.position.y = CAR_SEAT_Y;
       // Driver on the right; passenger pets use carPassengerSeat on the left inside the door line.
-      this.avatarHolder.position.x += Math.cos(p.yaw) * 0.38;
-      this.avatarHolder.position.z -= Math.sin(p.yaw) * 0.38;
+      this.avatarHolder.position.x += Math.cos(p.yaw) * CAR_DRIVER_LAT;
+      this.avatarHolder.position.z -= Math.sin(p.yaw) * CAR_DRIVER_LAT;
       this.avatarHolder.scale.setScalar(0.72);
     } else {
       this.avatarHolder.scale.setScalar(1);

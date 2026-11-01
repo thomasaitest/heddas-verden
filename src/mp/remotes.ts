@@ -4,7 +4,8 @@ import { sameVisibility } from '../logic/collision.ts';
 import { animateAvatar, buildAvatar, type AvatarPose, type AvatarRig } from '../three/avatarModel.ts';
 import { animatePet, buildPet, type PetRig } from '../three/petModel.ts';
 import { blobShadow } from '../three/kit.ts';
-import { buildCar, buildPram, CAR_SEAT_Y, PRAM_PULL_BACK } from '../three/vehicles.ts';
+import { buildCar, buildPram, CAR_DRIVER_LAT, CAR_SEAT_Y, PRAM_PULL_BACK } from '../three/vehicles.ts';
+import { carCabinPetScale, carPassengerSeat } from '../logic/vehicles.ts';
 import { EMOTE_BY_ID, type EmoteId, type MountWire, type PlaceWire } from './protocol.ts';
 import type { MpSession } from './session.ts';
 
@@ -196,6 +197,11 @@ export class RemotePlayers {
             actor.pet.rig.root.position.set(x + Math.sin(ang) * 0.9, y + 0.8, z + Math.cos(ang) * 0.9);
             actor.pet.rig.root.rotation.y = yaw;
             actor.pet.rig.root.scale.setScalar(1.1);
+          } else if (driving) {
+            const seat = carPassengerSeat(x, z, yaw, 0);
+            actor.pet.rig.root.scale.setScalar(carCabinPetScale(r.pet.speciesId, 1.5));
+            actor.pet.rig.root.position.set(seat.x, seat.y, seat.z);
+            actor.pet.rig.root.rotation.y = yaw;
           } else {
             const ang = yaw + Math.PI - 0.5;
             const px = x + Math.sin(ang) * 2.4;
@@ -203,9 +209,10 @@ export class RemotePlayers {
             actor.pet.rig.root.position.set(px, Math.max(0, y - 0.2), pz);
             actor.pet.rig.root.rotation.y = yaw;
           }
-          animatePet(actor.pet.rig, now / 1000, r.speed > 0.2 || riding ? 'walk' : 'idle', r.speed);
+          const petPose = driving ? 'sit' : mount === 'hold' ? 'held' : r.speed > 0.2 || riding ? 'walk' : 'idle';
+          animatePet(actor.pet.rig, now / 1000, petPose, driving || mount === 'hold' ? 0 : r.speed);
           actor.pet.shadow.position.set(actor.pet.rig.root.position.x, 0.025, actor.pet.rig.root.position.z);
-          actor.pet.shadow.visible = actor.pet.rig.root.position.y < 0.5 && mount !== 'hold';
+          actor.pet.shadow.visible = actor.pet.rig.root.position.y < 0.5 && mount !== 'hold' && !driving;
         }
       }
 
@@ -232,7 +239,8 @@ export class RemotePlayers {
           actor.vehicle.position.set(x, 0, z);
           actor.vehicle.rotation.y = yaw;
           pose = 'drive';
-          actor.holder.position.y = CAR_SEAT_Y;
+          // Same sunk cabin seat as the local player (hips at seat, legs hidden by drive pose).
+          actor.holder.position.set(x + Math.cos(yaw) * CAR_DRIVER_LAT, CAR_SEAT_Y, z - Math.sin(yaw) * CAR_DRIVER_LAT);
           actor.holder.scale.setScalar(0.72);
           actor.shadow.visible = false;
         } else if (pramming) {

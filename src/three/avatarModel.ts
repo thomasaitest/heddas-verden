@@ -789,6 +789,9 @@ export function animateAvatar(rig: AvatarRig, t: number, pose: AvatarPose, speed
   const s = pose === 'walk' ? Math.sin(t * 11) * 0.8 * Math.min(1, speed) : 0;
   const [l, r] = rig.legs;
   const [la, ra] = rig.arms;
+  // Drive hides legs inside the cabin; restore for every other pose.
+  l.visible = true;
+  r.visible = true;
   rig.body.rotation.set(0, 0, 0);
   rig.body.position.set(0, pose === 'walk' ? Math.abs(Math.sin(t * 11)) * 0.06 : pose === 'idle' ? Math.sin(t * 2) * 0.012 : 0, 0);
   rig.head.rotation.set(pose === 'idle' ? Math.sin(t * 0.8) * 0.04 : 0, pose === 'idle' ? Math.sin(t * 0.5) * 0.2 : 0, 0);
@@ -871,11 +874,18 @@ export function animateAvatar(rig: AvatarRig, t: number, pose: AvatarPose, speed
     rig.body.position.set(0, 0.4 + Math.sin(t * 1.6) * 0.02, 0.15);
     rig.head.rotation.set(0.15, Math.sin(t * 0.7) * 0.05, 0);
   } else if (pose === 'drive') {
-    l.rotation.set(-1.35, 0, 0.25);
-    r.rotation.set(-1.35, 0, -0.25);
-    la.rotation.set(-1.1, 0, 0.2);
-    ra.rotation.set(-1.1, 0, -0.2);
-    rig.body.position.y = 0;
+    // Deep convertible sit: hips on the seat cushion, legs tucked/hidden inside the body,
+    // only torso + head + arms (on the wheel) read above the door line.
+    l.visible = false;
+    r.visible = false;
+    l.rotation.set(-1.55, 0.05, 0.15);
+    r.rotation.set(-1.55, -0.05, -0.15);
+    la.rotation.set(-1.05, 0.15, 0.35);
+    ra.rotation.set(-1.05, -0.15, -0.35);
+    rig.body.rotation.x = 0.08;
+    // Hip pivots at body-local y≈0.9; with holder at CAR_SEAT_Y≈0.35 this drop puts hips on the seat
+    // while head/torso stay readable through van/beetle windows (not towering over the roof).
+    rig.body.position.set(0, -0.42, 0.06);
   }
   if (holding) {
     la.rotation.set(-1.3, 0, 0.25);
