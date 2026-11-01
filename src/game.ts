@@ -14,7 +14,7 @@ import { movePlayer, resolve, surfaceUnder, type Colliders } from './logic/colli
 import { afterJump, canJump, drainWalk, ENERGY_MAX, restEnergy } from './logic/energy.ts';
 import { nearestBed, shouldWakeFromBed, type SleepSpot } from './logic/sleep.ts';
 import { skyAt, skyLabel, type SkyState } from './logic/weather.ts';
-import { canDrive, canPram, defaultCar, defaultPram, vehicleBodyRadius, vehicleSpeed } from './logic/vehicles.ts';
+import { canDrive, canPram, carCabinPetScale, carPassengerSeat, defaultCar, defaultPram, vehicleBodyRadius, vehicleSpeed } from './logic/vehicles.ts';
 import { standInFrontOfBench } from './logic/benchStand.ts';
 import { MISSION_BY_KIND, missionDone, missionProgress, offerMission, type MissionState } from './logic/missions.ts';
 import { ACTIVITIES, activityPose, canStartActivity, nearPlaza, type ActivityKind } from './logic/activity.ts';
@@ -39,6 +39,7 @@ import type { AvatarPoseWire } from './mp/protocol.ts';
 
 export interface PetActor {
   uid: string;
+  speciesId: string;
   rig: PetRig;
   pos: THREE.Vector3;
   yaw: number;
@@ -417,6 +418,13 @@ export class Game {
     for (const uid of want) {
       const pet = this.save.pets.find((p) => p.uid === uid)!;
       let a = this.actors.get(uid);
+      // Rebuild mesh when species changes (proofs / eggs) so the cabin seat always shows the right body.
+      if (a && a.speciesId !== pet.speciesId) {
+        this.scene.remove(a.rig.root);
+        a.rig = buildPet(SPECIES_BY_ID[pet.speciesId]);
+        a.speciesId = pet.speciesId;
+        this.scene.add(a.rig.root);
+      }
       if (!a) {
         const rig = buildPet(SPECIES_BY_ID[pet.speciesId]);
         const bubble = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.needTexture('heart'), depthTest: false }));
@@ -426,6 +434,7 @@ export class Game {
         const ang = this.player.yaw + Math.PI + (i - 0.5) * 0.9;
         a = {
           uid,
+          speciesId: pet.speciesId,
           rig,
           pos: new THREE.Vector3(this.player.pos.x + Math.sin(ang) * 2.5, 0, this.player.pos.z + Math.cos(ang) * 2.5),
           yaw: this.player.yaw,
@@ -449,9 +458,15 @@ export class Game {
     }
   }
 
-  /** Pet stage scale; riding makes the pet big enough to sit on. */
+  /** Pet stage scale; riding makes the pet big enough to sit on; cars shrink pets to fit the cabin. */
   private actorScale(a: PetActor): number {
-    return this.riding === a.uid ? Math.max(2.2, a.scale * 2) : this.holding === a.uid ? a.scale * 0.75 : a.scale;
+    if (this.riding === a.uid) return Math.max(2.2, a.scale * 2);
+    if (this.holding === a.uid) return a.scale * 0.75;
+    if (this.driving && this.save.equipped.includes(a.uid)) {
+      const pet = this.save.pets.find((x) => x.uid === a.uid);
+      return carCabinPetScale(pet?.speciesId ?? 'hund', a.scale);
+    }
+    return a.scale;
   }
 
   toggleHold() {
@@ -1108,9 +1123,9 @@ export class Game {
     this.avatarHolder.position.copy(p.pos);
     if (this.driving) {
       this.avatarHolder.position.y = CAR_SEAT_Y;
-      // Driver sits slightly to the right so the pet passenger seat is clear on the left.
-      this.avatarHolder.position.x += Math.cos(p.yaw) * 0.32;
-      this.avatarHolder.position.z -= Math.sin(p.yaw) * 0.32;
+      // Driver on the right; passenger pets use carPassengerSeat on the left inside the door line.
+      this.avatarHolder.position.x += Math.cos(p.yaw) * 0.38;
+      this.avatarHolder.position.z -= Math.sin(p.yaw) * 0.38;
       this.avatarHolder.scale.setScalar(0.72);
     } else {
       this.avatarHolder.scale.setScalar(1);
@@ -1472,19 +1487,9 @@ export class Game {
         pose = 'sleep';
         a.speed = p.speed;
       } else if (this.driving && equipped) {
-        // Passenger seat: left of the driver (first pet), then right / back rows.
-        // Clear lateral offset so the pet is not stacked on the avatar.
-        const fy = p.yaw;
-        const side = followIdx % 2 === 0 ? -1 : 1;
-        const row = Math.floor(followIdx / 2);
-        const lat = 0.9;
-        // Positive along = behind the driver (cabin), never on the hood.
-        const along = 0.45 + row * 0.65;
-        a.pos.set(
-          p.pos.x + Math.cos(fy) * side * lat - Math.sin(fy) * along,
-          0.52,
-          p.pos.z - Math.sin(fy) * side * lat - Math.cos(fy) * along,
-        );
+        // Inside the cabin on the passenger seat (within the door line), not on hood/deck.
+        const seat = carPassengerSeat(p.pos.x, p.pos.z, p.yaw, followIdx);
+        a.pos.set(seat.x, seat.y, seat.z);
         a.yaw = p.yaw;
         pose = 'sit';
         a.speed = 0;
@@ -1607,6 +1612,7 @@ export class Game {
       // Vet/house beds: tip the pet onto its side so "sleep" reads as lying down, not standing.
       a.rig.root.rotation.x = pose === 'sleep' && (a.care?.y ?? 0) > 0.4 ? -Math.PI / 2 : 0;
       animatePet(a.rig, t + a.uid.length, pose, a.speed);
+      // Car sit: keep legs/wings tucked under the door line (animatePet hides them for sit).
       a.shadow.position.set(a.pos.x, this.groundAt(a.pos.x, a.pos.y, a.pos.z) + 0.025, a.pos.z);
       a.shadow.scale.setScalar(s);
       a.shadow.visible = this.riding !== a.uid && this.holding !== a.uid && !(this.pramming && equipped) && !(this.driving && equipped);

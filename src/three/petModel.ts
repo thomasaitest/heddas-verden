@@ -283,23 +283,29 @@ export type PetPose = 'idle' | 'walk' | 'sleep' | 'fly' | 'held' | 'happy' | 'si
 export function animatePet(rig: PetRig, t: number, pose: PetPose, speed = 0): void {
   const walk = pose === 'walk' ? Math.min(1, speed) : 0;
   const swing = Math.sin(t * 12) * 0.7 * walk;
+  const sitting = pose === 'sit';
   rig.legs.forEach((l, i) => {
     const phase = rig.biped ? (i % 2 ? 1 : -1) : i === 0 || i === 3 ? 1 : -1;
-    // Sit: tuck legs under like a passenger; sleep: stretch out.
-    l.rotation.x = pose === 'sleep' ? 1.3 : pose === 'sit' ? 1.05 : pose === 'fly' ? 0.6 : swing * phase;
+    // Sit in a car: hide legs entirely so they never poke outside the door line.
+    l.visible = !sitting;
+    l.rotation.x = pose === 'sleep' ? 1.3 : sitting ? 1.2 : pose === 'fly' ? 0.6 : swing * phase;
   });
   const flap = pose === 'fly' ? Math.sin(t * 14) * 0.8 : Math.sin(t * 3) * 0.1;
-  rig.wings.forEach((w) => (w.rotation.z = (w.userData.side as number) * (0.2 + flap)));
-  if (rig.tail) rig.tail.rotation.y = Math.sin(t * (pose === 'happy' ? 18 : 6)) * (pose === 'sleep' || pose === 'sit' ? 0.05 : 0.4);
+  rig.wings.forEach((w) => {
+    // Fold wings while seated so flying pets fit the cabin.
+    w.visible = !sitting;
+    w.rotation.z = (w.userData.side as number) * (0.2 + flap);
+  });
+  if (rig.tail) rig.tail.rotation.y = Math.sin(t * (pose === 'happy' ? 18 : 6)) * (pose === 'sleep' || sitting ? 0.05 : 0.4);
   let y = 0;
   let tilt = 0;
   if (pose === 'walk') y = Math.abs(Math.sin(t * 12)) * 0.08 * walk;
   else if (pose === 'idle') y = Math.sin(t * 2.5) * 0.02;
   else if (pose === 'happy') y = Math.abs(Math.sin(t * 7)) * 0.3;
-  else if (pose === 'sit') {
-    // Lowered body in a car / bench seat — clearly not standing or hopping.
-    y = -0.22;
-    tilt = 0.12;
+  else if (sitting) {
+    // Sink torso onto the cushion; legs are hidden so they never cross the door line.
+    y = -0.28;
+    tilt = 0.14;
   } else if (pose === 'sleep') {
     y = -0.12;
     tilt = 0;
@@ -310,6 +316,6 @@ export function animatePet(rig: PetRig, t: number, pose: PetPose, speed = 0): vo
   if (pose !== 'sick') rig.body.rotation.z = 0;
   rig.body.position.y = y;
   rig.body.rotation.x = tilt;
-  rig.head.rotation.x = pose === 'sleep' ? 0.35 : pose === 'sit' ? 0.08 : pose === 'sick' ? 0.25 : Math.sin(t * 1.7) * 0.06;
+  rig.head.rotation.x = pose === 'sleep' ? 0.35 : sitting ? 0.05 : pose === 'sick' ? 0.25 : Math.sin(t * 1.7) * 0.06;
   rig.head.rotation.y = pose === 'idle' ? Math.sin(t * 0.7) * 0.25 : 0;
 }

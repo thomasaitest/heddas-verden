@@ -147,46 +147,49 @@ const chaseCam = (yaw, pitch = 0.38, dist = 11) => ({
   await ctx.close();
 }
 
-// ---- 2: pets ride in car (side / 3-4 angle) ----
+// ---- 2: pets ride in car (side angle, inside cabin) ----
 {
   const { page, ctx } = await boot();
-  const petsInCar = await page.evaluate(() => {
+  await page.evaluate(() => {
     const g = window.__hv;
     document.querySelectorAll('.sheet,.panel,.sheet-wrap,.toast').forEach((el) => el.remove());
+    // Prefer a mid-size dog for the canonical proof.
+    const base = g.save.pets[0];
+    const pet = { ...base, speciesId: 'hund', name: 'Hund', need: null, nextNeedAt: Date.now() + 600000 };
+    g.commit({ ...g.save, pets: [pet], equipped: [pet.uid], bag: { ...g.save.bag, 'bil-rosa': 1 } }, { pets: true });
     g.driving = 'bil-rosa';
     g.syncVehicleMesh();
-    // Face +Z; open convertible on flat ground away from buildings.
-    g.player.pos.set(6, 0, 18);
+    g.player.pos.set(6, 0, 20);
     g.player.yaw = 0;
-    // True side angle: camera on the passenger side looking across the cabin.
-    const yaw = 0;
-    g.freezeCam = {
-      x: 6 + Math.cos(yaw) * (-5.2), // left of car (passenger side)
-      y: 2.4,
-      z: 18 - Math.sin(yaw) * (-5.2) - 1.2,
-      lx: 6,
-      ly: 0.95,
-      lz: 18,
-    };
-    return true;
+    // Side view across the cabin (passenger left).
+    g.freezeCam = { x: 6 - 4.2, y: 2.35, z: 20 + 3.4, lx: 6 - 0.2, ly: 1.0, lz: 20.15 };
   });
   await page.waitForTimeout(700);
   const seatCheck = await page.evaluate(() => {
     const g = window.__hv;
     const p = g.player.pos;
     const yaw = g.player.yaw;
-    const pets = [...g.actors.values()].filter((a) => g.save.equipped.includes(a.uid) || g.save.equipped.includes?.(a.uid));
-    // equipped actors
     const near = [];
     for (const [uid, a] of g.actors) {
       if (!g.save.equipped.includes(uid)) continue;
       const dx = a.pos.x - p.x, dz = a.pos.z - p.z;
-      const lat = dx * Math.cos(yaw) - dz * Math.sin(yaw);
-      near.push({ uid, y: +a.pos.y.toFixed(2), lat: +lat.toFixed(2), pose: a.pose, dist: +Math.hypot(dx, dz).toFixed(2) });
+      const sin = Math.sin(yaw), cos = Math.cos(yaw);
+      const lat = cos * dx + sin * dz;
+      const forward = sin * dx + cos * dz;
+      near.push({
+        uid,
+        y: +a.pos.y.toFixed(2),
+        lat: +lat.toFixed(2),
+        forward: +forward.toFixed(2),
+        pose: a.pose,
+        scale: +a.rig.root.scale.x.toFixed(2),
+        legsVisible: a.rig.legs.some((l) => l.visible),
+      });
     }
     return { count: near.length, near };
   });
-  report.checks.petsInCar = seatCheck.count >= 1 && seatCheck.near.every((n) => Math.abs(n.lat) > 0.45 && n.y > 0.3);
+  report.checks.petsInCar = seatCheck.count >= 1 && seatCheck.near.every((n) =>
+    Math.abs(n.lat) < 0.72 && n.forward > -0.05 && n.forward < 0.55 && n.pose === 'sit' && !n.legsVisible && n.y > 0.5);
   report.notes.push({ petsInCar: seatCheck });
   await shot(page, '02-pets-in-car', 1000);
 

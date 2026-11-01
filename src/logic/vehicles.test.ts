@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { freshSave } from './save.ts';
-import { canDrive, canPram, defaultCar, defaultPram, ownedCars, vehicleBodyRadius, vehicleSpeed } from './vehicles.ts';
+import { canDrive, canPram, carCabinPetScale, carPassengerSeat, CAR_CABIN, defaultCar, defaultPram, ownedCars, vehicleBodyRadius, vehicleSpeed } from './vehicles.ts';
+import { SPECIES } from './pets.ts';
 
 describe('vehicles', () => {
   it('detects owned cars and prams from the bag', () => {
@@ -22,5 +23,22 @@ describe('vehicles', () => {
     expect(vehicleBodyRadius({ driving: true, pramming: false, riding: false })).toBeGreaterThan(
       vehicleBodyRadius({ driving: false, pramming: false, riding: false }),
     );
+  });
+});
+
+describe('car cabin passenger seats', () => {
+  it('keeps the first passenger inside the door line on the seat row', () => {
+    const s = carPassengerSeat(0, 0, 0, 0);
+    expect(Math.abs(s.lat)).toBeLessThan(CAR_CABIN.doorLine);
+    expect(s.lat).toBeLessThan(0); // left / passenger side
+    expect(s.forward).toBeGreaterThan(0); // seat row, not rear deck
+    expect(s.y).toBe(CAR_CABIN.seatY);
+  });
+  it('scales every species down to fit the cabin', () => {
+    for (const sp of SPECIES) {
+      const sc = carCabinPetScale(sp.id, 1.8);
+      expect(sc).toBeLessThanOrEqual(0.52);
+      expect(sc).toBeGreaterThanOrEqual(0.32);
+    }
   });
 });

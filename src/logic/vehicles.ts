@@ -1,6 +1,7 @@
 /** Cars and prams (vogner): ownership helpers and movement speeds. */
 
 import { CAR_BY_ID, PET_SHOP_BY_ID, type CarItem, type PetShopItem } from './catalog.ts';
+import { SPECIES_BY_ID, type BodyType } from './pets.ts';
 import type { SaveData } from './save.ts';
 
 export const DRIVE_SPEED = 18;
@@ -57,4 +58,66 @@ export function vehicleBodyRadius(opts: { driving: boolean; pramming: boolean; r
   if (opts.pramming) return 1.35;
   if (opts.riding) return 1.3;
   return 0.55;
+}
+
+/** Convertible / family cabin: pets must stay inside the door line on the seat cushion. */
+export const CAR_CABIN = {
+  /** Max |local X| for a passenger before the door pillar (body ~±1.15). */
+  doorLine: 0.72,
+  /** Seat cushion height (matches buildCar purple seat). */
+  seatY: 0.78,
+  /** Local forward of the seat row (car +Z = forward). */
+  seatForward: 0.12,
+  /** Lateral offset from car center for the passenger (left of driver). */
+  passengerLat: 0.55,
+  /** Driver lateral (right) — keep pets clear of this. */
+  driverLat: 0.38,
+} as const;
+
+/** Max world scale so a body type fits on the passenger seat (legs under door line). */
+const CABIN_FIT: Record<BodyType, number> = {
+  dog: 0.5,
+  cat: 0.5,
+  fox: 0.48,
+  bunny: 0.46,
+  bear: 0.44,
+  pig: 0.48,
+  horse: 0.36,
+  bird: 0.5,
+  penguin: 0.48,
+  dragon: 0.38,
+  dino: 0.38,
+  turtle: 0.46,
+  bug: 0.48,
+};
+
+export function carCabinPetScale(speciesId: string, stageScale: number): number {
+  const body = SPECIES_BY_ID[speciesId]?.body ?? 'dog';
+  const max = CABIN_FIT[body] ?? 0.5;
+  return Math.min(max, Math.max(0.32, stageScale * 0.4));
+}
+
+/** World position of a passenger seat inside the cabin (never on hood/deck/outside door). */
+export function carPassengerSeat(
+  carX: number,
+  carZ: number,
+  yaw: number,
+  seatIndex: number,
+): { x: number; y: number; z: number; lat: number; forward: number } {
+  const side = seatIndex % 2 === 0 ? -1 : 1; // first pet = left (passenger)
+  const row = Math.floor(seatIndex / 2);
+  const lat = side * CAR_CABIN.passengerLat;
+  // Stay inside door line
+  const clampedLat = Math.sign(lat) * Math.min(Math.abs(lat), CAR_CABIN.doorLine - 0.08);
+  const forward = CAR_CABIN.seatForward - row * 0.5;
+  const sin = Math.sin(yaw);
+  const cos = Math.cos(yaw);
+  // forward dir (sin, cos), right dir (cos, -sin)
+  return {
+    x: carX + sin * forward + cos * clampedLat,
+    y: CAR_CABIN.seatY,
+    z: carZ + cos * forward - sin * clampedLat,
+    lat: clampedLat,
+    forward,
+  };
 }
