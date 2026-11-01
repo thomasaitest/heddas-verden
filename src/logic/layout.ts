@@ -69,260 +69,251 @@ function mkStairs(midX: number, halfW: number, zTop: number, len: number): Stair
 
 type Built = { stairs: Stairs; rooms: Room[]; walls: [RectCollider[], RectCollider[]]; door: { x: number; z: number } };
 
-/** Classic cosy cottage: centre stairs, two back bedrooms + bath, open living. */
+
+
+/**
+ * Design rules for every plan:
+ * - Stairs sit in an open corridor strip: no wall crosses [x0,x1]×[zTop,zBottom].
+ * - Door gaps are ≥ DOOR_W and land on open floor.
+ * - Topologies differ: room count, wall graph, stair corner/side/steepness.
+ */
+
+/** Koselig hytte: 3 rooms down (stue+kjøkken / soverom / bad), steep corner ladder left. */
 function planHytte(w: number, d: number): Built {
-  const stairs = mkStairs(0, 1.4, -d / 2 + 4.2, 8);
-  const ax = w / 2 - 7;
-  const bz = -d / 2 + 7;
-  const doorZ = roomDoorZ(d);
+  const bz = -d / 2 + 6;
+  // Steep narrow ladder along the left living wall — clear of the back partition (z > bz).
+  const stairs = mkStairs(-w / 2 + 1.7, 0.9, bz + 1.8, 6.7);
   const f0: RectCollider[] = [];
   const f1: RectCollider[] = [];
-  for (const out of [f0, f1]) {
-    wallX(out, -ax, -d / 2, bz, [doorZ]);
-    wallX(out, ax, -d / 2, bz, [doorZ]);
-    wallZ(out, bz, -w / 2, -ax, []);
-    wallZ(out, bz, ax, w / 2, []);
-  }
-  wallX(f1, 0, d / 2 - 7, d / 2, [d / 2 - 3.6]);
+  // Back: soverom | bad  (gap doors into living; leave left living strip free of walls)
+  wallZ(f0, bz, -w / 2 + 4.2, 0, [-w / 4]);
+  wallZ(f0, bz, 0, w / 2, [w / 4]);
+  wallX(f0, 0, -d / 2, bz, []);
+  wallZ(f1, bz, -w / 2 + 4.2, 0, [-w / 4]);
+  wallZ(f1, bz, 0, w / 2, [w / 4]);
+  wallX(f1, 0, -d / 2, bz, []);
+  // Small loft nook upstairs (right of loft only — keeps left stair clear)
+  wallX(f1, w / 4, bz + 2.2, d / 2 - 0.8, [bz + 4.0]);
   const rooms: Room[] = [
-    { id: 'f0-sove', name: 'Soverom', floor: 0, x0: -w / 2, x1: -ax, z0: -d / 2, z1: bz },
-    { id: 'f0-bad', name: 'Bad', floor: 0, x0: ax, x1: w / 2, z0: -d / 2, z1: bz },
-    { id: 'f0-gang', name: 'Gang', floor: 0, x0: -ax, x1: ax, z0: -d / 2, z1: bz },
+    { id: 'f0-sove', name: 'Soverom', floor: 0, x0: -w / 2, x1: 0, z0: -d / 2, z1: bz },
+    { id: 'f0-bad', name: 'Bad', floor: 0, x0: 0, x1: w / 2, z0: -d / 2, z1: bz },
     { id: 'f0-stue', name: 'Stue og kjøkken', floor: 0, x0: -w / 2, x1: w / 2, z0: bz, z1: d / 2 },
-    { id: 'f1-sove', name: 'Soverom 2', floor: 1, x0: -w / 2, x1: -ax, z0: -d / 2, z1: bz },
-    { id: 'f1-lek', name: 'Lekerom', floor: 1, x0: ax, x1: w / 2, z0: -d / 2, z1: bz },
-    { id: 'f1-gang', name: 'Gang', floor: 1, x0: -ax, x1: ax, z0: -d / 2, z1: d / 2 - 7 },
-    { id: 'f1-gjest', name: 'Gjesterom', floor: 1, x0: -w / 2, x1: 0, z0: d / 2 - 7, z1: d / 2 },
-    { id: 'f1-hobby', name: 'Hobbyrom', floor: 1, x0: 0, x1: w / 2, z0: d / 2 - 7, z1: d / 2 },
+    { id: 'f1-sove', name: 'Loftsrom', floor: 1, x0: -w / 2, x1: 0, z0: -d / 2, z1: bz },
+    { id: 'f1-lek', name: 'Lekerom', floor: 1, x0: 0, x1: w / 2, z0: -d / 2, z1: bz },
+    { id: 'f1-loft', name: 'Loft', floor: 1, x0: -w / 2, x1: w / 2, z0: bz, z1: d / 2 },
   ];
   return { stairs, rooms, walls: [f0, f1], door: { x: 0, z: d / 2 - 1.4 } };
 }
 
+/** Rosa villa: entre + side stairs, separate stue & kjøkken, 2 bedrooms + bad. */
+function planVilla(w: number, d: number): Built {
+  const entreZ = d / 2 - 6;
+  const midZ = -d / 2 + 7;
+  const kx = 2.0; // kitchen/living split
+  // Stairs in the left strip of the entre/stue — open corridor x ∈ [-w/2, -w/2+5]
+  const stairs = mkStairs(-w / 2 + 2.5, 1.3, midZ + 0.5, 8.2);
+  const f0: RectCollider[] = [];
+  const f1: RectCollider[] = [];
+  // Entre ↔ house
+  wallZ(f0, entreZ, -w / 2 + 5.2, w / 2, [w / 4]); // gap on right into kitchen; left strip open for stairs
+  // Stue | kjøkken
+  wallX(f0, kx, midZ, entreZ, [(midZ + entreZ) / 2]);
+  // Back rooms
+  wallZ(f0, midZ, -w / 2 + 5.2, kx, [-w / 6]);
+  wallZ(f0, midZ, kx, w / 2, [w / 3]);
+  wallX(f0, -w / 6, -d / 2, midZ, [roomDoorZ(d)]);
+  // Upstairs
+  wallZ(f1, entreZ, -w / 2 + 5.2, w / 2, [w / 4]);
+  wallX(f1, kx, midZ, entreZ, [(midZ + entreZ) / 2]);
+  wallZ(f1, midZ, -w / 2 + 5.2, kx, [-w / 6]);
+  wallZ(f1, midZ, kx, w / 2, [w / 3]);
+  wallX(f1, -w / 6, -d / 2, midZ, [roomDoorZ(d)]);
+  wallX(f1, w / 3, entreZ, d / 2, [d / 2 - 2.8]);
+  const rooms: Room[] = [
+    { id: 'f0-entre', name: 'Entre', floor: 0, x0: -w / 2, x1: w / 2, z0: entreZ, z1: d / 2 },
+    { id: 'f0-stue', name: 'Stue', floor: 0, x0: -w / 2, x1: kx, z0: midZ, z1: entreZ },
+    { id: 'f0-kjokken', name: 'Kjøkken', floor: 0, x0: kx, x1: w / 2, z0: midZ, z1: entreZ },
+    { id: 'f0-master', name: 'Master', floor: 0, x0: -w / 2, x1: -w / 6, z0: -d / 2, z1: midZ },
+    { id: 'f0-sove', name: 'Soverom', floor: 0, x0: -w / 6, x1: kx, z0: -d / 2, z1: midZ },
+    { id: 'f0-bad', name: 'Bad', floor: 0, x0: kx, x1: w / 2, z0: -d / 2, z1: midZ },
+    { id: 'f1-galleri', name: 'Galleri', floor: 1, x0: -w / 2, x1: w / 2, z0: entreZ, z1: d / 2 },
+    { id: 'f1-bib', name: 'Bibliotek', floor: 1, x0: -w / 2, x1: kx, z0: midZ, z1: entreZ },
+    { id: 'f1-atel', name: 'Atelier', floor: 1, x0: kx, x1: w / 2, z0: midZ, z1: entreZ },
+    { id: 'f1-gjest', name: 'Gjesterom', floor: 1, x0: -w / 2, x1: -w / 6, z0: -d / 2, z1: midZ },
+    { id: 'f1-barn', name: 'Barnerom', floor: 1, x0: -w / 6, x1: kx, z0: -d / 2, z1: midZ },
+    { id: 'f1-ens', name: 'Ensuite', floor: 1, x0: kx, x1: w / 2, z0: -d / 2, z1: midZ },
+  ];
+  return { stairs, rooms, walls: [f0, f1], door: { x: -2.0, z: d / 2 - 1.4 } };
+}
 
+/** Gårdshus: stor kjøkkenblokk venstre, stue midt, entre høyre, soverom/vask bakerst; trapp i høyre stue-stripe. */
+function planGard(w: number, d: number): Built {
+  const crossZ = -d / 2 + 8;
+  const kX = -w / 2 + 11;
+  const eX = w / 2 - 6;
+  // Stairs toward the right of the stue strip (near entre), clear corridor
+  const stairs = mkStairs(eX - 2.4, 1.3, crossZ + 0.6, 7.8);
+  const f0: RectCollider[] = [];
+  const f1: RectCollider[] = [];
+  wallZ(f0, crossZ, -w / 2, w / 2, [-w / 3, (kX + eX) / 2, w / 3]);
+  wallX(f0, kX, crossZ, d / 2, [crossZ + 3.2]); // kitchen | stue
+  wallX(f0, eX, crossZ, d / 2, [d / 2 - 2.5]); // stue | entre
+  wallX(f0, 0, -d / 2, crossZ, [roomDoorZ(d)]);
+  wallZ(f1, crossZ, -w / 2, w / 2, [-w / 3, (kX + eX) / 2, w / 3]);
+  wallX(f1, kX, crossZ, d / 2, [crossZ + 3.2]);
+  wallX(f1, eX, crossZ, d / 2, [d / 2 - 2.5]);
+  wallX(f1, 0, -d / 2, crossZ, [roomDoorZ(d)]);
+  const rooms: Room[] = [
+    { id: 'f0-sove', name: 'Soverom', floor: 0, x0: -w / 2, x1: 0, z0: -d / 2, z1: crossZ },
+    { id: 'f0-vask', name: 'Vaskerom', floor: 0, x0: 0, x1: w / 2, z0: -d / 2, z1: crossZ },
+    { id: 'f0-kjokken', name: 'Kjøkken', floor: 0, x0: -w / 2, x1: kX, z0: crossZ, z1: d / 2 },
+    { id: 'f0-stue', name: 'Stue', floor: 0, x0: kX, x1: eX, z0: crossZ, z1: d / 2 },
+    { id: 'f0-entre', name: 'Entre', floor: 0, x0: eX, x1: w / 2, z0: crossZ, z1: d / 2 },
+    { id: 'f1-barn', name: 'Barnerom', floor: 1, x0: -w / 2, x1: 0, z0: -d / 2, z1: crossZ },
+    { id: 'f1-verk', name: 'Verksted', floor: 1, x0: 0, x1: w / 2, z0: -d / 2, z1: crossZ },
+    { id: 'f1-forrad', name: 'Forråd', floor: 1, x0: -w / 2, x1: kX, z0: crossZ, z1: d / 2 },
+    { id: 'f1-lek', name: 'Lekerom', floor: 1, x0: kX, x1: eX, z0: crossZ, z1: d / 2 },
+    { id: 'f1-loft', name: 'Loft', floor: 1, x0: eX, x1: w / 2, z0: crossZ, z1: d / 2 },
+  ];
+  return { stairs, rooms, walls: [f0, f1], door: { x: (eX + w / 2) / 2, z: d / 2 - 1.4 } };
+}
 
+/** Moderne: mostly open, glass wall to kitchen, spiral stair hard left in open stue. */
+function planModerne(w: number, d: number): Built {
+  const glassX = w / 2 - 7;
+  const nookX = -w / 2 + 7.5;
+  const nookZ = -d / 2 + 5.8;
+  // Spiral-feel stair on the left of the open stue, fully clear of the bedroom nook walls
+  const stairs = mkStairs(-w / 2 + 2.3, 1.05, nookZ + 0.5, 8.0);
+  const f0: RectCollider[] = [];
+  const f1: RectCollider[] = [];
+  // Glass wall (many gaps)
+  wallX(f0, glassX, -d / 2 + 1.2, d / 2 - 1.2, [-d / 3, 0, d / 3]);
+  // Bedroom nook — only to the RIGHT of the stair corridor
+  wallZ(f0, nookZ, nookX, glassX, [nookX + 2.5]);
+  wallX(f0, nookX, -d / 2, nookZ, [roomDoorZ(d)]);
+  wallX(f1, glassX, -d / 2 + 1.2, d / 2 - 1.2, [-d / 3, d / 3]);
+  wallZ(f1, d / 2 - 6.5, -w / 2 + 5, glassX, [-w / 6]);
+  wallX(f1, 0, d / 2 - 6.5, d / 2, [d / 2 - 3.0]);
+  const rooms: Room[] = [
+    { id: 'f0-sove', name: 'Soverom', floor: 0, x0: nookX, x1: glassX, z0: -d / 2, z1: nookZ },
+    { id: 'f0-stue', name: 'Åpen stue', floor: 0, x0: -w / 2, x1: glassX, z0: nookZ, z1: d / 2 },
+    { id: 'f0-stueb', name: 'Åpen stue', floor: 0, x0: -w / 2, x1: nookX, z0: -d / 2, z1: nookZ },
+    { id: 'f0-kjokken', name: 'Kjøkken', floor: 0, x0: glassX, x1: w / 2, z0: -d / 2, z1: d / 2 },
+    { id: 'f1-kontor', name: 'Kontor', floor: 1, x0: -w / 2, x1: 0, z0: d / 2 - 6.5, z1: d / 2 },
+    { id: 'f1-media', name: 'Mediarom', floor: 1, x0: 0, x1: glassX, z0: d / 2 - 6.5, z1: d / 2 },
+    { id: 'f1-galleri', name: 'Galleri', floor: 1, x0: -w / 2, x1: glassX, z0: -d / 2, z1: d / 2 - 6.5 },
+    { id: 'f1-kjokken', name: 'Øvre kjøkken', floor: 1, x0: glassX, x1: w / 2, z0: -d / 2, z1: d / 2 },
+  ];
+  return { stairs, rooms, walls: [f0, f1], door: { x: 0, z: d / 2 - 1.4 } };
+}
 
-/**
- * Shared connected skeleton (same topology as the working hytte):
- * back left/right rooms + middle hall + open living downstairs;
- * matching upstairs + two front rooms. Stairs ALWAYS sit inside the
- * middle hall strip so they never trap a side room.
- */
-function planFromSkeleton(
-  w: number,
-  d: number,
-  opts: {
-    /** Stairs mid-X; must stay inside (-ax+halfW, ax-halfW). */
-    stairSide: 'left' | 'right' | 'center';
-    stairHalfW: number;
-    stairZTopPad: number;
-    stairLen: number;
-    /** Depth/width of each back corner room. */
-    room: number;
-    frontRoom: number;
-    doorX: number;
-    /** Optional living-room partial wall with a door gap (never a sealed pocket). */
-    livingDivider?: boolean;
-    names: {
-      sleep: string;
-      bath: string;
-      living: string;
-      sleep2: string;
-      play: string;
-      guest: string;
-      hobby: string;
-      hall: string;
-      hallUp?: string;
-    };
-  },
-): Built {
-  const room = Math.min(opts.room, Math.min(w, d) * 0.38);
-  const frontDepth = Math.min(opts.frontRoom, d * 0.4);
-  const ax = w / 2 - room;
-  const bz = -d / 2 + room;
-  const halfW = opts.stairHalfW;
-  // Keep a 0.35m clearance from the hall side-walls so stairs never clip into bedrooms.
-  const maxOffset = Math.max(0, ax - halfW - 0.35);
-  let midX = 0;
-  if (opts.stairSide === 'left') midX = -maxOffset;
-  else if (opts.stairSide === 'right') midX = maxOffset;
-  const zTop = -d / 2 + opts.stairZTopPad;
-  const stairs = mkStairs(midX, halfW, zTop, opts.stairLen);
-  const doorZ = roomDoorZ(d);
+/** Trehus: staggered rooms + steep ladder in the right mid-band (open strip). */
+function planTrehus(w: number, d: number): Built {
+  const zA = -d / 2 + 5.5;
+  const zB = -d / 2 + 10;
+  const xL = -w / 2 + 8;
+  const xR = w / 2 - 6.5;
+  // Ladder in the gang/stue open area near xR but LEFT of xR wall: corridor (xR-4 .. xR)
+  const stairs = mkStairs(xR - 2.2, 0.95, zA + 0.7, 6.7);
+  const f0: RectCollider[] = [];
+  const f1: RectCollider[] = [];
+  wallZ(f0, zA, -w / 2, xL, [-w / 2 + 4]);
+  wallX(f0, xL, -d / 2, zA, []);
+  wallZ(f0, zB, -w / 2, xR - 4.5, [-w / 4]); // leave stair strip open (no wall across stairs)
+  wallZ(f0, zB, xR, w / 2, [w / 2 - 3]);
+  wallX(f0, xR, zA, d / 2, [(zA + d / 2) / 2]);
+  wallZ(f1, zA, -w / 2, xL, [-w / 2 + 4]);
+  wallX(f1, xL, -d / 2, zA, []);
+  wallZ(f1, zB, -w / 2, xR - 4.5, [-w / 4]);
+  wallZ(f1, zB, xR, w / 2, [w / 2 - 3]);
+  wallX(f1, xR, zA, d / 2, [(zA + d / 2) / 2]);
+  const rooms: Room[] = [
+    { id: 'f0-sove', name: 'Soverom', floor: 0, x0: -w / 2, x1: xL, z0: -d / 2, z1: zA },
+    { id: 'f0-stue', name: 'Stue og kjøkken', floor: 0, x0: -w / 2, x1: xR, z0: zA, z1: zB },
+    { id: 'f0-krok', name: 'Krok', floor: 0, x0: xR, x1: w / 2, z0: zA, z1: zB },
+    { id: 'f0-bad', name: 'Bad', floor: 0, x0: xR, x1: w / 2, z0: zB, z1: d / 2 },
+    { id: 'f0-gang', name: 'Gang', floor: 0, x0: -w / 2, x1: xR, z0: zB, z1: d / 2 },
+    { id: 'f1-loft', name: 'Loftsrom', floor: 1, x0: -w / 2, x1: xL, z0: -d / 2, z1: zA },
+    { id: 'f1-lek', name: 'Lekerom', floor: 1, x0: -w / 2, x1: xR, z0: zA, z1: zB },
+    { id: 'f1-hobby', name: 'Hobbyrom', floor: 1, x0: xR, x1: w / 2, z0: zA, z1: d / 2 },
+    { id: 'f1-gjest', name: 'Gjesterom', floor: 1, x0: -w / 2, x1: xR, z0: zB, z1: d / 2 },
+  ];
+  return { stairs, rooms, walls: [f0, f1], door: { x: -1.2, z: d / 2 - 1.4 } };
+}
+
+/** Sjøhus: rooms in a row along z (ship bays); companionway stairs on the starboard strip. */
+function planSjohus(w: number, d: number): Built {
+  const z1 = -d / 2 + d * 0.28;
+  const z2 = -d / 2 + d * 0.5;
+  const z3 = -d / 2 + d * 0.72;
+  const lane = w / 2 - 4.5; // walls stop before starboard stair lane
+  const stairs = mkStairs(w / 2 - 2.2, 1.15, z1 + 0.4, 8.0);
   const f0: RectCollider[] = [];
   const f1: RectCollider[] = [];
   for (const out of [f0, f1]) {
-    wallX(out, -ax, -d / 2, bz, [doorZ]);
-    wallX(out, ax, -d / 2, bz, [doorZ]);
-    wallZ(out, bz, -w / 2, -ax, []);
-    wallZ(out, bz, ax, w / 2, []);
+    // Bulkheads stop before the starboard companionway so stairs stay clear
+    wallZ(out, z1, -w / 2, lane, [-w / 5]);
+    wallZ(out, z2, -w / 2, lane, [0]);
+    wallZ(out, z3, -w / 2, lane, [w / 6]);
   }
-  // Upstairs front rooms split down the middle with a door gap.
-  wallX(f1, 0, d / 2 - frontDepth, d / 2, [d / 2 - Math.min(3.6, frontDepth * 0.55)]);
-  // Living-room L-divider (floor 0 only): wall stub with a wide gap so the whole living stays one connected component.
-  if (opts.livingDivider) {
-    const divX = w / 2 - room * 0.55;
-    wallX(f0, divX, bz + 2.2, d / 2 - 1.5, [bz + 4.5]);
-  }
+  // Port-side cabins upstairs
+  wallX(f1, -w / 2 + 5, z1, z3, [(z1 + z3) / 2]);
   const rooms: Room[] = [
-    { id: 'f0-sove', name: opts.names.sleep, floor: 0, x0: -w / 2, x1: -ax, z0: -d / 2, z1: bz },
-    { id: 'f0-bad', name: opts.names.bath, floor: 0, x0: ax, x1: w / 2, z0: -d / 2, z1: bz },
-    { id: 'f0-gang', name: opts.names.hall, floor: 0, x0: -ax, x1: ax, z0: -d / 2, z1: bz },
-    { id: 'f0-stue', name: opts.names.living, floor: 0, x0: -w / 2, x1: w / 2, z0: bz, z1: d / 2 },
-    { id: 'f1-sove', name: opts.names.sleep2, floor: 1, x0: -w / 2, x1: -ax, z0: -d / 2, z1: bz },
-    { id: 'f1-lek', name: opts.names.play, floor: 1, x0: ax, x1: w / 2, z0: -d / 2, z1: bz },
-    { id: 'f1-gang', name: opts.names.hallUp ?? 'Gang', floor: 1, x0: -ax, x1: ax, z0: -d / 2, z1: d / 2 - frontDepth },
-    { id: 'f1-gjest', name: opts.names.guest, floor: 1, x0: -w / 2, x1: 0, z0: d / 2 - frontDepth, z1: d / 2 },
-    { id: 'f1-hobby', name: opts.names.hobby, floor: 1, x0: 0, x1: w / 2, z0: d / 2 - frontDepth, z1: d / 2 },
+    { id: 'f0-lugar', name: 'Lugar', floor: 0, x0: -w / 2, x1: w / 2, z0: -d / 2, z1: z1 },
+    { id: 'f0-bad', name: 'Bad', floor: 0, x0: -w / 2, x1: w / 2, z0: z1, z1: z2 },
+    { id: 'f0-salong', name: 'Salong', floor: 0, x0: -w / 2, x1: w / 2, z0: z2, z1: z3 },
+    { id: 'f0-dekk', name: 'Dekk', floor: 0, x0: -w / 2, x1: w / 2, z0: z3, z1: d / 2 },
+    { id: 'f1-kaptein', name: 'Kapteinslugar', floor: 1, x0: -w / 2, x1: w / 2, z0: -d / 2, z1: z1 },
+    { id: 'f1-fiske', name: 'Fiskebu', floor: 1, x0: -w / 2 + 5, x1: w / 2, z0: z1, z1: z2 },
+    { id: 'f1-bro', name: 'Bro', floor: 1, x0: -w / 2 + 5, x1: w / 2, z0: z2, z1: z3 },
+    { id: 'f1-utsikt', name: 'Utsikt', floor: 1, x0: -w / 2, x1: w / 2, z0: z3, z1: d / 2 },
+    { id: 'f1-korridor', name: 'Korridor', floor: 1, x0: -w / 2, x1: -w / 2 + 5, z0: z1, z1: z3 },
   ];
-  return { stairs, rooms, walls: [f0, f1], door: { x: opts.doorX, z: d / 2 - 1.4 } };
+  return { stairs, rooms, walls: [f0, f1], door: { x: 1.2, z: d / 2 - 1.4 } };
 }
 
-/** Rosa villa: wide left stairs, larger back rooms, salon names. */
-function planVilla(w: number, d: number): Built {
-  return planFromSkeleton(w, d, {
-    stairSide: 'left',
-    stairHalfW: 1.55,
-    stairZTopPad: 3.8,
-    stairLen: 9,
-    room: 6.4,
-    frontRoom: 7.2,
-    doorX: -2.5,
-    livingDivider: true,
-    names: {
-      sleep: 'Master',
-      bath: 'Ensuite',
-      living: 'Salon',
-      sleep2: 'Gjesterom',
-      play: 'Bibliotek',
-      guest: 'Atelier',
-      hobby: 'Boudoir',
-      hall: 'Galleri',
-      hallUp: 'Øvre galleri',
-    },
-  });
-}
-
-/** Gårdshus: right-side stairs, farm room names, living divider. */
-function planGard(w: number, d: number): Built {
-  return planFromSkeleton(w, d, {
-    stairSide: 'right',
-    stairHalfW: 1.3,
-    stairZTopPad: 4.0,
-    stairLen: 8.5,
-    room: 7.2,
-    frontRoom: 6.5,
-    doorX: 2.2,
-    livingDivider: true,
-    names: {
-      sleep: 'Soverom',
-      bath: 'Vaskerom',
-      living: 'Stue',
-      sleep2: 'Barnerom',
-      play: 'Verksted',
-      guest: 'Lekerom',
-      hobby: 'Forråd',
-      hall: 'Entre',
-    },
-  });
-}
-
-/** Moderne: narrow «spiral-feel» stairs hard left in the hall. */
-function planModerne(w: number, d: number): Built {
-  return planFromSkeleton(w, d, {
-    stairSide: 'left',
-    stairHalfW: 1.05,
-    stairZTopPad: 3.2,
-    stairLen: 8.8,
-    room: 5.6,
-    frontRoom: 8.0,
-    doorX: 0,
-    livingDivider: false,
-    names: {
-      sleep: 'Soverom',
-      bath: 'Bad',
-      living: 'Åpen stue',
-      sleep2: 'Kontor',
-      play: 'Mediarom',
-      guest: 'Loft øst',
-      hobby: 'Loft vest',
-      hall: 'Åpen gang',
-      hallUp: 'Galleri',
-    },
-  });
-}
-
-/** Trehus: stairs slightly right of centre, forest cabin names. */
-function planTrehus(w: number, d: number): Built {
-  return planFromSkeleton(w, d, {
-    stairSide: 'right',
-    stairHalfW: 1.35,
-    stairZTopPad: 4.2,
-    stairLen: 8,
-    room: 6.8,
-    frontRoom: 6.4,
-    doorX: -1.2,
-    livingDivider: false,
-    names: {
-      sleep: 'Soverom',
-      bath: 'Bad',
-      living: 'Stue og kjøkken',
-      sleep2: 'Loftsrom',
-      play: 'Lekerom',
-      guest: 'Gjesterom',
-      hobby: 'Hobbyrom',
-      hall: 'Gang',
-    },
-  });
-}
-
-/** Sjøhus: right stairs, nautical names, living divider like a bulkhead. */
-function planSjohus(w: number, d: number): Built {
-  return planFromSkeleton(w, d, {
-    stairSide: 'right',
-    stairHalfW: 1.2,
-    stairZTopPad: 3.5,
-    stairLen: 9.0,
-    room: 5.8,
-    frontRoom: 7.0,
-    doorX: 1.4,
-    livingDivider: true,
-    names: {
-      sleep: 'Lugar',
-      bath: 'Bad',
-      living: 'Stue',
-      sleep2: 'Kapteinslugar',
-      play: 'Fiskebu',
-      guest: 'Utsikt',
-      hobby: 'Bro',
-      hall: 'Dekk',
-      hallUp: 'Øvre dekk',
-    },
-  });
-}
-
-/** Eventyrslott: grand wide centre stairs, palace names. */
+/** Eventyrslott: festsal midt, fløyer, tronsal/prinsesse bakerst, tårntrapp i østfløy. */
 function planSlott(w: number, d: number): Built {
-  return planFromSkeleton(w, d, {
-    stairSide: 'center',
-    stairHalfW: 2.4,
-    stairZTopPad: 3.6,
-    stairLen: 10,
-    room: 8.5,
-    frontRoom: 8.0,
-    doorX: 0,
-    livingDivider: true,
-    names: {
-      sleep: 'Kongesuite',
-      bath: 'Tronsal',
-      living: 'Festsal',
-      sleep2: 'Ballsal',
-      play: 'Skattkammer',
-      guest: 'Vesttårn',
-      hobby: 'Østtårn',
-      hall: 'Vestibyle',
-      hallUp: 'Galleri',
-    },
-  });
+  const hallZ0 = -d / 2 + 7.5;
+  const hallZ1 = d / 2 - 7.5;
+  const wing = 8.5;
+  // Tower stair entirely inside the east wing (open strip), not crossing festsal walls
+  const stairs = mkStairs(w / 2 - wing / 2, 1.2, hallZ0 + 0.5, 9.2);
+  const f0: RectCollider[] = [];
+  const f1: RectCollider[] = [];
+  // Festsal — east wall has TWO gaps so wing↔hall works; stair stays in wing so doesn't need to cross
+  wallZ(f0, hallZ0, -w / 2 + wing, w / 2 - wing, [0]);
+  wallZ(f0, hallZ1, -w / 2 + wing, w / 2 - wing, [0]);
+  wallX(f0, -w / 2 + wing, hallZ0, hallZ1, [(hallZ0 + hallZ1) / 2]);
+  wallX(f0, w / 2 - wing, hallZ0, hallZ1, [hallZ0 + 2.5, hallZ1 - 2.5]); // gaps away from stair mid-z
+  wallX(f0, 0, hallZ1, d / 2, [d / 2 - 3.2]);
+  wallX(f0, 0, -d / 2, hallZ0, [roomDoorZ(d)]);
+  wallZ(f0, 0, -w / 2, -w / 2 + wing, [-w / 2 + wing / 2]);
+  // East wing: only a light mid-split that does NOT cross the stair x (stair mid = w/2 - wing/2)
+  // Skip wallZ across east wing centre — keeps stair clear the full length
+  wallZ(f1, hallZ0, -w / 2 + wing, w / 2 - wing, [0]);
+  wallZ(f1, hallZ1, -w / 2 + wing, w / 2 - wing, [0]);
+  wallX(f1, -w / 2 + wing, hallZ0, hallZ1, [(hallZ0 + hallZ1) / 2]);
+  wallX(f1, w / 2 - wing, hallZ0, hallZ1, [hallZ0 + 2.5, hallZ1 - 2.5]);
+  wallX(f1, 0, hallZ1, d / 2, [d / 2 - 3.2]);
+  wallX(f1, 0, -d / 2, hallZ0, [roomDoorZ(d)]);
+  wallZ(f1, 0, -w / 2, -w / 2 + wing, [-w / 2 + wing / 2]);
+  const rooms: Room[] = [
+    { id: 'f0-fest', name: 'Festsal', floor: 0, x0: -w / 2 + wing, x1: w / 2 - wing, z0: hallZ0, z1: hallZ1 },
+    { id: 'f0-vest', name: 'Vestibyle', floor: 0, x0: -w / 2 + wing, x1: w / 2 - wing, z0: hallZ1, z1: d / 2 },
+    { id: 'f0-tron', name: 'Tronsal', floor: 0, x0: -w / 2 + wing, x1: 0, z0: -d / 2, z1: hallZ0 },
+    { id: 'f0-prins', name: 'Prinsesserom', floor: 0, x0: 0, x1: w / 2 - wing, z0: -d / 2, z1: hallZ0 },
+    { id: 'f0-vestfloy', name: 'Vestfløy', floor: 0, x0: -w / 2, x1: -w / 2 + wing, z0: -d / 2, z1: d / 2 },
+    { id: 'f0-ostfloy', name: 'Østfløy', floor: 0, x0: w / 2 - wing, x1: w / 2, z0: -d / 2, z1: d / 2 },
+    { id: 'f1-ball', name: 'Ballsal', floor: 1, x0: -w / 2 + wing, x1: w / 2 - wing, z0: hallZ0, z1: hallZ1 },
+    { id: 'f1-galleri', name: 'Galleri', floor: 1, x0: -w / 2 + wing, x1: w / 2 - wing, z0: hallZ1, z1: d / 2 },
+    { id: 'f1-konge', name: 'Kongesuite', floor: 1, x0: -w / 2 + wing, x1: 0, z0: -d / 2, z1: hallZ0 },
+    { id: 'f1-skatt', name: 'Skattkammer', floor: 1, x0: 0, x1: w / 2 - wing, z0: -d / 2, z1: hallZ0 },
+    { id: 'f1-vesttarn', name: 'Vesttårn', floor: 1, x0: -w / 2, x1: -w / 2 + wing, z0: -d / 2, z1: d / 2 },
+    { id: 'f1-osttarn', name: 'Østtårn', floor: 1, x0: w / 2 - wing, x1: w / 2, z0: -d / 2, z1: d / 2 },
+  ];
+  return { stairs, rooms, walls: [f0, f1], door: { x: 3.2, z: d / 2 - 1.4 } };
 }
 
 function buildPlan(style: HouseStyle, w: number, d: number): Built {
@@ -426,6 +417,22 @@ export function placeInLayout(l: HouseLayout, floor: number, x: number, z: numbe
     const pos = { x: p.x, y: 0, z: p.z };
     resolve(pos, r, c, 6);
     p = keepInside(l, pos.x, pos.z, r);
+  }
+  if (!blocked(p.x, p.z, r, c)) return p;
+  // Spiral search when resolve cannot escape a wide stair footprint / tight pocket.
+  for (let ring = 1; ring <= 24; ring++) {
+    const step = 0.55;
+    for (let i = -ring; i <= ring; i++) {
+      for (const [dx, dz] of [
+        [i * step, -ring * step],
+        [i * step, ring * step],
+        [-ring * step, i * step],
+        [ring * step, i * step],
+      ]) {
+        const q = keepInside(l, x + dx, z + dz, r);
+        if (!blocked(q.x, q.z, r, c)) return q;
+      }
+    }
   }
   return p;
 }

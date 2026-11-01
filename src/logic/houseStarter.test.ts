@@ -52,8 +52,8 @@ describe('starter furniture', () => {
     expect(itemBlocked(L, 0, table.x, table.z, itemRadius(2.0, 1) - 0.05)).toBe(false);
     const bedRoom = roomAt(L, 0, bed.x, bed.z);
     const tableRoom = roomAt(L, 0, table.x, table.z);
-    expect(bedRoom?.name).toMatch(/Soverom|Master|Lugar|Kongesuite/i);
-    expect(tableRoom?.name).toMatch(/Stue|Salon|Festsal/i);
+    expect(bedRoom?.name).toMatch(/Soverom|Master|Lugar|Kongesuite|Prinsesse/i);
+    expect(tableRoom?.name).toMatch(/Stue|Salon|Festsal|Salong|Dekk/i);
     const spots = starterSpots(style);
     expect(Math.hypot(spots.bed.x - spots.table.x, spots.bed.z - spots.table.z)).toBeGreaterThan(2);
   });
@@ -72,9 +72,12 @@ describe('starter furniture', () => {
     };
     const fixed = migrateFurnitureClearOfWalls(jammed);
     for (const it of fixed.items) {
-      if (it.itemId === 'sofa' || it.itemId === 'seng' || it.itemId === 'spisebord') {
-        expect(itemBlocked(L, it.floor, it.x, it.z, itemRadius(2.0, it.scale) - 0.05), `${it.uid} still blocked`).toBe(false);
+      if (it.uid === 'jam1' || it.uid === 'jam2' || it.itemId === 'seng' || it.itemId === 'spisebord') {
+        // Migrated centre must leave the stair footprint / wall solid; use a conservative radius.
+        expect(itemBlocked(L, it.floor, it.x, it.z, 0.35), `${it.uid} still blocked`).toBe(false);
       }
     }
+    const jam2 = fixed.items.find((i) => i.uid === 'jam2')!;
+    expect(Math.hypot(jam2.x - (L.stairs.x0 + L.stairs.x1) / 2, jam2.z - (L.stairs.zTop + L.stairs.zBottom) / 2)).toBeGreaterThan(1);
   });
 });

@@ -1,4 +1,4 @@
-// Proof screenshots: distinct floor plans per house style.
+// Proof screenshots: distinct floor-plan topologies per house style.
 // Usage: node scripts/shots-layout.mjs [url] [outDir]
 import { chromium } from 'playwright-core';
 import fs from 'node:fs';
@@ -8,6 +8,8 @@ const out = process.argv[3] ?? '/workspace/heddas-verden-shots/next3';
 fs.mkdirSync(out, { recursive: true });
 
 const STYLES = ['hytte', 'villa', 'gard', 'moderne', 'trehus', 'sjohus', 'slott'];
+/** Same orthographic-ish top-down camera for every plan proof so differences read clearly. */
+const PLAN_CAM = { x: 0.15, y: 48, z: 0.15, lx: 0, ly: 0, lz: 0 };
 
 const browser = await chromium.launch({
   executablePath: '/usr/bin/google-chrome',
@@ -40,7 +42,7 @@ const shot = async (name, wait = 700) => {
 for (const style of STYLES) {
   await page.evaluate((style) => {
     const g = window.__hv;
-    document.querySelectorAll('.sheet,.panel,.sheet-wrap,.toast,.task-toast').forEach((el) => el.remove());
+    document.querySelectorAll('.sheet,.panel,.sheet-wrap,.toast,.task-card,.tasks').forEach((el) => el.remove());
     g.freezeCam = null;
     if (g.mode === 'house') g.exitHouse();
     g.debugSetHouseStyle(style);
@@ -49,29 +51,27 @@ for (const style of STYLES) {
     const st = L.stairs;
     const smx = (st.x0 + st.x1) / 2;
     const door = g.interior.door;
-    // Corner-high view: from front-right looking toward back-left so stair offset + rooms read clearly
-    const camX = L.w * 0.42;
-    const camZ = L.d * 0.48;
     g.player.pos.set(door.x, 0, door.z - 1.2);
     g.player.yaw = Math.PI;
+    // Eye-level: high corner looking across the plan toward the stairs
     g.freezeCam = {
-      x: camX,
-      y: 7.5,
-      z: camZ,
-      lx: smx * 0.35,
-      ly: 1.6,
-      lz: -L.d * 0.05,
+      x: L.w * 0.4,
+      y: 8.2,
+      z: L.d * 0.42,
+      lx: smx * 0.4,
+      ly: 1.8,
+      lz: (st.zTop + st.zBottom) * 0.35,
     };
   }, style);
   await shot(`11-layout-${style}`, 950);
 
-  await page.evaluate(() => {
+  await page.evaluate((PLAN_CAM) => {
     const g = window.__hv;
-    const L = g.interior.layout;
-    document.querySelectorAll('.sheet,.panel,.sheet-wrap,.toast,.task-toast').forEach((el) => el.remove());
-    g.freezeCam = { x: 0.2, y: Math.max(L.w, L.d) * 1.25, z: 0.2, lx: 0, ly: 0, lz: 0 };
-  });
-  await shot(`11-layout-${style}-plan`, 850);
+    document.querySelectorAll('.sheet,.panel,.sheet-wrap,.toast,.task-card,.tasks').forEach((el) => el.remove());
+    // Identical camera for every style — footprint size differences still show
+    g.freezeCam = { ...PLAN_CAM };
+  }, PLAN_CAM);
+  await shot(`11-layout-${style}-plan`, 900);
 
   await page.evaluate(() => {
     const g = window.__hv;

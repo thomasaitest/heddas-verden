@@ -55,8 +55,8 @@ export function hasTable(items: readonly PlacedItem[]): boolean {
 /** Prefer bed in a sleep-ish room and table in the living/salon; always run through placeInLayout. */
 export function starterSpots(style: HouseStyle): { bed: { x: number; z: number; rot: number }; table: { x: number; z: number; rot: number } } {
   const L = houseLayout(style);
-  const sleep = roomCenter(L, 0, /Soverom|Master|Lugar|Kongesuite/i) ?? { x: -L.w * 0.25, z: -L.d * 0.15 };
-  const live = roomCenter(L, 0, /Stue|Salon|Festsal|Åpen stue/i) ?? { x: L.w * 0.15, z: L.d * 0.15 };
+  const sleep = roomCenter(L, 0, /Soverom|Master|Lugar|Kongesuite|Prinsesse/i) ?? { x: -L.w * 0.25, z: -L.d * 0.15 };
+  const live = roomCenter(L, 0, /Stue|Salon|Festsal|Åpen stue|Salong|Dekk/i) ?? { x: L.w * 0.15, z: L.d * 0.15 };
   // Nudge bed/table off the exact centre so they do not stack on the player spawn path.
   return {
     bed: { x: sleep.x, z: sleep.z, rot: Math.PI / 2 },
