@@ -98,7 +98,7 @@ export function createInterior(): Interior {
           const x = -w / 2 + i * 2;
           const line = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.02, d), mat(shade(house.floorColor, -0.08)));
           line.position.set(x, y0 + 0.01, 0);
-          if (f === 1 && x > st.x0 - 0.05 && x < st.x1 + 0.05) continue; // no planks over the stair hole
+          if (f === 1 && x > st.x0 - 0.05 && x < st.x1 + 0.05) continue; // no planks over the stair hole (any mid-X)
           fg.add(line);
         }
         const mk = (x: number, z: number, sx: number, sz: number, axis: 'x' | 'z', at: number, sign: number) => {
@@ -182,14 +182,15 @@ export function createInterior(): Interior {
         roof.scale.set(w * 1.2, 3.6, d * 1.2);
         floorGroups[FLOORS - 1].add(roof);
       }
-      // the staircase: steps that fill the ramp, with railings
+      // the staircase: steps that fill the ramp, with railings (centred on stairs mid-X — supports side/corner plans)
       const stairs = new THREE.Group();
       const N = 18;
       const run = (st.zBottom - st.zTop) / N;
+      const smx = (st.x0 + st.x1) / 2;
       for (let i = 0; i < N; i++) {
         const h = ((i + 1) / N) * FLOOR_H;
         const z = st.zBottom - (i + 0.5) * run;
-        const step = box(stairs, i % 2 ? '#e9c9a0' : '#f4dcb8', [0, h / 2, z], [st.x1 - st.x0, h, run + 0.01]);
+        const step = box(stairs, i % 2 ? '#e9c9a0' : '#f4dcb8', [smx, h / 2, z], [st.x1 - st.x0, h, run + 0.01]);
         step.receiveShadow = true;
       }
       for (const x of [st.x0 - 0.05, st.x1 + 0.05]) {
@@ -201,12 +202,26 @@ export function createInterior(): Interior {
           const t = i / 6;
           box(stairs, '#ffffff', [x, t * FLOOR_H + 0.5, st.zBottom - t * (st.zBottom - st.zTop)], [0.1, 1.0, 0.1]);
         }
-        // upstairs the hole is fenced off along the stairs
         box(stairs, '#c98a55', [x, FLOOR_H + 1.0, (st.zTop + st.zBottom) / 2], [0.12, 0.12, st.zBottom - st.zTop]);
       }
-      box(stairs, '#c98a55', [0, FLOOR_H + 1.0, st.zBottom + 0.12], [st.x1 - st.x0 + 0.3, 0.12, 0.12]);
-      for (const x of [st.x0, 0, st.x1]) box(stairs, '#ffffff', [x, FLOOR_H + 0.5, st.zBottom + 0.12], [0.1, 1.0, 0.1]);
+      box(stairs, '#c98a55', [smx, FLOOR_H + 1.0, st.zBottom + 0.12], [st.x1 - st.x0 + 0.3, 0.12, 0.12]);
+      for (const x of [st.x0, smx, st.x1]) box(stairs, '#ffffff', [x, FLOOR_H + 0.5, st.zBottom + 0.12], [0.1, 1.0, 0.1]);
       floorGroups[0].add(stairs);
+      // Moderne: visual spiral newel (gameplay ramp stays straight) so the plan reads as a corner spiral.
+      if (house.style === 'moderne') {
+        const post = new THREE.Group();
+        const turns = 5;
+        for (let i = 0; i < turns * 8; i++) {
+          const t = i / (turns * 8);
+          const ang = t * Math.PI * 2 * turns;
+          const y = t * FLOOR_H;
+          const r = 0.55;
+          const peg = box(post, i % 2 ? '#cfd8ff' : '#9aa6d6', [smx + Math.cos(ang) * r, y + 0.15, st.zBottom - t * (st.zBottom - st.zTop)], [0.18, 0.12, 0.18]);
+          peg.castShadow = false;
+        }
+        box(post, '#8891b8', [smx, FLOOR_H / 2, (st.zTop + st.zBottom) / 2], [0.22, FLOOR_H, 0.22]);
+        floorGroups[0].add(post);
+      }
       itemKeys.clear();
       furn.clear();
       items.clear();

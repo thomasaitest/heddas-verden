@@ -1,7 +1,7 @@
 /** Compact house snapshot for multiplayer (style + a few furniture items). */
 
 import { FURN_BY_ID, type HouseStyle } from './catalog.ts';
-import { ensureStarterFurniture, type House, type PlacedItem } from './house.ts';
+import { ensureStarterFurniture, migrateFurnitureClearOfWalls, type House, type PlacedItem } from './house.ts';
 
 export const HOUSE_STYLES: HouseStyle[] = ['hytte', 'villa', 'gard', 'slott', 'moderne', 'trehus', 'sjohus'];
 
@@ -97,5 +97,5 @@ export function guestHouseFromWire(ownerId: string, wire: HouseWire, now = Date.
     locked: !!wire.locked,
   };
   // Visitors should still see a bed + table even if the host wire was sparse/old.
-  return ensureStarterFurniture(base);
+  return migrateFurnitureClearOfWalls(ensureStarterFurniture(base));
 }

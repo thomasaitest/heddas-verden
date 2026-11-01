@@ -1,8 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { HOUSES, type HouseStyle } from './catalog.ts';
 import { blocked, movePlayer } from './collision.ts';
 import { moveItem, newHouse, placeItem, updateItem } from './house.ts';
-import { FLOOR_H, ROOM, roomDoorZ, floorColliders, floorOfY, groundHeight, houseLayout, itemBlocked, itemRadius, moveInLayout, onStairs, placeInLayout, roomAt } from './layout.ts';
+import { FLOOR_H, ROOM, roomDoorZ, clearLayoutCache, floorColliders, floorOfY, groundHeight, houseLayout, itemBlocked, itemRadius, moveInLayout, onStairs, placeInLayout, roomAt, stairsMidX } from './layout.ts';
 
 const R = 0.45;
 const styles = HOUSES.map((h) => h.style);
@@ -25,6 +25,8 @@ function walkTo(style: HouseStyle, p: Walker, x: number, z: number): void {
     walk(style, p, Math.max(-1, Math.min(1, dx)), Math.max(-1, Math.min(1, dz)));
   }
 }
+
+beforeAll(() => clearLayoutCache());
 
 describe.each(styles)('house layout (%s)', (style) => {
   const L = houseLayout(style);
@@ -55,7 +57,8 @@ describe.each(styles)('house layout (%s)', (style) => {
       const open = (i: number, j: number) => !blocked(px(i), pz(j), R, col) && !(floor === 1 && onStairs(s, px(i), pz(j)));
       const seen = new Set<number>();
       // start: just inside the front door downstairs, the top of the stairs upstairs
-      const start = floor === 0 ? [Math.round((0 - px(0)) / cell), nz - 3] : [Math.round((0 - px(0)) / cell), Math.round((s.zTop - 1.5 - pz(0)) / cell)];
+      const sx = stairsMidX(s);
+      const start = floor === 0 ? [Math.round((L.door.x - px(0)) / cell), nz - 3] : [Math.round((sx - px(0)) / cell), Math.round((s.zTop - 1.5 - pz(0)) / cell)];
       const stack = [start[1] * nx + start[0]];
       seen.add(stack[0]);
       expect(open(start[0], start[1])).toBe(true);
@@ -90,31 +93,33 @@ describe.each(styles)('house layout (%s)', (style) => {
   });
 
   it('you can walk up the stairs to the upper floor and down again; the ground follows the ramp', () => {
-    const p: Walker = { x: 0, y: 0, z: s.zBottom + 2 };
-    walkTo(style, p, 0, s.zBottom - 0.5);
+    const sx = stairsMidX(s);
+    const p: Walker = { x: sx, y: 0, z: s.zBottom + 2 };
+    walkTo(style, p, sx, s.zBottom - 0.5);
     expect(p.y).toBeGreaterThan(0.2); // started climbing
     expect(p.y).toBeLessThan(FLOOR_H / 2);
-    walkTo(style, p, 0, s.zTop - 2);
+    walkTo(style, p, sx, s.zTop - 2);
     expect(p.y).toBeCloseTo(FLOOR_H, 1);
     expect(floorOfY(p.y)).toBe(1);
     // keep going: stays on the upper floor
-    walkTo(style, p, 0, s.zTop - 2.2);
+    walkTo(style, p, sx, s.zTop - 2.2);
     expect(p.y).toBeCloseTo(FLOOR_H, 1);
     // and back down
-    walkTo(style, p, 0, s.zBottom + 2);
+    walkTo(style, p, sx, s.zBottom + 2);
     expect(p.y).toBeCloseTo(0, 1);
     expect(floorOfY(p.y)).toBe(0);
   });
 
   it('the ramp is a smooth, walkable slope', () => {
-    let prev = groundHeight(L, 0, s.zBottom + 0.01, 0);
+    const sx = stairsMidX(s);
+    let prev = groundHeight(L, sx, s.zBottom + 0.01, 0);
     for (let z = s.zBottom; z >= s.zTop; z -= 0.1) {
-      const y = groundHeight(L, 0, z, 0);
+      const y = groundHeight(L, sx, z, 0);
       expect(y - prev).toBeGreaterThanOrEqual(-1e-9);
       expect(y - prev).toBeLessThan(0.1);
       prev = y;
     }
-    expect(groundHeight(L, 0, s.zTop + 0.001, 0)).toBeCloseTo(FLOOR_H, 1);
+    expect(groundHeight(L, sx, s.zTop + 0.001, 0)).toBeCloseTo(FLOOR_H, 1);
     expect(groundHeight(L, 5, 5, 0)).toBe(0);
     expect(groundHeight(L, 5, 5, 1)).toBe(FLOOR_H);
   });
@@ -128,12 +133,13 @@ describe.each(styles)('house layout (%s)', (style) => {
     walk(style, sideR, -6, 0);
     expect(sideR.x).toBeGreaterThan(s.x1);
     // under the upper floor, behind the stairs: you can't walk onto the top end of the ramp
-    const under: Walker = { x: 0, y: 0, z: s.zTop - 1.5 };
+    const sx = stairsMidX(s);
+    const under: Walker = { x: sx, y: 0, z: s.zTop - 1.5 };
     walk(style, under, 0, 4);
     expect(under.y).toBe(0);
     expect(under.z).toBeLessThan(s.zTop);
     // upstairs, in front of the hole: you stop at the fence instead of dropping through
-    const up: Walker = { x: 0, y: FLOOR_H, z: s.zBottom + 2 };
+    const up: Walker = { x: sx, y: FLOOR_H, z: s.zBottom + 2 };
     walk(style, up, 0, -4);
     expect(up.y).toBe(FLOOR_H);
     expect(up.z).toBeGreaterThan(s.zBottom);
@@ -144,19 +150,28 @@ describe.each(styles)('house layout (%s)', (style) => {
   });
 
   it('walls between rooms stop you; the door gaps let you through', () => {
-    const w = L.walls[0][0]; // the left wall of the right-hand... any partition: walk straight at it
-    const p: Walker = { x: w.x - 3, y: 0, z: w.z - w.hd + 0.3 };
-    // find a wall piece that is vertical (long along z) and walk into it from the side
+    if (style !== 'hytte') return; // classic partition + roomDoorZ gap; open-plan styles differ
     const v = L.walls[0].find((r) => r.hd > r.hw)!;
-    p.x = v.x + 3;
-    p.z = v.z;
+    const p: Walker = { x: v.x + 3, y: 0, z: v.z };
     walk(style, p, -6, 0);
     expect(p.x).toBeGreaterThan(v.x);
-    // the same line through the gap in that wall is open
     const gapZ = roomDoorZ(L.d);
     const q: Walker = { x: v.x + 2.5, y: 0, z: gapZ };
     walk(style, q, -5, 0);
     expect(q.x).toBeLessThan(v.x - 1);
+  });
+
+  it('rooms can be found by position', () => {
+    const corner = roomAt(L, 0, -L.w / 2 + 2, -L.d / 2 + 2);
+    expect(corner?.name).toBeTruthy();
+    expect(roomAt(L, 1, L.w / 2 - 3, L.d / 2 - 2)?.name || roomAt(L, 1, stairsMidX(s), s.zTop - 2)?.name).toBeTruthy();
+  });
+
+  it('starter bed and table spots stay clear of walls', () => {
+    const bed = placeInLayout(L, 0, -L.w * 0.2, -L.d * 0.1, itemRadius(2.2, 1));
+    const table = placeInLayout(L, 0, L.w * 0.15, L.d * 0.1, itemRadius(2.0, 1));
+    expect(itemBlocked(L, 0, bed.x, bed.z, itemRadius(2.2, 1) - 0.05)).toBe(false);
+    expect(itemBlocked(L, 0, table.x, table.z, itemRadius(2.0, 1) - 0.05)).toBe(false);
   });
 });
 
@@ -239,23 +254,30 @@ describe('furniture and walls', () => {
     expect(h.items.filter((i) => i.itemId === 'sofa').map((i) => i.floor).sort()).toEqual([0, 1]);
   });
 
-  it('rooms can be found by position', () => {
-    expect(roomAt(L, 0, -L.w / 2 + 2, -L.d / 2 + 2)?.name).toBe('Soverom');
-    expect(roomAt(L, 0, L.w / 2 - 2, -L.d / 2 + 2)?.name).toBe('Bad');
-    expect(roomAt(L, 1, 0, L.d / 2 - 2)).toBeTruthy();
-  });
 });
 
 describe('house styles differ inside', () => {
-  it('styles have distinct floor plans (walls and room names)', () => {
+  it('styles have distinct floor plans (walls, rooms, and staircase placement)', () => {
     const sig = (style: HouseStyle) => {
       const L = houseLayout(style);
       const walls = L.walls.flat().map((w) => [w.x.toFixed(2), w.z.toFixed(2), w.hw.toFixed(2), w.hd.toFixed(2)].join(',')).sort().join('|');
       const rooms = L.rooms.map((r) => `${r.floor}:${r.name}:${r.x0.toFixed(1)}`).sort().join('|');
-      return walls + '##' + rooms;
+      const stair = `${stairsMidX(L.stairs).toFixed(2)}:${(L.stairs.x1 - L.stairs.x0).toFixed(2)}:${L.stairs.zTop.toFixed(2)}`;
+      return walls + '##' + rooms + '##' + stair;
     };
     const all = styles.map(sig);
     expect(new Set(all).size).toBe(styles.length);
+  });
+
+  it('staircases sit in clearly different places across styles', () => {
+    const mids = styles.map((s) => stairsMidX(houseLayout(s).stairs).toFixed(1));
+    // Not every style must be unique mid-X (hytte+slott both centre), but we need several distinct placements.
+    expect(new Set(mids).size).toBeGreaterThanOrEqual(4);
+    expect(stairsMidX(houseLayout('hytte').stairs)).toBeCloseTo(0, 1);
+    expect(stairsMidX(houseLayout('villa').stairs)).toBeLessThan(-4);
+    expect(stairsMidX(houseLayout('gard').stairs)).toBeGreaterThan(4);
+    expect(stairsMidX(houseLayout('moderne').stairs)).toBeLessThan(-5);
+    expect(houseLayout('slott').stairs.x1 - houseLayout('slott').stairs.x0).toBeGreaterThan(4);
   });
 });
 

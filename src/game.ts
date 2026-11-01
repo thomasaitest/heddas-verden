@@ -5,7 +5,7 @@ import { activeHouse, buyFurniture, careAt, editHouse, feed, maybeDropPotionFrom
 import { playDone, startPlay, stepPlay, type PlayState } from './logic/toyplay.ts';
 import { buildToy } from './three/toys.ts';
 import { EQUIP_BY_ID, SIT_DROP, canUse, wantsOff } from './logic/playground.ts';
-import { canEdit, careItems, moveItem, setHouseLocked, updateItem } from './logic/house.ts';
+import { canEdit, careItems, migrateFurnitureClearOfWalls, moveItem, newHouse, setHouseLocked, updateItem } from './logic/house.ts';
 import { NEED_INFO, stageOf, type CareWhere, type NeedKind, type PetState } from './logic/needs.ts';
 import { SPECIES_BY_ID } from './logic/pets.ts';
 import { loadSave, writeSave, type SaveData } from './logic/save.ts';
@@ -1649,6 +1649,17 @@ export class Game {
       }
       this.syncPets();
     }
+  }
+
+  /** Proof helper: swap the active house to a fresh layout of the given style (starter bed+table). */
+  debugSetHouseStyle(style: HouseStyle) {
+    const cur = activeHouse(this.save);
+    const fresh = migrateFurnitureClearOfWalls(newHouse(style, cur.ownerId));
+    const house = { ...fresh, id: cur.id, editors: cur.editors, editRequests: cur.editRequests, locked: cur.locked };
+    this.commit(
+      { ...this.save, bucks: Math.max(this.save.bucks, 5000), houses: this.save.houses.map((h) => (h.id === cur.id ? house : h)), activeHouseId: cur.id },
+      { house: true },
+    );
   }
 
   /** Fill the room with a nice set of furniture (used for demo screenshots). */

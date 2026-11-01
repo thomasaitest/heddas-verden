@@ -1,6 +1,6 @@
 import { FURN_BY_ID, HOUSE_BY_STYLE, type HouseStyle } from './catalog.ts';
 import type { CareWhere } from './needs.ts';
-import { FLOORS, houseLayout, itemRadius, moveInLayout, placeInLayout } from './layout.ts';
+import { FLOORS, houseLayout, itemRadius, moveInLayout, placeInLayout, roomCenter } from './layout.ts';
 import { uid } from './rng.ts';
 
 export interface PlacedItem {
@@ -52,36 +52,61 @@ export function hasTable(items: readonly PlacedItem[]): boolean {
 }
 
 /** Starter bed + table (+ pet care bits). Used by newHouse and save migration. */
+/** Prefer bed in a sleep-ish room and table in the living/salon; always run through placeInLayout. */
+export function starterSpots(style: HouseStyle): { bed: { x: number; z: number; rot: number }; table: { x: number; z: number; rot: number } } {
+  const L = houseLayout(style);
+  const sleep = roomCenter(L, 0, /Soverom|Master|Lugar|Kongesuite/i) ?? { x: -L.w * 0.25, z: -L.d * 0.15 };
+  const live = roomCenter(L, 0, /Stue|Salon|Festsal|Åpen stue/i) ?? { x: L.w * 0.15, z: L.d * 0.15 };
+  // Nudge bed/table off the exact centre so they do not stack on the player spawn path.
+  return {
+    bed: { x: sleep.x, z: sleep.z, rot: Math.PI / 2 },
+    table: { x: live.x, z: live.z, rot: 0 },
+  };
+}
+
 export function starterFurniture(style: HouseStyle): PlacedItem[] {
-  const { w, d } = roomSize(style);
-  // Bed left, dining table right — both in the open living space so kids (and screenshots) see them from the door.
+  const L = houseLayout(style);
+  const spots = starterSpots(style);
+  const bedP = placeInLayout(L, 0, spots.bed.x, spots.bed.z, itemRadius(2.2, 1));
+  const tableP = placeInLayout(L, 0, spots.table.x, spots.table.z, itemRadius(2.0, 1));
+  const rugP = placeInLayout(L, 0, L.door.x, L.door.z - 4, itemRadius(1.5, 1));
+  const petP = placeInLayout(L, 0, L.door.x - 3, L.door.z - 3, itemRadius(1.2, 1));
+  const bathRoom = roomCenter(L, 0, /Bad|Ensuite|Vaskerom|Tronsal/i) ?? { x: L.w * 0.3, z: -L.d * 0.25 };
+  const bathP = placeInLayout(L, 0, bathRoom.x, bathRoom.z, itemRadius(2.0, 1));
+  const plantP = placeInLayout(L, 0, L.door.x + 3, L.door.z - 2, itemRadius(0.8, 1));
   return [
-    { uid: uid('it'), itemId: 'seng', x: -w * 0.28, z: -d * 0.12, rot: Math.PI / 2, scale: 1, color: '#8fb8ff', floor: 0 },
-    { uid: uid('it'), itemId: 'spisebord', x: w * 0.22, z: -d * 0.05, rot: 0, scale: 1, color: '#d9a066', floor: 0 },
-    { uid: uid('it'), itemId: 'dyreseng', x: -w / 2 + 2.2, z: d / 2 - 3.5, rot: 0, scale: 1, color: '#ffb84d', floor: 0 },
-    { uid: uid('it'), itemId: 'badekar', x: w / 2 - 2.4, z: -d / 2 + 2.2, rot: 0, scale: 1, color: '#ffffff', floor: 0 },
-    { uid: uid('it'), itemId: 'rundtteppe', x: 0, z: d / 2 - 4.5, rot: 0, scale: 1, color: '#ff9ccf', floor: 0 },
-    { uid: uid('it'), itemId: 'potteplante', x: w / 2 - 1.2, z: d / 2 - 1.4, rot: 0, scale: 1, color: '#5cc36b', floor: 0 },
+    { uid: uid('it'), itemId: 'seng', x: bedP.x, z: bedP.z, rot: spots.bed.rot, scale: 1, color: '#8fb8ff', floor: 0 },
+    { uid: uid('it'), itemId: 'spisebord', x: tableP.x, z: tableP.z, rot: spots.table.rot, scale: 1, color: '#d9a066', floor: 0 },
+    { uid: uid('it'), itemId: 'dyreseng', x: petP.x, z: petP.z, rot: 0, scale: 1, color: '#ffb84d', floor: 0 },
+    { uid: uid('it'), itemId: 'badekar', x: bathP.x, z: bathP.z, rot: 0, scale: 1, color: '#ffffff', floor: 0 },
+    { uid: uid('it'), itemId: 'rundtteppe', x: rugP.x, z: rugP.z, rot: 0, scale: 1, color: '#ff9ccf', floor: 0 },
+    { uid: uid('it'), itemId: 'potteplante', x: plantP.x, z: plantP.z, rot: 0, scale: 1, color: '#5cc36b', floor: 0 },
   ];
 }
 
 /** Add missing starter bed/table to an existing house without duplicating. */
 export function ensureStarterFurniture(house: House): House {
-  const { w, d } = roomSize(house.style);
+  const L = houseLayout(house.style);
+  const spots = starterSpots(house.style);
   const extras: PlacedItem[] = [];
   if (!hasHumanBed(house.items)) {
-    extras.push({ uid: uid('it'), itemId: 'seng', x: -w * 0.28, z: -d * 0.12, rot: Math.PI / 2, scale: 1, color: '#8fb8ff', floor: 0 });
+    const p = placeInLayout(L, 0, spots.bed.x, spots.bed.z, itemRadius(2.2, 1));
+    extras.push({ uid: uid('it'), itemId: 'seng', x: p.x, z: p.z, rot: spots.bed.rot, scale: 1, color: '#8fb8ff', floor: 0 });
   }
   if (!hasTable(house.items)) {
-    extras.push({ uid: uid('it'), itemId: 'spisebord', x: w * 0.22, z: -d * 0.05, rot: 0, scale: 1, color: '#d9a066', floor: 0 });
+    const p = placeInLayout(L, 0, spots.table.x, spots.table.z, itemRadius(2.0, 1));
+    extras.push({ uid: uid('it'), itemId: 'spisebord', x: p.x, z: p.z, rot: spots.table.rot, scale: 1, color: '#d9a066', floor: 0 });
   }
   if (!extras.length) return house;
   return { ...house, items: [...house.items, ...extras] };
 }
 
+
+
 export function newHouse(style: HouseStyle, ownerId: string, now = Date.now()): House {
   const items = starterFurniture(style);
-  return { id: uid('house'), style, ownerId, editors: [], editRequests: [], wallColor: '#fff1e0', floorColor: '#d9a066', items, createdAt: now, locked: false };
+  const info = HOUSE_BY_STYLE[style] ?? HOUSE_BY_STYLE.hytte;
+  return { id: uid('house'), style, ownerId, editors: [], editRequests: [], wallColor: info.wall, floorColor: '#d9a066', items, createdAt: now, locked: false };
 }
 
 export function canEdit(house: House, playerId: string): boolean {
@@ -133,6 +158,11 @@ function fit(style: HouseStyle, item: PlacedItem): PlacedItem {
   if (def?.wall) return { ...item, scale, floor, ...snapToWall(style, item.x, item.z) };
   const p = placeInLayout(houseLayout(style), floor, item.x, item.z, itemRadius(def?.size ?? 1, scale));
   return { ...item, scale, floor, x: p.x, z: p.z };
+}
+
+/** After plan changes, push every free-standing item out of walls/stairs (saved positions migrate safely). */
+export function migrateFurnitureClearOfWalls(house: House): House {
+  return { ...house, items: house.items.map((it) => fit(house.style, it)) };
 }
 
 export function placeItem(house: House, itemId: string, x = 0, z = 0, color?: string, floor = 0): House {

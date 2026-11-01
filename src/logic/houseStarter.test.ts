@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { ensureStarterFurniture, hasHumanBed, hasTable, newHouse } from './house.ts';
+import { HOUSES } from './catalog.ts';
+import { ensureStarterFurniture, hasHumanBed, hasTable, migrateFurnitureClearOfWalls, newHouse, starterSpots } from './house.ts';
+import { itemBlocked, itemRadius, houseLayout, roomAt } from './layout.ts';
 import { freshSave, parseSave } from './save.ts';
 
 describe('starter furniture', () => {
@@ -39,5 +41,40 @@ describe('starter furniture', () => {
     expect(hasTable(house.items)).toBe(true);
     const again = parseSave(JSON.stringify(loaded));
     expect(again.houses[0].items.filter((i) => i.itemId === 'seng').length).toBe(1);
+  });
+
+  it.each(HOUSES.map((h) => h.style))('style %s has reachable bed+table clear of walls', (style) => {
+    const h = newHouse(style, 'p1');
+    const L = houseLayout(style);
+    const bed = h.items.find((i) => i.itemId === 'seng')!;
+    const table = h.items.find((i) => i.itemId === 'spisebord')!;
+    expect(itemBlocked(L, 0, bed.x, bed.z, itemRadius(2.2, 1) - 0.05)).toBe(false);
+    expect(itemBlocked(L, 0, table.x, table.z, itemRadius(2.0, 1) - 0.05)).toBe(false);
+    const bedRoom = roomAt(L, 0, bed.x, bed.z);
+    const tableRoom = roomAt(L, 0, table.x, table.z);
+    expect(bedRoom?.name).toMatch(/Soverom|Master|Lugar|Kongesuite/i);
+    expect(tableRoom?.name).toMatch(/Stue|Salon|Festsal/i);
+    const spots = starterSpots(style);
+    expect(Math.hypot(spots.bed.x - spots.table.x, spots.bed.z - spots.table.z)).toBeGreaterThan(2);
+  });
+
+  it.each(HOUSES.map((h) => h.style))('migrateFurnitureClearOfWalls keeps items legal for %s', (style) => {
+    const base = newHouse(style, 'p1');
+    // Simulate pre-layout-change furniture jammed into a wall / stair mid.
+    const L = houseLayout(style);
+    const jammed = {
+      ...base,
+      items: [
+        ...base.items,
+        { uid: 'jam1', itemId: 'sofa', x: L.walls[0][0]?.x ?? 0, z: L.walls[0][0]?.z ?? 0, rot: 0, scale: 1, color: '#fff', floor: 0 },
+        { uid: 'jam2', itemId: 'sofa', x: (L.stairs.x0 + L.stairs.x1) / 2, z: (L.stairs.zTop + L.stairs.zBottom) / 2, rot: 0, scale: 1, color: '#fff', floor: 0 },
+      ],
+    };
+    const fixed = migrateFurnitureClearOfWalls(jammed);
+    for (const it of fixed.items) {
+      if (it.itemId === 'sofa' || it.itemId === 'seng' || it.itemId === 'spisebord') {
+        expect(itemBlocked(L, it.floor, it.x, it.z, itemRadius(2.0, it.scale) - 0.05), `${it.uid} still blocked`).toBe(false);
+      }
+    }
   });
 });

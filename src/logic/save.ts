@@ -1,7 +1,7 @@
 import { cleanAvatar, DEFAULT_AVATAR, type Avatar } from './avatar.ts';
 import { CAR_BY_ID, FOOD_BY_ID, FURN_BY_ID, PET_SHOP_BY_ID, POTIONS, STARTER_TOYS, TOY_BY_ID } from './catalog.ts';
 import { EGG_BY_ID, SPECIES_BY_ID } from './pets.ts';
-import { deserializeHouse, ensureStarterFurniture, newHouse, type House } from './house.ts';
+import { deserializeHouse, ensureStarterFurniture, migrateFurnitureClearOfWalls, newHouse, type House } from './house.ts';
 import type { PetState } from './needs.ts';
 import { uid } from './rng.ts';
 
@@ -72,7 +72,7 @@ export function parseSave(json: string | null, now = Date.now()): SaveData {
     const houses = (Array.isArray(raw.houses) ? raw.houses : [])
       .map((h) => deserializeHouse(JSON.stringify(h)))
       .filter((h): h is House => !!h)
-      .map((h) => ensureStarterFurniture(h));
+      .map((h) => migrateFurnitureClearOfWalls(ensureStarterFurniture(h)));
     const pets: PetState[] = (Array.isArray(raw.pets) ? raw.pets : [])
       .filter((p) => p && typeof p.uid === 'string' && SPECIES_BY_ID[p.speciesId])
       .map((p) => ({
