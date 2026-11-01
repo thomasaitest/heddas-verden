@@ -1,5 +1,6 @@
 import type * as THREE from 'three';
 import type { Avatar } from '../logic/avatar.ts';
+import { isRemotePlot } from '../logic/visitDoor.ts';
 import type { HouseStyle } from '../logic/catalog.ts';
 import type { ActivityKind } from '../logic/activity.ts';
 import type { HouseWire } from '../logic/houseWire.ts';
@@ -167,7 +168,7 @@ export class MpClient {
     if (!plots?.length) return;
     const used = new Set<number>();
     for (const r of this.session.remotes.values()) {
-      const plot = r.plot && r.plot >= 1 && r.plot < plots.length ? r.plot : null;
+      const plot = isRemotePlot(r.plot, plots.length) ? r.plot : null;
       if (!plot) continue;
       used.add(plot);
       const style = r.house?.style ?? r.houseStyle;

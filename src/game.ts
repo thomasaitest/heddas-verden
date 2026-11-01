@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { sfx, setSoundEnabled, setLocationAmbient, startMusic, stopMusic, musicPlaying } from './audio.ts';
-import { CAR_BY_ID, FURN_BY_ID, HOUSE_BY_STYLE, PET_SHOP_BY_ID, TOYS, TOY_BY_ID, type HouseStyle } from './logic/catalog.ts';
+import { CAR_BY_ID, FOODS, FURN_BY_ID, HOUSE_BY_STYLE, PET_SHOP_BY_ID, TOYS, TOY_BY_ID, type HouseStyle } from './logic/catalog.ts';
 import { activeHouse, buyFurniture, careAt, editHouse, feed, maybeDropPotionFromFlight, placeFromInventory, playWithToy, tickSave } from './logic/economy.ts';
 import { playDone, startPlay, stepPlay, type PlayState } from './logic/toyplay.ts';
 import { buildToy } from './three/toys.ts';
@@ -19,6 +19,7 @@ import { ACTIVITIES, activityPose, canStartActivity, nearPlaza, type ActivityKin
 import { acceptVisit, idleVisit, receiveAsk, startAsk, tickVisit, type VisitState } from './logic/visit.ts';
 import { guestHouseFromWire, houseToWire, type HouseWire } from './logic/houseWire.ts';
 import { canEnterHouse, doorPrompt, lockLabel } from './logic/houseLock.ts';
+import { friendDoorPos, HOME_ENTER_RADIUS, isRemotePlot, nearFriendDoor } from './logic/visitDoor.ts';
 import { miniReward, startMini, stepMini, type MiniState } from './logic/minigames.ts';
 import { buildCar, buildPram, CAR_SEAT_Y } from './three/vehicles.ts';
 import { Input } from './input.ts';
@@ -137,6 +138,8 @@ export class Game {
   private dirty = false;
   private lastSaveAt = 0;
   private lastTickAt = 0;
+  private stickyNear: Game['nearZone'] = null;
+  private stickyNearUntil = 0;
   private nearZone: Zone | { kind: 'exit'; label: string } | { kind: 'equip'; id: string; label: string } | { kind: 'equip-off'; label: string } | { kind: 'bench'; label: string; x: number; z: number; yaw: number } | { kind: 'bench-off'; label: string } | { kind: 'bed'; label: string; spot: SleepSpot } | { kind: 'bed-off'; label: string } | { kind: 'lock'; label: string } | { kind: 'visit'; label: string; peerId: string; peerName: string } | { kind: 'plaza'; label: string } | { kind: 'mini'; label: string } | null = null;
   /** The playground piece you are sitting on (swing, slide, seesaw, merry-go-round), if any. */
   using: { id: string; since: number } | null = null;
@@ -195,10 +198,7 @@ export class Game {
       hold: () => this.toggleHold(),
       ride: () => this.toggleRide(),
       fly: () => this.toggleFly(),
-      feed: () => {
-        const p = this.mainPet();
-        if (p) this.panels.feedMenu(p.uid);
-      },
+      feed: () => this.quickFeedOrHint(),
       play: () => this.panels.toyMenu(),
       drive: () => this.toggleDrive(),
       pram: () => this.togglePram(),
@@ -317,13 +317,39 @@ export class Game {
     const pet = this.save.pets.find((p) => p.uid === uid);
     if (!pet?.need) return;
     const where = NEED_INFO[pet.need.kind].where;
-    if (where === 'mat' || where === 'drikke') this.panels.feedMenu(uid);
-    else if (where === 'dyrlege') this.panels.openMap();
+    if (where === 'mat' || where === 'drikke') {
+      // Gentle: keep Oppgaver row + toast; Mat button feeds without a blocking sheet.
+      toast(where === 'mat' ? `${pet.name} er sulten – trykk Mat 🍎` : `${pet.name} er tørst – trykk Mat 🥤`);
+    } else if (where === 'dyrlege') this.panels.openMap();
     else if (where === 'lek') this.panels.openMap();
     else if (where === 'seng' || where === 'bad') {
       if (this.mode === 'town') this.panels.openMap();
       else toast(where === 'seng' ? 'Gå bort til en seng 🛏️' : 'Gå bort til badekaret eller dusjen 🛁');
     } else toast('Gå en tur ute i byen 🌳');
+  }
+
+  /** One-tap feed from bag; toast only — no auto modal. Opens chooser only if several foods match. */
+  quickFeedOrHint() {
+    const pet = this.mainPet();
+    if (!pet?.need) {
+      toast('Dyret er mett nå 💚');
+      return;
+    }
+    const where = NEED_INFO[pet.need.kind].where;
+    if (where !== 'mat' && where !== 'drikke') {
+      toast(NEED_INFO[pet.need.kind].hint);
+      return;
+    }
+    const matches = FOODS.filter((f) => f.fixes === where && (this.save.bag[f.id] ?? 0) > 0);
+    if (!matches.length) {
+      toast(where === 'mat' ? 'Ingen mat i sekken – kjøp i Butikken 🛒' : 'Ingen drikke i sekken – kjøp i Butikken 🛒');
+      return;
+    }
+    if (matches.length > 1) {
+      this.panels.feedMenu(pet.uid);
+      return;
+    }
+    this.feedPet(pet.uid, matches[0].id);
   }
 
   // ---------- avatar ----------
@@ -475,6 +501,7 @@ export class Game {
     const house = guest ?? activeHouse(this.save);
     this.guestHouse = guest ?? null;
     this.visitingOwnerId = guest ? guest.ownerId : null;
+    this.freezeCam = null; // never keep a proof/debug cam when walking indoors
     this.interior.build(house);
     this.town.group.visible = false;
     this.interior.group.visible = true;
@@ -482,8 +509,8 @@ export class Game {
     this.player.vy = 0;
     this.player.yaw = Math.PI;
     this.cam.yaw = 0;
-    this.cam.pitch = 0.6;
-    this.cam.dist = 14;
+    this.cam.pitch = 0.55;
+    this.cam.dist = 12;
     this.scene.background = new THREE.Color('#ffe9f3');
     this.scene.fog = null;
     this.actors.forEach((a) => a.pos.set(this.player.pos.x + (this.rng() - 0.5) * 3, 0, this.player.pos.z - 2.5));
@@ -502,6 +529,7 @@ export class Game {
     this.guestHouse = null;
     this.visitingOwnerId = null;
     this.visit = idleVisit();
+    this.freezeCam = null;
     this.interior.group.visible = false;
     this.town.group.visible = true;
     this.setSky();
@@ -565,7 +593,7 @@ export class Game {
   }
 
   interact() {
-    const z = this.nearZone;
+    const z = this.nearZone ?? (performance.now() <= this.stickyNearUntil ? this.stickyNear : null);
     if (!z || this.paused) return;
     switch (z.kind) {
       case 'home':
@@ -979,8 +1007,7 @@ export class Game {
         const r = maybeDropPotionFromFlight(this.save, this.rng);
         if (r.ok) {
           this.commit(r.save);
-          toast(r.potionId === 'flygedrikk' ? 'Flygedrikken falt ned fra skyene! 🪽' : 'Ridedrikk fra flyveturen! 🧪', 'ok');
-          sfx.buy();
+          this.celebratePotionDrop(r.potionId);
         }
       }
       if (inp.jump && !frozen) p.vy = Math.min(p.vy + 40 * dt, 9);
@@ -1093,7 +1120,7 @@ export class Game {
       this.setSky(sky);
       if (Math.floor(this.time) !== Math.floor(this.time - dt)) {
         if (!this.building && !this.editingAvatar && !this.guestHouse) {
-          this.hud.setWhere(`Heddas by · ${skyLabel(sky)}`);
+          this.hud.setWhere(skyLabel(sky));
         }
       }
       const px = p.pos.x;
@@ -1185,7 +1212,11 @@ export class Game {
       this.interior.updateWalls(this.camera.position, new THREE.Vector3(p.pos.x, p.pos.y, p.pos.z), this.playerFloor());
       this.interior.update(t);
       const room = roomAt(this.interior.layout, this.playerFloor(), p.pos.x, p.pos.z);
-      this.hud.setWhere(`${HOUSE_BY_STYLE[activeHouse(this.save).style].name} · ${onStairs(this.interior.layout.stairs, p.pos.x, p.pos.z) ? 'Trapp' : room?.name ?? ''}${this.playerFloor() ? ' (oppe)' : ''}`);
+      {
+        const live = this.guestHouse ?? activeHouse(this.save);
+        const prefix = this.guestHouse ? `Besøk · ${HOUSE_BY_STYLE[live.style].name}` : HOUSE_BY_STYLE[live.style].name;
+        this.hud.setWhere(`${prefix} · ${onStairs(this.interior.layout.stairs, p.pos.x, p.pos.z) ? 'Trapp' : room?.name ?? ''}${this.playerFloor() ? ' (oppe)' : ''}`);
+      }
     } else {
       this.town.setEquipUse(this.using ? { id: this.using.id, u: this.time - this.using.since } : null);
       this.town.update(t, p.pos.x, p.pos.z, this.camera.position.x, this.camera.position.z);
@@ -1467,9 +1498,9 @@ export class Game {
       if (inPlay && !this.using && !this.mini && !this.driving) {
         // keep as fallback; equipment/visit may override below
       }
-      // benches: sit to rest and restore energy
+      // benches: sit to rest and restore energy (never while driving)
       if (this.resting) near = { kind: 'bench-off', label: 'Reis deg ✋' };
-      else if (!this.sleeping) {
+      else if (!this.sleeping && !this.driving) {
         for (const b of this.town.benches) {
           if (Math.hypot(p.x - b.x, p.z - b.z) < 2.2) {
             near = { kind: 'bench', label: 'Sett deg 🪑', x: b.x, z: b.z, yaw: b.yaw };
@@ -1498,19 +1529,20 @@ export class Game {
       // own door: lock toggle when standing at home
       if (!near && this.mp?.session.active && !this.driving) {
         const home = this.town.zones.find((z) => z.kind === 'home');
-        if (home && Math.hypot(p.x - home.x, p.z - home.z) < 3.5) {
+        if (home && Math.hypot(p.x - home.x, p.z - home.z) < HOME_ENTER_RADIUS) {
           const locked = !!activeHouse(this.save).locked;
           near = { kind: 'lock', label: lockLabel(locked) };
         }
       }
-      // friend houses on assigned plots – unlocked = walk in; locked = blocked
+      // friend houses: Besøk at door/nameplate (not plot centre) so collision never blocks it
       if (!near && this.mp?.session.active && !this.driving) {
         for (const r of this.mp.session.remotes.values()) {
           const pi = r.plot;
-          if (!pi || pi < 1 || pi >= this.town.housePlots.length) continue;
+          if (!isRemotePlot(pi, this.town.housePlots.length)) continue;
           const plot = this.town.housePlots[pi];
-          if (Math.hypot(p.x - plot.x, p.z - plot.z) < 6) {
-            const wire = this.remoteHouses.get(r.id) ?? r.house;
+          const wire = this.remoteHouses.get(r.id) ?? r.house;
+          const style = (wire?.style as HouseStyle) || 'hytte';
+          if (nearFriendDoor(p.x, p.z, plot, style)) {
             const locked = !!wire?.locked;
             near = {
               kind: 'visit',
@@ -1523,7 +1555,7 @@ export class Game {
         }
       }
       if (!near && nearPlaza(p.x, p.z) && !this.activity && !this.driving) {
-        near = { kind: 'plaza', label: 'Start fest på torget 💃' } as Game['nearZone'];
+        near = { kind: 'plaza', label: 'Fest 💃' } as Game['nearZone'];
       }
     } else {
       const d = Math.hypot(p.x - this.interior.door.x, p.z - this.interior.door.z);
@@ -1543,7 +1575,16 @@ export class Game {
     }
     if (this.building || this.editingAvatar || this.paused) near = null;
     this.nearZone = near;
+    if (near) {
+      this.stickyNear = near;
+      this.stickyNearUntil = performance.now() + 800;
+    }
     this.hud.setPrompt(near ? near.label : null);
+    if (this.hud.prompt) {
+      const lab = near?.label ?? '';
+      this.hud.prompt.classList.toggle('go-in-pulse', /Gå inn|Besøk/.test(lab));
+      this.hud.prompt.classList.toggle('prompt-compact', lab === 'Fest 💃');
+    }
 
     // care for equipped pets
     const house = this.mode === 'house' ? activeHouse(this.save) : null;
@@ -1868,12 +1909,17 @@ export class Game {
 
   /** Walk into a friend's house if unlocked; locked houses block everyone except the owner. */
   tryEnterFriendHouse(peerId: string, peerName: string) {
-    const r = this.mp?.session.remotes.get(peerId);
-    const wire = this.remoteHouses.get(peerId) ?? r?.house ?? null;
+    const remotes = this.mp?.session.remotes;
+    let r = remotes?.get(peerId);
+    if (!r && remotes) {
+      r = [...remotes.values()].find((x) => x.name === peerName || x.id === peerId);
+    }
+    const rid = r?.id ?? peerId;
+    const wire = this.remoteHouses.get(rid) ?? this.remoteHouses.get(peerId) ?? r?.house ?? null;
     if (!wire) {
       // fall back to ask if we do not have their house yet
-      this.visit = startAsk(peerId, peerName, peerId, performance.now());
-      this.mp?.askVisit(peerId);
+      this.visit = startAsk(rid, peerName, rid, performance.now());
+      this.mp?.askVisit(rid);
       toast(`Spurte ${peerName}…`, 'ok');
       return;
     }
@@ -1882,7 +1928,8 @@ export class Game {
       sfx.nope();
       return;
     }
-    const guest = guestHouseFromWire(peerId, wire);
+    this.freezeCam = null;
+    const guest = guestHouseFromWire(rid, wire);
     this.enterHouse(guest);
     toast(`Velkommen hjem til ${peerName}!`, 'ok');
     sfx.door();
@@ -1897,9 +1944,11 @@ export class Game {
     let best: { r: (typeof remotes)[0]; d: number } | null = null;
     for (const r of remotes) {
       const pi = r.plot;
-      if (!pi || pi < 1 || pi >= this.town.housePlots.length) continue;
+      if (!isRemotePlot(pi, this.town.housePlots.length)) continue;
       const plot = this.town.housePlots[pi];
-      const d = Math.hypot(this.player.pos.x - plot.x, this.player.pos.z - plot.z);
+      const wire = this.remoteHouses.get(r.id) ?? r.house;
+      const door = friendDoorPos(plot, wire?.style);
+      const d = Math.hypot(this.player.pos.x - door.x, this.player.pos.z - door.z);
       if (d < 8 && (!best || d < best.d)) best = { r, d };
     }
     if (!best) {
@@ -1910,6 +1959,16 @@ export class Game {
   }
 
 
+
+  celebratePotionDrop(potionId: string) {
+    const wrap = document.createElement('div');
+    wrap.className = 'potion-sparkle';
+    wrap.innerHTML = '<span class="potion-sparkle-burst">✨🧪✨</span><b>Du fant en trylledrikk!</b>';
+    document.getElementById('ui')?.append(wrap);
+    toast(potionId === 'flygedrikk' ? 'Du fant en trylledrikk! 🪽' : 'Du fant en trylledrikk! 🧪', 'gold');
+    sfx.grow();
+    setTimeout(() => wrap.remove(), 2800);
+  }
 
   feedPet(uid: string, foodId: string): boolean {
     const r = feed(this.save, uid, foodId, Date.now(), this.rng);

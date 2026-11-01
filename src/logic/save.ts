@@ -1,7 +1,7 @@
 import { cleanAvatar, DEFAULT_AVATAR, type Avatar } from './avatar.ts';
 import { CAR_BY_ID, FOOD_BY_ID, FURN_BY_ID, PET_SHOP_BY_ID, POTIONS, STARTER_TOYS, TOY_BY_ID } from './catalog.ts';
 import { EGG_BY_ID, SPECIES_BY_ID } from './pets.ts';
-import { deserializeHouse, newHouse, type House } from './house.ts';
+import { deserializeHouse, ensureStarterFurniture, newHouse, type House } from './house.ts';
 import type { PetState } from './needs.ts';
 import { uid } from './rng.ts';
 
@@ -43,7 +43,7 @@ export function freshSave(now = Date.now()): SaveData {
     avatarDone: false,
     pets: [],
     equipped: [],
-    inventory: { seng: 1, sofa: 1, ball: 1 },
+    inventory: { sofa: 1, ball: 1 },
     bag: { eple: 2, vann: 2, ...Object.fromEntries(STARTER_TOYS.map((t) => [t, 1])) },
     houses: [house],
     activeHouseId: house.id,
@@ -69,7 +69,10 @@ export function parseSave(json: string | null, now = Date.now()): SaveData {
     const raw = JSON.parse(json) as Partial<SaveData>;
     if (!raw || raw.version !== 1 || typeof raw.playerId !== 'string') return freshSave(now);
     const base = freshSave(now);
-    const houses = (Array.isArray(raw.houses) ? raw.houses : []).map((h) => deserializeHouse(JSON.stringify(h))).filter((h): h is House => !!h);
+    const houses = (Array.isArray(raw.houses) ? raw.houses : [])
+      .map((h) => deserializeHouse(JSON.stringify(h)))
+      .filter((h): h is House => !!h)
+      .map((h) => ensureStarterFurniture(h));
     const pets: PetState[] = (Array.isArray(raw.pets) ? raw.pets : [])
       .filter((p) => p && typeof p.uid === 'string' && SPECIES_BY_ID[p.speciesId])
       .map((p) => ({

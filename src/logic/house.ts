@@ -41,14 +41,46 @@ export function roomSize(style: HouseStyle): { w: number; d: number } {
   return { w: h.w, d: h.d };
 }
 
-export function newHouse(style: HouseStyle, ownerId: string, now = Date.now()): House {
+const HUMAN_BEDS = new Set(['seng', 'dobbeltseng', 'koyeseng', 'himmelseng', 'stjerneseng', 'hengekoye']);
+const TABLES = new Set(['spisebord', 'salongbord']);
+
+export function hasHumanBed(items: readonly PlacedItem[]): boolean {
+  return items.some((i) => HUMAN_BEDS.has(i.itemId));
+}
+export function hasTable(items: readonly PlacedItem[]): boolean {
+  return items.some((i) => TABLES.has(i.itemId));
+}
+
+/** Starter bed + table (+ pet care bits). Used by newHouse and save migration. */
+export function starterFurniture(style: HouseStyle): PlacedItem[] {
   const { w, d } = roomSize(style);
-  const items: PlacedItem[] = [
-    { uid: uid('it'), itemId: 'dyreseng', x: -w / 2 + 2, z: -d / 2 + 2, rot: 0, scale: 1, color: '#ffb84d', floor: 0 },
-    { uid: uid('it'), itemId: 'badekar', x: w / 2 - 2.2, z: -d / 2 + 1.6, rot: 0, scale: 1, color: '#ffffff', floor: 0 },
-    { uid: uid('it'), itemId: 'rundtteppe', x: 0, z: d / 2 - 5, rot: 0, scale: 1, color: '#ff9ccf', floor: 0 },
-    { uid: uid('it'), itemId: 'potteplante', x: w / 2 - 1, z: d / 2 - 1.2, rot: 0, scale: 1, color: '#5cc36b', floor: 0 },
+  // Bed left, dining table right — both in the open living space so kids (and screenshots) see them from the door.
+  return [
+    { uid: uid('it'), itemId: 'seng', x: -w * 0.28, z: -d * 0.12, rot: Math.PI / 2, scale: 1, color: '#8fb8ff', floor: 0 },
+    { uid: uid('it'), itemId: 'spisebord', x: w * 0.22, z: -d * 0.05, rot: 0, scale: 1, color: '#d9a066', floor: 0 },
+    { uid: uid('it'), itemId: 'dyreseng', x: -w / 2 + 2.2, z: d / 2 - 3.5, rot: 0, scale: 1, color: '#ffb84d', floor: 0 },
+    { uid: uid('it'), itemId: 'badekar', x: w / 2 - 2.4, z: -d / 2 + 2.2, rot: 0, scale: 1, color: '#ffffff', floor: 0 },
+    { uid: uid('it'), itemId: 'rundtteppe', x: 0, z: d / 2 - 4.5, rot: 0, scale: 1, color: '#ff9ccf', floor: 0 },
+    { uid: uid('it'), itemId: 'potteplante', x: w / 2 - 1.2, z: d / 2 - 1.4, rot: 0, scale: 1, color: '#5cc36b', floor: 0 },
   ];
+}
+
+/** Add missing starter bed/table to an existing house without duplicating. */
+export function ensureStarterFurniture(house: House): House {
+  const { w, d } = roomSize(house.style);
+  const extras: PlacedItem[] = [];
+  if (!hasHumanBed(house.items)) {
+    extras.push({ uid: uid('it'), itemId: 'seng', x: -w * 0.28, z: -d * 0.12, rot: Math.PI / 2, scale: 1, color: '#8fb8ff', floor: 0 });
+  }
+  if (!hasTable(house.items)) {
+    extras.push({ uid: uid('it'), itemId: 'spisebord', x: w * 0.22, z: -d * 0.05, rot: 0, scale: 1, color: '#d9a066', floor: 0 });
+  }
+  if (!extras.length) return house;
+  return { ...house, items: [...house.items, ...extras] };
+}
+
+export function newHouse(style: HouseStyle, ownerId: string, now = Date.now()): House {
+  const items = starterFurniture(style);
   return { id: uid('house'), style, ownerId, editors: [], editRequests: [], wallColor: '#fff1e0', floorColor: '#d9a066', items, createdAt: now, locked: false };
 }
 

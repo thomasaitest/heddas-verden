@@ -351,8 +351,8 @@ export function openMap(game: Game) {
     cars: { e: '🚗', n: 'Bilbutikk' },
     pets: { e: '🐾', n: 'Dyrebutikk' },
   };
-  /** A flat picture of the town: where you are and where everything is. You have to walk there. */
-  const minimap = () => {
+  /** Icon pins only (tap for name) — avoids overlapping Norwegian labels on small screens. */
+  const minimap = (selected: { kind: string; name: string } | null, onSelect: (v: { kind: string; name: string } | null) => void) => {
     const size = 340;
     const c = el('canvas', { class: 'minimap', width: String(size * 2), height: String(size * 2), style: { width: `${size}px`, height: `${size}px` } }) as HTMLCanvasElement;
     const ctx = c.getContext('2d');
@@ -360,6 +360,7 @@ export function openMap(game: Game) {
     const k = (size * 2) / (game.town.size * 0.9);
     const X = (x: number) => size + x * k;
     const Y = (z: number) => size + z * k;
+    const hits: { kind: string; name: string; x: number; y: number; r: number }[] = [];
     ctx.fillStyle = '#9fe08a';
     ctx.fillRect(0, 0, size * 2, size * 2);
     ctx.strokeStyle = '#f2dfb8';
@@ -375,24 +376,27 @@ export function openMap(game: Game) {
     ctx.beginPath();
     ctx.arc(X(0), Y(0), 9 * k, 0, Math.PI * 2);
     ctx.fill();
-    ctx.font = '700 38px Fredoka, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     for (const z of game.town.zones) {
       const pin = pins[z.kind];
       if (!pin) continue;
-      ctx.fillStyle = '#ffffff';
+      const cx = X(z.x);
+      const cy = Y(z.z);
+      const active = selected?.kind === z.kind;
+      ctx.fillStyle = active ? '#ffe066' : '#ffffff';
       ctx.beginPath();
-      ctx.arc(X(z.x), Y(z.z), 38, 0, Math.PI * 2);
+      ctx.arc(cx, cy, 40, 0, Math.PI * 2);
       ctx.fill();
+      if (active) {
+        ctx.strokeStyle = '#ff4fa8';
+        ctx.lineWidth = 6;
+        ctx.stroke();
+      }
       ctx.fillStyle = '#4a3b5c';
-      ctx.font = '40px "Apple Color Emoji","Noto Color Emoji",sans-serif';
-      ctx.fillText(pin.e, X(z.x), Y(z.z) + 3);
-      ctx.font = '700 34px Fredoka, sans-serif';
-      ctx.lineWidth = 8;
-      ctx.strokeStyle = '#ffffff';
-      ctx.strokeText(pin.n, X(z.x), Y(z.z) + 62);
-      ctx.fillText(pin.n, X(z.x), Y(z.z) + 62);
+      ctx.font = '42px "Apple Color Emoji","Noto Color Emoji",sans-serif';
+      ctx.fillText(pin.e, cx, cy + 3);
+      hits.push({ kind: z.kind, name: pin.n, x: cx, y: cy, r: 44 });
     }
     if (game.mode === 'town') {
       ctx.fillStyle = '#ff4f7f';
@@ -403,12 +407,30 @@ export function openMap(game: Game) {
       ctx.fill();
       ctx.stroke();
     }
+    c.style.touchAction = 'manipulation';
+    c.onclick = (ev) => {
+      const rect = c.getBoundingClientRect();
+      const sx = ((ev.clientX - rect.left) / rect.width) * (size * 2);
+      const sy = ((ev.clientY - rect.top) / rect.height) * (size * 2);
+      let best: (typeof hits)[0] | null = null;
+      let bestD = Infinity;
+      for (const h of hits) {
+        const d = Math.hypot(sx - h.x, sy - h.y);
+        if (d < h.r && d < bestD) {
+          best = h;
+          bestD = d;
+        }
+      }
+      onSelect(best ? { kind: best.kind, name: best.name } : null);
+    };
     return c;
   };
+  let selected: { kind: string; name: string } | null = null;
   const render = () => {
     s.body.replaceChildren(
-      el('p', { class: 'lead' }, game.mode === 'town' ? 'Du er den rosa prikken. Gå dit du vil – alt kan nås til fots.' : 'Gå ut døra for å utforske byen.'),
-      el('div', { class: 'minimap-wrap' }, minimap()),
+      el('p', { class: 'lead' }, game.mode === 'town' ? 'Du er den rosa prikken. Trykk på et ikon for navnet – gå dit til fots.' : 'Gå ut døra for å utforske byen.'),
+      el('div', { class: 'minimap-wrap' }, minimap(selected, (v) => { selected = v; render(); })),
+      selected ? el('p', { class: 'map-pin-name' }, selected.name) : el('p', { class: 'map-pin-hint' }, 'Trykk et ikon 👆'),
       el('h3', {}, 'Hus'),
       el(
         'div',

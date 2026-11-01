@@ -14,4 +14,18 @@ describe('house wire', () => {
     expect(guest.ownerId).toBe('owner');
     expect(guest.items[0].itemId).toBe(w.items[0].id);
   });
+
+  it('sparse wire still gets starter bed and table for visitors', () => {
+    const guest = guestHouseFromWire('owner', { style: 'hytte', items: [], locked: false });
+    expect(guest.items.some((i) => i.itemId === 'seng')).toBe(true);
+    expect(guest.items.some((i) => i.itemId === 'spisebord')).toBe(true);
+  });
+
+  it('does not duplicate bed/table already on the wire', () => {
+    const h = newHouse('hytte', 'owner', 0);
+    const w = houseToWire(h);
+    const guest = guestHouseFromWire('owner', w);
+    expect(guest.items.filter((i) => i.itemId === 'seng').length).toBe(1);
+    expect(guest.items.filter((i) => i.itemId === 'spisebord').length).toBe(1);
+  });
 });

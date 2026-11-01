@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { HOUSE_BY_STYLE, type HouseStyle } from '../logic/catalog.ts';
+import { HOME_ENTER_RADIUS } from '../logic/visitDoor.ts';
+import { doorLockStatus } from '../logic/houseLock.ts';
 import type { CircleCollider, RectCollider, Surface } from '../logic/collision.ts';
 import {
   HOUSE_PLOTS,
@@ -778,7 +780,7 @@ export function buildTown(): Town {
     group.add(holder);
     // empty lot pad
     box(holder, GRASS, [0, 0.015, 0], [15, 0.03, 11]).userData.noCast = true;
-    return { holder, rects: [], circles: [], zone: i === 0 ? ({ kind: 'home', x: 0, z: 0, r: 3.5, label: 'Gå inn 🏠' } as Zone) : null, mountedKey: null };
+    return { holder, rects: [], circles: [], zone: i === 0 ? ({ kind: 'home', x: 0, z: 0, r: HOME_ENTER_RADIUS, label: 'Gå inn 🏠' } as Zone) : null, mountedKey: null };
   });
   if (plots[0].zone) zones.push(plots[0].zone);
 
@@ -826,7 +828,9 @@ export function buildTown(): Town {
       const size = ext.userData.size as { w: number; d: number };
       const postZ = size.d / 2 + 2.4;
       cyl(ext, '#8a5a3c', [0, 1.4, postZ], [0.18, 2.8, 0.18]);
-      sign(ext, (locked ? '🔒 ' : '') + label.slice(0, 8), 3.2, postZ + 0.05, locked ? '#555a75' : '#54c45e', 3.2);
+      const status = doorLockStatus(locked);
+      sign(ext, status, 3.0, postZ + 0.05, locked ? '#555a75' : '#54c45e', 2.6);
+      sign(ext, label.slice(0, 8), 4.4, postZ + 0.05, locked ? '#555a75' : '#54c45e', 3.2);
     }
     const size = ext.userData.size as { w: number; d: number };
     // Parent first so collectColliders reads world-space footprints for the plot.

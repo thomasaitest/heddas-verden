@@ -64,8 +64,9 @@ h2, h3, h4 { margin: 0; font-weight: 700; }
 @keyframes bump { 50% { transform: scale(1.18); } }
 .coin { display: inline-grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #9cf59f, #2fb446); color: #fff; font-weight: 700; font-size: 18px; border: 3px solid #1f8a33; text-shadow: 0 2px 0 rgba(0, 0, 0, 0.2); }
 .coin.sm { width: 22px; height: 22px; font-size: 12px; border-width: 2px; }
-.where { margin: 0 auto; background: rgba(255, 255, 255, 0.85); padding: 6px 18px; border-radius: 999px; font-weight: 700; font-size: 18px; box-shadow: 0 3px 0 rgba(0, 0, 0, 0.12); }
-.hud-top-right { display: flex; gap: 8px; }
+.where { margin: 0 auto; max-width: min(70vw, 340px); background: rgba(255, 255, 255, 0.9); padding: 6px 14px; border-radius: 999px; font-weight: 700; font-size: 15px; line-height: 1.15; text-align: center; box-shadow: 0 3px 0 rgba(0, 0, 0, 0.12); white-space: nowrap; }
+.hud-top-right { display: flex; gap: 8px; flex-shrink: 0; padding-right: max(4px, env(safe-area-inset-right)); }
+.hud-top-right .btn.round { margin-right: 0; }
 
 .tasks { position: absolute; left: 12px; top: calc(max(10px, env(safe-area-inset-top)) + 64px); width: min(300px, 42vw); display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
 .tasks-title { align-self: flex-start; background: #ffd23f; color: #fff; font-weight: 700; padding: 3px 14px; border-radius: 12px; border: 3px solid #fff; text-shadow: 0 2px 0 rgba(0, 0, 0, 0.2); box-shadow: 0 3px 0 rgba(0, 0, 0, 0.15); }
@@ -282,4 +283,46 @@ body.building .jump, body.building .pet-bar, body.building .tasks, body.building
 @media (max-width: 700px) {
   .dock-btn { width: 58px; height: 64px; font-size: 22px; border-radius: 18px; }
   .dock-btn b { font-size: 11px; }
+}
+
+
+/* Gå inn / Besøk pulse for small fingers */
+.prompt.go-in-pulse { animation: bob 1s ease-in-out infinite, goInGlow 1.2s ease-in-out infinite; }
+@keyframes goInGlow {
+  0%, 100% { box-shadow: 0 6px 0 rgba(0,0,0,0.18), 0 0 0 0 rgba(84,196,94,0.45); }
+  50% { box-shadow: 0 6px 0 rgba(0,0,0,0.18), 0 0 0 10px rgba(84,196,94,0); }
+}
+.prompt.prompt-compact { font-size: 18px; padding: 10px 18px; }
+
+.map-pin-name { text-align: center; font-weight: 800; font-size: 22px; margin: 6px 0 4px; color: #4a3b5c; }
+.map-pin-hint { text-align: center; font-weight: 600; opacity: 0.7; margin: 4px 0; }
+
+.potion-sparkle {
+  position: fixed; inset: 0; display: grid; place-items: center; z-index: 40; pointer-events: none;
+  animation: potionPop 2.6s ease forwards;
+}
+.potion-sparkle-burst { font-size: 72px; filter: drop-shadow(0 8px 0 rgba(0,0,0,0.15)); }
+.potion-sparkle b {
+  position: absolute; top: 58%; font-size: 28px; font-weight: 800; color: #fff;
+  text-shadow: 0 3px 0 #c45ad8, 0 6px 16px rgba(0,0,0,0.25);
+  background: linear-gradient(90deg,#ff8fb1,#c88bff,#7fd8ff); padding: 10px 22px; border-radius: 999px;
+}
+@keyframes potionPop {
+  0% { opacity: 0; transform: scale(0.6); }
+  15% { opacity: 1; transform: scale(1.08); }
+  70% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(0.95); }
+}
+
+@media (max-width: 700px) {
+  .hud-top { left: max(8px, env(safe-area-inset-left)); right: max(8px, env(safe-area-inset-right)); gap: 6px; }
+  .where { font-size: 12px; padding: 5px 10px; max-width: min(58vw, 220px); letter-spacing: -0.01em; }
+  .bucks { font-size: 16px; }
+  .pet-bar { right: max(8px, env(safe-area-inset-right)); bottom: calc(168px + env(safe-area-inset-bottom)); gap: 6px; }
+  .pet-act { font-size: 14px; padding: 8px 12px; border-radius: 16px; }
+  .pet-bar .pet-act:nth-child(n+4) { /* keep Mat/Lek/Hold compact; hide extras unless needed via JS */ }
+  .prompt { font-size: 20px; padding: 12px 20px; }
+  .prompt.prompt-compact { font-size: 16px; padding: 8px 14px; }
+  .minimap-wrap { display: flex; justify-content: center; }
+  .minimap { width: min(92vw, 340px) !important; height: min(92vw, 340px) !important; }
 }
