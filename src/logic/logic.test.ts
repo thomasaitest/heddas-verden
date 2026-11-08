@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { seeded } from './rng.ts';
 import { POINTS, START_LIVES, levelShape, makeDoors, newGame, openDoor, useMagnifier, type DoorGame } from './doors.ts';
-import { EGGS, RARITY_ORDER, SPECIES, SPECIES_BY_ID, hatch, rollRarity, speciesOfRarity, cleanPetName } from './pets.ts';
-import { FURNITURE, FURN_BY_ID, FURN_CATS, FOODS, HOUSES } from './catalog.ts';
-import { addCare, completeNeed, newPetState, rollNeed, SICK_AFTER, stageIndex, stageOf, STAGES, tickPet, NEED_INFO, CARE_AMOUNT, GROW_BONUS } from './needs.ts';
+import { EGGS, FLIGHT_LESSONS, RARITY_ORDER, SPECIES, SPECIES_BY_ID, hatch, rollRarity, speciesOfRarity, cleanPetName } from './pets.ts';
+import { FURNITURE, FURN_BY_ID, FURN_CATS, FOODS, HOUSES, PET_SHOP } from './catalog.ts';
+import { addCare, badgeNeeds, completeNeed, newPetState, rollNeed, SICK_AFTER, stageIndex, stageOf, STAGES, syncNeeds, tickPet, NEED_INFO, CARE_AMOUNT, GROW_BONUS, MAX_STATUS_BADGES } from './needs.ts';
 import { canEdit, clampToRoom, deserializeHouse, grantEdit, newHouse, placeItem, requestEdit, revokeEdit, rotateItem, roomSize, serializeHouse, snapToWall, updateItem, MAX_SCALE, MIN_SCALE } from './house.ts';
 import { cleanAvatar, DEFAULT_AVATAR, randomAvatar } from './avatar.ts';
 import { freshSave, parseSave, MAX_EQUIPPED, START_BUCKS } from './save.ts';
@@ -38,6 +38,21 @@ describe('pets and eggs', () => {
     expect(SPECIES.some((s) => (s.rarity === 'legendarisk' || s.rarity === 'ultra') && (s.bornFly ?? 0) > 0)).toBe(true);
     expect(SPECIES.some((s) => (s.rarity === 'legendarisk' || s.rarity === 'ultra') && (s.bornRide ?? 0) > 0)).toBe(true);
   });
+  it('winged pets are rarely born able to fly', () => {
+    const winged = SPECIES.filter((s) => s.wings);
+    expect(winged.length).toBeGreaterThan(3);
+    for (const s of winged) expect(s.bornFly ?? 0).toBeLessThanOrEqual(0.08);
+    let bornFlying = 0;
+    let wingedHatches = 0;
+    for (let i = 0; i < 80; i++) {
+      const pet = hatch('egg-gull', seeded(i + 11), 0);
+      if (!SPECIES_BY_ID[pet.speciesId].wings) continue;
+      wingedHatches++;
+      if (pet.flyable) bornFlying++;
+    }
+    expect(wingedHatches).toBeGreaterThan(20);
+    expect(bornFlying).toBeLessThan(wingedHatches / 2);
+  });
   it('the starter egg never gives rare pets', () => {
     const rng = seeded(1);
     for (let i = 0; i < 300; i++) expect(['vanlig', 'uvanlig']).toContain(rollRarity(EGGS[0], rng));
@@ -70,7 +85,37 @@ describe('needs, sickness and ageing', () => {
   it('ignored needs turn into sickness', () => {
     const p = { ...base(), need: { kind: 'sulten' as const, since: 0, progress: 0 } };
     expect(tickPet(p, SICK_AFTER - 1, seeded(1)).need!.kind).toBe('sulten');
-    expect(tickPet(p, SICK_AFTER + 1, seeded(1)).need!.kind).toBe('syk');
+    const sick = tickPet(p, SICK_AFTER + 1, seeded(1));
+    expect(sick.need!.kind).toBe('syk');
+    expect(sick.needs?.some((n) => n.kind === 'sulten')).toBe(true);
+  });
+  it('shows at most three status badges, sick first', () => {
+    const p = syncNeeds(base(), [
+      { kind: 'tur', since: 1, progress: 0 },
+      { kind: 'skitten', since: 2, progress: 0 },
+      { kind: 'syk', since: 3, progress: 0 },
+      { kind: 'trott', since: 4, progress: 0 },
+    ]);
+    expect(p.need!.kind).toBe('syk');
+    expect(badgeNeeds(p).map((n) => n.kind)).toEqual(['syk', 'trott', 'skitten']);
+    expect(badgeNeeds(p).length).toBeLessThanOrEqual(MAX_STATUS_BADGES);
+    expect(p.needs).toHaveLength(4);
+  });
+  it('a winged pet learns to fly after practice and keeps flight it already earned', () => {
+    let pet: ReturnType<typeof base> = { ...base(), speciesId: 'ugle', flyable: false, flyLessons: 0, need: { kind: 'sulten', since: 0, progress: 1 } };
+    for (let i = 0; i < FLIGHT_LESSONS - 1; i++) {
+      const r = completeNeed(pet, i, seeded(2));
+      expect(r.learnedFly).toBe(false);
+      expect(r.pet.flyable).toBe(false);
+      pet = { ...r.pet, need: { kind: 'torst' as const, since: 0, progress: 1 }, needs: [{ kind: 'torst' as const, since: 0, progress: 1 }] };
+    }
+    const done = completeNeed(pet, 9, seeded(2));
+    expect(done.learnedFly).toBe(true);
+    expect(done.pet.flyable).toBe(true);
+    expect(done.pet.flyLessons).toBe(FLIGHT_LESSONS);
+    const kept = completeNeed({ ...done.pet, need: { kind: 'sulten', since: 0, progress: 1 }, needs: [{ kind: 'sulten', since: 0, progress: 1 }] }, 10, seeded(2));
+    expect(kept.pet.flyable).toBe(true);
+    expect(kept.learnedFly).toBe(false);
   });
   it('rollNeed does not repeat the last need', () => {
     const rng = seeded(5);
@@ -233,6 +278,11 @@ describe('economy and save', () => {
     expect(r.done).toBe(true);
     expect(r.save.stats.tasks).toBe(1);
   });
+  it('magic potions are never sold', () => {
+    expect(FOODS.some((f) => f.id === 'flygedrikk' || f.id === 'ridedrikk')).toBe(false);
+    expect(PET_SHOP.some((i) => i.id.includes('drikk'))).toBe(false);
+    expect(PET_SHOP.filter((i) => i.kind === 'vogn').length).toBeGreaterThanOrEqual(6);
+  });
   it('potions are not buyable in shops', () => {
     const s = { ...freshSave(0), bucks: 10_000 };
     expect(buyPotion(s, 'flygedrikk').ok).toBe(false);
@@ -291,7 +341,21 @@ describe('economy and save', () => {
     const back = parseSave(JSON.stringify(s));
     expect(back.pets.length).toBe(1);
     expect(back.equipped).toEqual(s.equipped);
+    expect(back.quests?.active).toHaveLength(2);
     expect(parseSave('nonsense').version).toBe(1);
+    const earned = parseSave(JSON.stringify({
+      ...freshSave(0),
+      pets: [{ uid: 'owl', speciesId: 'ugle', name: 'Ulla', flyable: true, rideable: false, obtainedAt: 1, xp: 4, need: { kind: 'skitten', since: 1, progress: 0.25 }, nextNeedAt: 80_000, lastNeed: null, flyLessons: 1 }],
+    }));
+    expect(earned.pets[0].flyable).toBe(true);
+    expect(earned.pets[0].flyLessons).toBe(FLIGHT_LESSONS);
+    expect(earned.pets[0].need?.kind).toBe('skitten');
+    const mid = parseSave(JSON.stringify({
+      ...freshSave(0),
+      pets: [{ uid: 'owl2', speciesId: 'ugle', name: 'Ulla', flyable: false, rideable: false, obtainedAt: 1, xp: 1, need: null, nextNeedAt: 80_000, lastNeed: null, flyLessons: 2 }],
+    }));
+    expect(mid.pets[0].flyable).toBe(false);
+    expect(mid.pets[0].flyLessons).toBe(2);
     const broken = { ...JSON.parse(JSON.stringify(s)), bucks: -5, bag: { eple: 3, hack: 9 }, inventory: { nope: 1 }, activeHouseId: 'x' };
     const fixed = parseSave(JSON.stringify(broken));
     expect(fixed.bucks).toBe(0);

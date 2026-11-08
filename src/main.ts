@@ -30,7 +30,7 @@ async function boot() {
     openEggs: () => openEggs(game),
     openDoors: () => openDoors(game),
     openVetInfo: () => openVetInfo(game),
-    openMissionSheet: (def, progress, onNew) => openMissionSheet(game, def, progress, onNew),
+    openMissionSheet: (rows) => openMissionSheet(game, rows),
     feedMenu: (uid) => feedMenu(game, uid),
     toyMenu: () => toyMenu(game),
   };

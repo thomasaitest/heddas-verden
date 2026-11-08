@@ -16,10 +16,16 @@ export interface PetSpecies {
   wings?: boolean;
   spots?: boolean;
   mane?: boolean;
-  /** Chance that a hatched pet is born able to fly or be ridden (potions can add it later). */
+  /**
+   * Small chance a winged pet hatches already able to fly.
+   * Most winged pets must practice first. Potions can still teach flight later.
+   */
   bornFly?: number;
   bornRide?: number;
 }
+
+/** Care tasks a winged pet must finish before it can fly, unless it was born able or already earned it. */
+export const FLIGHT_LESSONS = 4;
 
 export const RARITY_ORDER: Rarity[] = ['vanlig', 'uvanlig', 'sjelden', 'ultra', 'legendarisk'];
 
@@ -39,33 +45,33 @@ export const SPECIES: PetSpecies[] = [
   { id: 'kylling', name: 'Kylling', body: 'bird', rarity: 'vanlig', colors: ['#ffe14d', '#ff9a3c', '#ff9a3c'] },
   { id: 'gris', name: 'Gris', body: 'pig', rarity: 'vanlig', colors: ['#ffb3c7', '#ff8fb1', '#e0708f'] },
   { id: 'skilpadde', name: 'Skilpadde', body: 'turtle', rarity: 'vanlig', colors: ['#7ccf6a', '#a0632f', '#5aa74b'] },
-  { id: 'marihone', name: 'Marihøne', body: 'bug', rarity: 'vanlig', colors: ['#ff4b4b', '#222233', '#222233'], spots: true, wings: true, bornFly: 0.1 },
+  { id: 'marihone', name: 'Marihøne', body: 'bug', rarity: 'vanlig', colors: ['#ff4b4b', '#222233', '#222233'], spots: true, wings: true, bornFly: 0.02 },
   // Uvanlig
   { id: 'rev', name: 'Rev', body: 'fox', rarity: 'uvanlig', colors: ['#ff7a2f', '#ffffff', '#3b2a22'] },
   { id: 'panda', name: 'Panda', body: 'bear', rarity: 'uvanlig', colors: ['#ffffff', '#2b2b38', '#2b2b38'], spots: true },
   { id: 'pingvin', name: 'Pingvin', body: 'penguin', rarity: 'uvanlig', colors: ['#2f3550', '#ffffff', '#ffb02e'] },
   { id: 'dalmatiner', name: 'Dalmatiner', body: 'dog', rarity: 'uvanlig', colors: ['#ffffff', '#ffffff', '#2b2b38'], spots: true },
   { id: 'hest', name: 'Hest', body: 'horse', rarity: 'uvanlig', colors: ['#a86b3c', '#fff1dc', '#4a2e1c'], mane: true, bornRide: 0.3 },
-  { id: 'bie', name: 'Bie', body: 'bug', rarity: 'uvanlig', colors: ['#ffd23f', '#2b2b38', '#2b2b38'], wings: true, bornFly: 0.2 },
+  { id: 'bie', name: 'Bie', body: 'bug', rarity: 'uvanlig', colors: ['#ffd23f', '#2b2b38', '#2b2b38'], wings: true, bornFly: 0.03 },
   { id: 'koala', name: 'Koala', body: 'bear', rarity: 'uvanlig', colors: ['#a7adb8', '#f1f1f4', '#4a4a58'] },
   // Sjelden
-  { id: 'ugle', name: 'Ugle', body: 'bird', rarity: 'sjelden', colors: ['#a0703f', '#f3d9b1', '#ffb02e'], wings: true, bornFly: 0.35 },
+  { id: 'ugle', name: 'Ugle', body: 'bird', rarity: 'sjelden', colors: ['#a0703f', '#f3d9b1', '#ffb02e'], wings: true, bornFly: 0.04 },
   { id: 'isbjorn', name: 'Isbjørn', body: 'bear', rarity: 'sjelden', colors: ['#f6fbff', '#dfeaf5', '#2b2b38'], bornRide: 0.2 },
   { id: 'snoleopard', name: 'Snøleopard', body: 'cat', rarity: 'sjelden', colors: ['#eef0f5', '#ffffff', '#5b5f70'], spots: true },
   { id: 'polarrev', name: 'Polarrev', body: 'fox', rarity: 'sjelden', colors: ['#f2f6ff', '#ffffff', '#9fb4d8'] },
-  { id: 'papegoye', name: 'Papegøye', body: 'bird', rarity: 'sjelden', colors: ['#ff3d3d', '#ffd23f', '#3fa4ff'], wings: true, bornFly: 0.4 },
+  { id: 'papegoye', name: 'Papegøye', body: 'bird', rarity: 'sjelden', colors: ['#ff3d3d', '#ffd23f', '#3fa4ff'], wings: true, bornFly: 0.04 },
   { id: 'enhjorning-baby', name: 'Ponni', body: 'horse', rarity: 'sjelden', colors: ['#ffc6e3', '#fff4fb', '#ff7fbf'], mane: true, bornRide: 0.4 },
   // Ultrasjelden
-  { id: 'enhjorning', name: 'Enhjørning', body: 'horse', rarity: 'ultra', colors: ['#ffffff', '#fff4fb', '#c88bff'], horn: true, mane: true, bornRide: 0.5, bornFly: 0.15 },
+  { id: 'enhjorning', name: 'Enhjørning', body: 'horse', rarity: 'ultra', colors: ['#ffffff', '#fff4fb', '#c88bff'], horn: true, mane: true, bornRide: 0.5, bornFly: 0.02 },
   { id: 'trex', name: 'T-rex', body: 'dino', rarity: 'ultra', colors: ['#6cc46a', '#d8f5b0', '#3d8a3c'], bornRide: 0.4 },
   { id: 'kenguru', name: 'Kenguru', body: 'bunny', rarity: 'ultra', colors: ['#c98a55', '#f3d9b1', '#7a4a2a'], bornRide: 0.3 },
-  { id: 'flamingo', name: 'Flamingo', body: 'bird', rarity: 'ultra', colors: ['#ff8fc7', '#ffc6e3', '#2b2b38'], wings: true, bornFly: 0.5 },
+  { id: 'flamingo', name: 'Flamingo', body: 'bird', rarity: 'ultra', colors: ['#ff8fc7', '#ffc6e3', '#2b2b38'], wings: true, bornFly: 0.05 },
   { id: 'gullkatt', name: 'Gullkatt', body: 'cat', rarity: 'ultra', colors: ['#ffd23f', '#fff4c2', '#ff9a3c'] },
   // Legendarisk
-  { id: 'drage', name: 'Drage', body: 'dragon', rarity: 'legendarisk', colors: ['#ff4b6e', '#ffd23f', '#ffd23f'], wings: true, horn: true, bornFly: 0.6, bornRide: 0.4 },
-  { id: 'isdrage', name: 'Isdrage', body: 'dragon', rarity: 'legendarisk', colors: ['#7fd8ff', '#ffffff', '#3fa4ff'], wings: true, horn: true, bornFly: 0.6, bornRide: 0.4 },
-  { id: 'pegasus', name: 'Pegasus', body: 'horse', rarity: 'legendarisk', colors: ['#ffffff', '#e6f4ff', '#7fd8ff'], wings: true, mane: true, bornFly: 0.7, bornRide: 0.5 },
-  { id: 'fenix', name: 'Føniks', body: 'bird', rarity: 'legendarisk', colors: ['#ff5a1f', '#ffd23f', '#ff2e63'], wings: true, bornFly: 0.8 },
+  { id: 'drage', name: 'Drage', body: 'dragon', rarity: 'legendarisk', colors: ['#ff4b6e', '#ffd23f', '#ffd23f'], wings: true, horn: true, bornFly: 0.06, bornRide: 0.4 },
+  { id: 'isdrage', name: 'Isdrage', body: 'dragon', rarity: 'legendarisk', colors: ['#7fd8ff', '#ffffff', '#3fa4ff'], wings: true, horn: true, bornFly: 0.06, bornRide: 0.4 },
+  { id: 'pegasus', name: 'Pegasus', body: 'horse', rarity: 'legendarisk', colors: ['#ffffff', '#e6f4ff', '#7fd8ff'], wings: true, mane: true, bornFly: 0.07, bornRide: 0.5 },
+  { id: 'fenix', name: 'Føniks', body: 'bird', rarity: 'legendarisk', colors: ['#ff5a1f', '#ffd23f', '#ff2e63'], wings: true, bornFly: 0.08 },
   { id: 'regnbuedino', name: 'Regnbue-dino', body: 'dino', rarity: 'legendarisk', colors: ['#c88bff', '#ffe14d', '#ff8fc7'], spots: true, bornRide: 0.6 },
 ];
 

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { solid } from './colliders.ts';
 import { buildFood } from './food.ts';
 import { box, cone, cyl, G, part, rbox, sph, textTexture } from './kit.ts';
-import { buildCar } from './vehicles.ts';
+import { buildCar, buildPram } from './vehicles.ts';
 
 type V3 = [number, number, number];
 
@@ -80,7 +80,8 @@ export function fillShop(g: THREE.Group): { counter: { x: number; z: number } } 
   box(g, '#fff4e6', [0, 2.0, -3.88], [12.2, 4.1, 0.04]);
   SHELF_ROWS.forEach((row, r) => {
     const y = 1.0 + r * 1.2;
-    box(g, '#d9a066', [0, y, -3.62], [12.2, 0.12, 1.0]);
+    // The plank itself is solid up to the top of the stock, so you cannot walk through the shelves.
+    solid(box(g, '#d9a066', [0, y, -3.62], [12.2, 0.12, 1.0]), 'rect', 0.02, 4.4);
     box(g, '#7a5128', [0, y - 0.1, -3.14], [12.2, 0.08, 0.06]);
     row.forEach((id, i) => food(g, id, [-5.5 + i * 1.0, y + 0.06, -3.55], 0, 0.95));
     // price strip with the real category names
@@ -274,28 +275,77 @@ export function fillCarShop(g: THREE.Group): { counter: { x: number; z: number }
   return { counter: { x: 3.5, z: 3.0 } };
 }
 
-/** Pet shop with prams and toys on shelves. */
+const SHELF_GOODS = ['ball', 'mouse', 'rope', 'bone', 'bowl', 'bottle', 'fish', 'yarn'] as const;
+type ShelfGood = (typeof SHELF_GOODS)[number];
+
+/** A recognisable pet-shop product, standing on a shelf. */
+function shelfGood(parent: THREE.Object3D, kind: ShelfGood, x: number, y: number, z: number): void {
+  const g = new THREE.Group();
+  g.userData.shelfProduct = kind;
+  g.position.set(x, y, z);
+  if (kind === 'ball') {
+    sph(g, '#ffe066', [0, 0.28, 0], [0.5, 0.5, 0.5]);
+    cyl(g, '#ffffff', [0, 0.28, 0], [0.52, 0.08, 0.52]);
+  } else if (kind === 'mouse') {
+    sph(g, '#d9d3cf', [0, 0.22, 0], [0.46, 0.32, 0.62]);
+    sph(g, '#ffb6c8', [-0.16, 0.4, 0.12], [0.16, 0.16, 0.1]);
+    sph(g, '#ffb6c8', [0.16, 0.4, 0.12], [0.16, 0.16, 0.1]);
+    cyl(g, '#c9b8b0', [0, 0.22, -0.48], [0.06, 0.4, 0.06], [Math.PI / 2.4, 0, 0]);
+    sph(g, '#2b2b38', [0.1, 0.28, 0.22], [0.06, 0.06, 0.06]);
+  } else if (kind === 'rope') {
+    part(g, G.torus(), '#e6b15a', [0, 0.28, 0], [0.42, 0.42, 0.42], [Math.PI / 2, 0, 0]);
+    part(g, G.torus(), '#c98a55', [0, 0.28, 0], [0.28, 0.28, 0.28], [Math.PI / 2, 0.4, 0]);
+  } else if (kind === 'bone') {
+    cyl(g, '#fff6e8', [0, 0.2, 0], [0.12, 0.55, 0.12], [0, 0, Math.PI / 2]);
+    sph(g, '#fff6e8', [-0.28, 0.2, 0], [0.2, 0.2, 0.16]);
+    sph(g, '#fff6e8', [0.28, 0.2, 0], [0.2, 0.2, 0.16]);
+  } else if (kind === 'bowl') {
+    cyl(g, '#ff8fb1', [0, 0.12, 0], [0.5, 0.16, 0.5]);
+    cyl(g, '#c98a55', [0, 0.22, 0], [0.36, 0.08, 0.36]);
+    for (const [ox, oz] of [[-0.08, 0], [0.08, 0.06], [0, -0.08]] as const) sph(g, '#8a5a3c', [ox, 0.28, oz], [0.08, 0.06, 0.08]);
+  } else if (kind === 'bottle') {
+    cyl(g, '#7fd8ff', [0, 0.28, 0], [0.22, 0.48, 0.22]);
+    cyl(g, '#3fa4ff', [0, 0.56, 0], [0.1, 0.16, 0.1]);
+    box(g, '#ffffff', [0, 0.32, 0.12], [0.12, 0.16, 0.02]);
+  } else if (kind === 'fish') {
+    sph(g, '#ff8a3d', [0, 0.22, 0], [0.42, 0.22, 0.55]);
+    cone(g, '#ff8a3d', [-0.32, 0.22, 0], [0.2, 0.28, 0.16], [0, 0, Math.PI / 2]);
+    sph(g, '#2b2b38', [0.12, 0.28, 0.16], [0.06, 0.06, 0.06]);
+  } else {
+    sph(g, '#c88bff', [0, 0.26, 0], [0.42, 0.42, 0.42]);
+    part(g, G.torus(), '#ff8fb1', [0, 0.26, 0], [0.32, 0.32, 0.32], [0.4, 0.2, 0.6]);
+    box(g, '#c88bff', [0.28, 0.08, 0.05], [0.22, 0.04, 0.04]);
+  }
+  parent.add(g);
+}
+
+/** Pet shop with distinct prams and shelves full of recognisable goods. */
 export function fillPetShop(g: THREE.Group): { counter: { x: number; z: number } } {
   tileFloor(g, 14, 11, '#fff0f6', '#ffe0ef');
   box(g, '#ff8fb1', [0, 0.05, 4.8], [3.6, 0.03, 1.2]).userData.noCast = true;
   plane(g, textTexture('Dyrebutikk', { bg: '#ff8fb1', fg: '#fff', w: 512, h: 96 }), [0, 5.0, -5.1], 5.2, 0.9);
-  // shelves of toys
   solid(box(g, '#c98a55', [0, 1.8, -4.7], [12, 3.6, 0.5]), 'rect', 0.05, 4);
   for (let r = 0; r < 3; r++) {
-    box(g, '#d9a066', [0, 0.7 + r * 1.1, -4.3], [11.6, 0.1, 0.9]);
-    for (let i = 0; i < 8; i++) sph(g, ['#ff6f6f', '#ffe066', '#5cc3f2', '#c88bff'][(i + r) % 4], [-4.5 + i * 1.2, 0.95 + r * 1.1, -4.2], [0.35, 0.35, 0.35]);
+    const y = 0.7 + r * 1.1;
+    solid(box(g, '#d9a066', [0, y, -4.3], [11.6, 0.1, 0.9]), 'rect', 0.02, 4.2);
+    for (let i = 0; i < 8; i++) {
+      shelfGood(g, SHELF_GOODS[(i + r * 3) % SHELF_GOODS.length], -4.6 + i * 1.3, y + 0.06, -4.25);
+    }
   }
-  // prams
-  for (const [x, c] of [[-3.5, '#ff8fb1'], [0, '#5cc3f2'], [3.5, '#ffe066']] as const) {
-    const p = new THREE.Group();
-    solid(rbox(p, c, [0, 0.7, 0], [1.6, 0.7, 1.0]), 'rect', 0.1, 1.3);
-    for (const sx of [-0.55, 0.55]) cyl(p, '#2b2b38', [sx, 0.25, 0.45], [0.35, 0.2, 0.35], [0, 0, Math.PI / 2]);
-    for (const sx of [-0.55, 0.55]) cyl(p, '#2b2b38', [sx, 0.25, -0.45], [0.35, 0.2, 0.35], [0, 0, Math.PI / 2]);
-    box(p, '#ffffff', [0, 1.3, -0.2], [0.08, 0.9, 0.08], [0.4, 0, 0]);
-    p.position.set(x, 0, 1.2);
+  const vogner = ['vogn-rosa', 'vogn-blaa', 'vogn-gull', 'vogn-gronn', 'vogn-lilla', 'vogn-rod'];
+  vogner.forEach((id, i) => {
+    const col = i % 3;
+    const row = Math.floor(i / 3);
+    const x = -3.4 + col * 3.3;
+    const z = 0.15 + row * 2.15;
+    const p = buildPram(id);
+    p.scale.setScalar(0.62);
+    p.position.set(x, 0, z);
+    p.rotation.y = 0.4;
     g.add(p);
-  }
-  solid(rbox(g, '#ffffff', [5.0, 0.55, 3.0], [2.2, 1.1, 1.3]), 'rect', 0, 1.3);
-  rbox(g, '#ff8fb1', [5.0, 1.14, 3.0], [2.3, 0.1, 1.4]);
-  return { counter: { x: 3.0, z: 2.8 } };
+    solid(rbox(g, '#ffffff', [x, 0.06, z], [1.5, 0.08, 1.3]), 'rect', 0.05, 1.15);
+  });
+  solid(rbox(g, '#ffffff', [5.2, 0.55, 3.6], [2.0, 1.1, 1.2]), 'rect', 0, 1.3);
+  rbox(g, '#ff8fb1', [5.2, 1.14, 3.6], [2.1, 0.1, 1.3]);
+  return { counter: { x: 3.2, z: 3.2 } };
 }

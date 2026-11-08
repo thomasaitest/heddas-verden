@@ -1,8 +1,9 @@
 import { cleanAvatar, DEFAULT_AVATAR, type Avatar } from './avatar.ts';
 import { CAR_BY_ID, FOOD_BY_ID, FURN_BY_ID, PET_SHOP_BY_ID, POTIONS, STARTER_TOYS, TOY_BY_ID } from './catalog.ts';
-import { EGG_BY_ID, SPECIES_BY_ID } from './pets.ts';
+import { EGG_BY_ID, FLIGHT_LESSONS, SPECIES_BY_ID } from './pets.ts';
 import { deserializeHouse, ensureStarterFurniture, migrateFurnitureClearOfWalls, newHouse, type House } from './house.ts';
-import type { PetState } from './needs.ts';
+import { normalizeQuestLog, type QuestLog } from './missions.ts';
+import { MAX_NEEDS, NEED_INFO, syncNeeds, type Need, type NeedKind, type PetState } from './needs.ts';
 import { uid } from './rng.ts';
 
 export interface SaveData {
@@ -25,6 +26,8 @@ export interface SaveData {
   starterClaimed: boolean;
   /** The starter toys have been put in the backpack (older saves get them once). */
   toysGiven?: boolean;
+  /** Oppdrag board. Missing on older saves — they start at the first two quests, nothing is marked done. */
+  quests?: QuestLog;
 }
 
 export const SAVE_KEY = 'heddasverden-save-v1';
@@ -51,6 +54,7 @@ export function freshSave(now = Date.now()): SaveData {
     sound: true,
     starterClaimed: false,
     toysGiven: true,
+    quests: normalizeQuestLog(null, now),
   };
 }
 
@@ -73,21 +77,42 @@ export function parseSave(json: string | null, now = Date.now()): SaveData {
       .map((h) => deserializeHouse(JSON.stringify(h)))
       .filter((h): h is House => !!h)
       .map((h) => migrateFurnitureClearOfWalls(ensureStarterFurniture(h)));
+    const readNeed = (n: unknown): Need | null => {
+      if (!n || typeof n !== 'object') return null;
+      const kind = (n as { kind?: unknown }).kind;
+      if (typeof kind !== 'string' || !(kind in NEED_INFO)) return null;
+      return {
+        kind: kind as NeedKind,
+        since: Number((n as { since?: unknown }).since) || now,
+        progress: Math.max(0, Math.min(1, Number((n as { progress?: unknown }).progress) || 0)),
+      };
+    };
     const pets: PetState[] = (Array.isArray(raw.pets) ? raw.pets : [])
       .filter((p) => p && typeof p.uid === 'string' && SPECIES_BY_ID[p.speciesId])
-      .map((p) => ({
-        uid: p.uid,
-        speciesId: p.speciesId,
-        name: typeof p.name === 'string' ? p.name : SPECIES_BY_ID[p.speciesId].name,
-        flyable: !!p.flyable,
-        rideable: !!p.rideable,
-        obtainedAt: Number(p.obtainedAt) || now,
-        xp: Math.max(0, Math.floor(Number(p.xp) || 0)),
-        need: p.need && typeof p.need.kind === 'string' ? { kind: p.need.kind, since: Number(p.need.since) || now, progress: Number(p.need.progress) || 0 } : null,
-        nextNeedAt: Number(p.nextNeedAt) || now,
-        lastNeed: p.lastNeed ?? null,
-        ...(Number(p.joy) > 0 ? { joy: Math.min(1, Number(p.joy)), joyAt: Number(p.joyAt) || now } : {}),
-      }));
+      .map((p) => {
+        const flyable = !!p.flyable;
+        const storedLessons = Number(p.flyLessons);
+        const flyLessons = flyable ? FLIGHT_LESSONS : Math.max(0, Math.min(FLIGHT_LESSONS, Number.isFinite(storedLessons) ? Math.floor(storedLessons) : 0));
+        const fromList = Array.isArray(p.needs) ? p.needs.map(readNeed).filter((n): n is Need => !!n).slice(0, MAX_NEEDS) : null;
+        const legacy = readNeed(p.need);
+        const base: PetState = {
+          uid: p.uid,
+          speciesId: p.speciesId,
+          name: typeof p.name === 'string' ? p.name : SPECIES_BY_ID[p.speciesId].name,
+          flyable,
+          rideable: !!p.rideable,
+          obtainedAt: Number(p.obtainedAt) || now,
+          xp: Math.max(0, Math.floor(Number(p.xp) || 0)),
+          need: legacy,
+          nextNeedAt: Number(p.nextNeedAt) || now,
+          lastNeed: typeof p.lastNeed === 'string' && p.lastNeed in NEED_INFO ? (p.lastNeed as NeedKind) : null,
+          flyLessons,
+          ...(Number(p.joy) > 0 ? { joy: Math.min(1, Number(p.joy)), joyAt: Number(p.joyAt) || now } : {}),
+        };
+        // Keep a single legacy need as-is until the game tick migrates it, so we don't stack extras on load.
+        if (!fromList) return base;
+        return syncNeeds(base, fromList);
+      });
     const save: SaveData = {
       ...base,
       playerId: raw.playerId,
@@ -104,6 +129,7 @@ export function parseSave(json: string | null, now = Date.now()): SaveData {
       sound: raw.sound !== false,
       starterClaimed: !!raw.starterClaimed,
       toysGiven: true,
+      quests: normalizeQuestLog(raw.quests, now),
     };
     if (!raw.toysGiven) {
       // saves from before the toys existed: one ball and one yarn ball as a gift, once

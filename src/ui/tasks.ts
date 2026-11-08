@@ -1,9 +1,11 @@
-import { NEED_INFO, type PetState } from '../logic/needs.ts';
+import { allNeeds, NEED_INFO, type PetState } from '../logic/needs.ts';
 import { el } from './dom.ts';
 
 /** Everything a task card shows. Plain data, so what needs redrawing can be tested without a DOM. */
 export interface TaskView {
+  /** `${petUid}:${kind}` so two needs on one pet are separate cards. */
   uid: string;
+  petUid: string;
   title: string;
   hint: string;
   emoji: string;
@@ -14,20 +16,23 @@ export interface TaskView {
 }
 
 export function taskViews(pets: readonly PetState[]): TaskView[] {
-  return pets
-    .filter((p) => p.need)
-    .map((p) => {
-      const info = NEED_INFO[p.need!.kind];
-      return {
-        uid: p.uid,
+  const out: TaskView[] = [];
+  for (const p of pets) {
+    for (const need of allNeeds(p)) {
+      const info = NEED_INFO[need.kind];
+      out.push({
+        uid: `${p.uid}:${need.kind}`,
+        petUid: p.uid,
         title: `${p.name}: ${info.label}`,
         hint: info.hint,
         emoji: info.emoji,
         reward: info.reward,
-        sick: p.need!.kind === 'syk',
-        pct: Math.round(p.need!.progress * 100),
-      };
-    });
+        sick: need.kind === 'syk',
+        pct: Math.round(need.progress * 100),
+      });
+    }
+  }
+  return out;
 }
 
 /**
@@ -70,7 +75,7 @@ export class TasksPanel {
 
   update(pets: readonly PetState[], onTap: (uid: string) => void): void {
     const views = taskViews(pets);
-    const kindOf = (uid: string) => pets.find((p) => p.uid === uid)!.need!.kind;
+    const kindOf = (uid: string) => uid.slice(uid.lastIndexOf(':') + 1);
     const next = views.map((v) => ({ uid: v.uid, kind: kindOf(v.uid) }));
     const shown = [...this.cards].map(([uid, c]) => ({ uid, kind: c.kind }));
     const { add, remove } = reconcileTasks(shown, next);

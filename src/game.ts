@@ -6,8 +6,8 @@ import { playDone, startPlay, stepPlay, type PlayState } from './logic/toyplay.t
 import { buildToy } from './three/toys.ts';
 import { EQUIP_BY_ID, SIT_DROP, canUse, wantsOff } from './logic/playground.ts';
 import { canEdit, careItems, migrateFurnitureClearOfWalls, moveItem, newHouse, setHouseLocked, updateItem } from './logic/house.ts';
-import { NEED_INFO, stageOf, type CareWhere, type NeedKind, type PetState } from './logic/needs.ts';
-import { SPECIES_BY_ID } from './logic/pets.ts';
+import { allNeeds, badgeNeeds, NEED_INFO, stageOf, type CareWhere, type NeedKind, type PetState } from './logic/needs.ts';
+import { FLIGHT_LESSONS, SPECIES_BY_ID } from './logic/pets.ts';
 import { loadSave, writeSave, type SaveData } from './logic/save.ts';
 import { cameraRelative, orbit } from './logic/camera.ts';
 import { movePlayer, resolve, surfaceUnder, type Colliders } from './logic/collision.ts';
@@ -16,7 +16,7 @@ import { nearestBed, shouldWakeFromBed, type SleepSpot } from './logic/sleep.ts'
 import { skyAt, skyLabel, type SkyState } from './logic/weather.ts';
 import { canDrive, canPram, carCabinPetScale, carPassengerSeat, defaultCar, defaultPram, vehicleBodyRadius, vehicleSpeed } from './logic/vehicles.ts';
 import { standInFrontOfBench } from './logic/benchStand.ts';
-import { MISSION_BY_KIND, missionDone, missionProgress, offerMission, type MissionState } from './logic/missions.ts';
+import { bumpQuest, freshQuestLog, questActive, questBoard, type MissionKind, type QuestRow } from './logic/missions.ts';
 import { ACTIVITIES, activityPose, canStartActivity, nearPlaza, type ActivityKind } from './logic/activity.ts';
 import { acceptVisit, idleVisit, receiveAsk, startAsk, tickVisit, type VisitState } from './logic/visit.ts';
 import { guestHouseFromWire, houseToWire, type HouseWire } from './logic/houseWire.ts';
@@ -47,8 +47,8 @@ export interface PetActor {
   speed: number;
   wanderTarget: THREE.Vector3 | null;
   wanderAt: number;
-  bubble: THREE.Sprite;
-  bubbleKind: string;
+  bubbles: THREE.Sprite[];
+  bubbleKinds: string[];
   scale: number;
   care: { x: number; z: number; y?: number; pose: PetPose } | null;
   happyUntil: number;
@@ -73,7 +73,7 @@ export interface PanelHooks {
   openEggs(): void;
   openDoors(): void;
   openVetInfo(): void;
-  openMissionSheet(def: { title: string; hint: string; emoji: string; reward: number }, progress: number, onNew: () => void): void;
+  openMissionSheet(rows: readonly QuestRow[]): void;
   feedMenu(uid: string): void;
   toyMenu(): void;
 }
@@ -96,8 +96,7 @@ export class Game {
   player = { pos: new THREE.Vector3(), vy: 0, yaw: 0, grounded: true, speed: 0, energy: ENERGY_MAX };
   /** Sitting on an outdoor bench to rest. */
   resting: { x: number; z: number; yaw: number } | null = null;
-  /** Current player quest (Oppdrag), or null until the player asks for one. */
-  mission: MissionState | null = null;
+  /** Current player quest (Oppdrag) lives on the save so it survives a reload. */
   /** Vet: player must press the prompt before the pet lies in the bed. */
   vetHealUid: string | null = null;
   /** Pet picking apples / dancing at the plaza. */
@@ -291,17 +290,21 @@ export class Game {
     const liveHouse = this.guestHouse ?? house;
     this.hud.setMode(this.mode, this.mode === 'house' ? (this.guestHouse ? `Besøk · ${HOUSE_BY_STYLE[liveHouse.style].name}` : HOUSE_BY_STYLE[liveHouse.style].name) : 'Heddas by', !this.guestHouse && canEdit(liveHouse, this.save.playerId));
     this.hud.setTasks(this.equippedPets(), (uid) => this.onTaskTap(uid));
+    this.hud.setQuests(questBoard(this.save.quests ?? freshQuestLog()));
     const p = this.mainPet();
+    const winged = !!p && !!SPECIES_BY_ID[p.speciesId]?.wings;
     const inPlaza = this.mode === 'town' && nearPlaza(this.player.pos.x, this.player.pos.z);
+    const flyTraining = !!p && winged && !p.flyable;
     this.hud.setPetActions({
       any: !!p && !this.building && !this.editingAvatar,
       holding: !!this.holding,
       riding: !!this.riding,
       flying: this.flying,
       canRide: !!p && p.rideable && this.mode === 'town' && !this.driving && !this.pramming,
-      canFly: !!p && p.flyable && this.mode === 'town' && !this.driving && !this.pramming,
+      canFly: !!p && (p.flyable || flyTraining) && this.mode === 'town' && !this.driving && !this.pramming,
+      flyTraining,
       canPlay: !!p && !this.holding && !this.riding && !this.flying && !this.using && !this.driving && !this.pramming && TOYS.some((t) => this.save.bag[t.id]),
-      hungry: this.equippedPets().some((x) => x.need && (NEED_INFO[x.need.kind].where === 'mat' || NEED_INFO[x.need.kind].where === 'drikke')),
+      hungry: this.equippedPets().some((x) => allNeeds(x).some((n) => NEED_INFO[n.kind].where === 'mat' || NEED_INFO[n.kind].where === 'drikke')),
       canDrive: this.mode === 'town' && !this.riding && !this.holding && !this.flying && !this.using && !this.pramming && !!defaultCar(this.save),
       driving: !!this.driving,
       canPram: this.mode === 'town' && !this.riding && !this.holding && !this.flying && !this.using && !this.driving && !!defaultPram(this.save) && !!p,
@@ -324,10 +327,14 @@ export class Game {
     return this.equippedPets()[0] ?? null;
   }
 
-  private onTaskTap(uid: string) {
+  private onTaskTap(key: string) {
+    const split = key.lastIndexOf(':');
+    const uid = split > 0 ? key.slice(0, split) : key;
+    const kind = split > 0 ? key.slice(split + 1) : '';
     const pet = this.save.pets.find((p) => p.uid === uid);
-    if (!pet?.need) return;
-    const where = NEED_INFO[pet.need.kind].where;
+    const need = allNeeds(pet ?? { need: null }).find((n) => n.kind === kind) ?? pet?.need ?? null;
+    if (!pet || !need) return;
+    const where = NEED_INFO[need.kind].where;
     if (where === 'mat' || where === 'drikke') {
       // Gentle: keep Oppgaver row + toast; Mat button feeds without a blocking sheet.
       toast(where === 'mat' ? `${pet.name} er sulten – trykk Mat 🍎` : `${pet.name} er tørst – trykk Mat 🥤`);
@@ -342,13 +349,14 @@ export class Game {
   /** One-tap feed from bag; toast only — no auto modal. Opens chooser only if several foods match. */
   quickFeedOrHint() {
     const pet = this.mainPet();
-    if (!pet?.need) {
-      toast('Dyret er mett nå 💚');
+    const foodNeed = pet ? allNeeds(pet).find((n) => NEED_INFO[n.kind].where === 'mat' || NEED_INFO[n.kind].where === 'drikke') : null;
+    if (!pet || !foodNeed) {
+      toast(pet ? 'Dyret er mett nå 💚' : 'Dyret er mett nå 💚');
       return;
     }
-    const where = NEED_INFO[pet.need.kind].where;
+    const where = NEED_INFO[foodNeed.kind].where;
     if (where !== 'mat' && where !== 'drikke') {
-      toast(NEED_INFO[pet.need.kind].hint);
+      toast(NEED_INFO[foodNeed.kind].hint);
       return;
     }
     const matches = FOODS.filter((f) => f.fixes === where && (this.save.bag[f.id] ?? 0) > 0);
@@ -377,21 +385,27 @@ export class Game {
     const c = document.createElement('canvas');
     c.width = c.height = 128;
     const ctx = c.getContext('2d')!;
-    const sick = kind === 'syk';
-    ctx.fillStyle = sick ? '#ffdede' : '#ffffff';
-    ctx.strokeStyle = sick ? '#ff4b4b' : '#c9b8d8';
-    ctx.lineWidth = 6;
+    const ring: Record<string, string> = {
+      syk: '#ff4b4b',
+      sulten: '#ff9a3c',
+      torst: '#3fa4ff',
+      trott: '#8b7cff',
+      skitten: '#5cc3f2',
+      kjedelig: '#7ccf6a',
+      tur: '#54c45e',
+      heart: '#ff8fb1',
+    };
+    ctx.fillStyle = '#ffffff';
     ctx.beginPath();
-    ctx.arc(64, 56, 48, 0, Math.PI * 2);
-    ctx.moveTo(52, 100);
-    ctx.lineTo(64, 124);
-    ctx.lineTo(76, 100);
+    ctx.arc(64, 64, 56, 0, Math.PI * 2);
     ctx.fill();
+    ctx.strokeStyle = ring[kind] ?? '#c9b8d8';
+    ctx.lineWidth = 10;
     ctx.stroke();
-    ctx.font = '56px "Apple Color Emoji","Noto Color Emoji","Segoe UI Emoji",sans-serif';
+    ctx.font = '54px "Apple Color Emoji","Noto Color Emoji","Segoe UI Emoji",sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(kind === 'heart' ? '💖' : NEED_INFO[kind as NeedKind]?.emoji ?? '❔', 64, 60);
+    ctx.fillText(kind === 'heart' ? '💖' : NEED_INFO[kind as NeedKind]?.emoji ?? '❔', 64, 68);
     t = new THREE.CanvasTexture(c);
     t.colorSpace = THREE.SRGBColorSpace;
     this.bubbleTex.set(kind, t);
@@ -405,7 +419,7 @@ export class Game {
     for (const [uid, a] of this.actors) {
       const pet = this.save.pets.find((p) => p.uid === uid);
       if (!want.has(uid) || !pet) {
-        this.scene.remove(a.rig.root, a.bubble, a.shadow);
+        this.scene.remove(a.rig.root, a.shadow, ...a.bubbles);
         this.actors.delete(uid);
       }
     }
@@ -427,9 +441,12 @@ export class Game {
       }
       if (!a) {
         const rig = buildPet(SPECIES_BY_ID[pet.speciesId]);
-        const bubble = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.needTexture('heart'), depthTest: false }));
-        bubble.renderOrder = 10;
-        bubble.visible = false;
+        const bubbles = [0, 1, 2].map(() => {
+          const bubble = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.needTexture('heart'), depthTest: false }));
+          bubble.renderOrder = 10;
+          bubble.visible = false;
+          return bubble;
+        });
         const shadow = blobShadow(1.6);
         const ang = this.player.yaw + Math.PI + (i - 0.5) * 0.9;
         a = {
@@ -442,15 +459,15 @@ export class Game {
           speed: 0,
           wanderTarget: null,
           wanderAt: 0,
-          bubble,
-          bubbleKind: 'heart',
+          bubbles,
+          bubbleKinds: ['', '', ''],
           scale: 1,
           care: null,
           happyUntil: 0,
           shadow,
         };
         if (this.mode === 'house' && !this.save.equipped.includes(uid)) a.pos.set((this.rng() - 0.5) * (this.interior.w - 3), 0, (this.rng() - 0.5) * (this.interior.d - 3));
-        this.scene.add(rig.root, bubble, shadow);
+        this.scene.add(rig.root, ...bubbles, shadow);
         this.actors.set(uid, a);
       }
       a.scale = stageOf(pet.xp).scale * 1.5;
@@ -497,7 +514,17 @@ export class Game {
   }
   toggleFly() {
     const p = this.mainPet();
-    if (!p || !p.flyable) return;
+    if (!p) return;
+    if (!p.flyable) {
+      const winged = !!SPECIES_BY_ID[p.speciesId]?.wings;
+      if (winged) {
+        const n = p.flyLessons ?? 0;
+        toast(`${p.name} har vinger, men må øve først! Stell dyret så det lærer å fly (${n}/${FLIGHT_LESSONS}) 🪽`, 'ok');
+      } else {
+        toast('Dette dyret kan ikke fly ennå. Trylledrikk kan ikke kjøpes — den dukker bare opp hos flygedyr.', 'ok');
+      }
+      return;
+    }
     this.holding = null;
     if (this.flying) { this.flying = false; this.flyDropAcc = 0; }
     else {
@@ -683,7 +710,7 @@ export class Game {
       case 'vet-heal':
         this.vetHealUid = z.uid;
         toast('Dyret legger seg i sengen for å bli friskt 🛏️', 'ok');
-        if (this.mission?.kind === 'dyrlege') this.bumpMission(0.35);
+        if (questActive(this.save.quests, 'dyrlege')) this.bumpMission('dyrlege', 0.35);
         break;
       case 'pet-apple':
         this.startPetApple(z.uid, z.x, z.z);
@@ -746,7 +773,7 @@ export class Game {
       return false;
     }
     const pet = this.save.pets.find((x) => x.uid === best!.uid)!;
-    if (pet.need?.kind === 'syk') {
+    if (allNeeds(pet).some((n) => n.kind === 'syk')) {
       toast(`${pet.name} er syk og må til Dyrlegen først 🤒`, 'bad');
       return false;
     }
@@ -1334,46 +1361,38 @@ export class Game {
   }
 
 
-  private bumpMission(amount: number) {
-    if (!this.mission) return;
-    this.mission = missionProgress(this.mission, amount);
-    if (missionDone(this.mission)) {
-      const def = MISSION_BY_KIND[this.mission.kind];
-      const reward = def.reward;
-      this.commit({ ...this.save, bucks: this.save.bucks + reward, stats: { ...this.save.stats, tasks: this.save.stats.tasks + 1 } });
-      toast(`Oppdrag klart! ${def.emoji} +${reward} bucks`, 'gold');
+  private bumpMission(kind: MissionKind, amount: number) {
+    const cur = this.save.quests ?? freshQuestLog();
+    const r = bumpQuest(cur, kind, amount);
+    if (!r.changed) return;
+    if (r.completed) {
+      this.commit({
+        ...this.save,
+        quests: r.log,
+        bucks: this.save.bucks + r.completed.reward,
+        stats: { ...this.save.stats, tasks: this.save.stats.tasks + 1 },
+      });
+      toast(`Oppdrag klart! ${r.completed.emoji} +${r.completed.reward} bucks`, 'gold');
       sfx.coin();
-      this.mission = null;
-      this.hud.setMission(null);
     } else {
-      this.hud.setMission(this.mission);
+      this.save = { ...this.save, quests: r.log };
+      this.dirty = true;
     }
+    this.hud.setQuests(questBoard(this.save.quests ?? r.log));
   }
 
-  /** Offer or show the current Oppdrag. */
+  /** Show the quest board. Quests cannot be skipped or replaced. */
   openMission() {
-    if (this.mission && !missionDone(this.mission)) {
-      const def = MISSION_BY_KIND[this.mission.kind];
-      toast(`${def.emoji} ${def.title} — ${def.hint} (${Math.round(this.mission.progress * 100)}%)`, 'ok');
-      // Offer a replacement if they tap again while holding one: show panel-like choice via second toast path
-      this.panels.openMissionSheet(def, this.mission.progress, () => {
-        this.mission = offerMission(this.rng, this.mission?.kind ?? null);
-        this.hud.setMission(this.mission);
-        const n = MISSION_BY_KIND[this.mission.kind];
-        toast(`Nytt oppdrag: ${n.title} ${n.emoji}`, 'ok');
-      });
-      return;
+    const log = this.save.quests ?? freshQuestLog();
+    if (this.save.quests !== log) this.save = { ...this.save, quests: log };
+    const rows = questBoard(log);
+    const active = rows.filter((r) => r.state === 'active');
+    if (active.length) {
+      toast(active.map((r) => `${r.emoji} ${r.title} ${Math.round(r.progress * 100)}%`).join(' · '), 'ok');
+    } else {
+      toast('Alle oppdrag er ferdige! ⭐', 'gold');
     }
-    this.mission = offerMission(this.rng, null);
-    this.hud.setMission(this.mission);
-    const def = MISSION_BY_KIND[this.mission.kind];
-    toast(`Nytt oppdrag: ${def.title} ${def.emoji}`, 'ok');
-    this.panels.openMissionSheet(def, 0, () => {
-      this.mission = offerMission(this.rng, this.mission?.kind ?? null);
-      this.hud.setMission(this.mission);
-      const n = MISSION_BY_KIND[this.mission.kind];
-      toast(`Nytt oppdrag: ${n.title} ${n.emoji}`, 'ok');
-    });
+    this.panels.openMissionSheet(rows);
   }
 
   private startPetApple(uid: string, x: number, z: number) {
@@ -1411,7 +1430,7 @@ export class Game {
     this.player.vy = 0;
     this.player.grounded = true;
     this.resting = null;
-    if (this.mission?.kind === 'benk') this.bumpMission(0.55);
+    if (questActive(this.save.quests, 'benk')) this.bumpMission('benk', 0.55);
   }
 
   private wakeFromBed() {
@@ -1466,7 +1485,7 @@ export class Game {
         a.rig.root.rotation.x = -Math.PI / 2;
         animatePet(a.rig, t + a.uid.length, pose, 0);
         a.shadow.visible = false;
-        a.bubble.visible = false;
+        for (const b of a.bubbles) b.visible = false;
         continue;
       }
       if (this.riding === a.uid) {
@@ -1603,7 +1622,7 @@ export class Game {
         else a.pos.y += (targetY - a.pos.y) * Math.min(1, dt * 4);
         if (playPose && pose !== 'walk') pose = playPose;
         if (a.pos.y > 1 && (flyingPet || pet.flyable) && !near) pose = 'fly';
-        if (pet.need?.kind === 'syk' && pose === 'idle') pose = 'sick';
+        if (allNeeds(pet).some((n) => n.kind === 'syk') && pose === 'idle') pose = 'sick';
       }
       if (t < a.happyUntil && pose !== 'held' && pose !== 'sit' && pose !== 'sleep') pose = 'happy';
       a.pose = pose;
@@ -1616,18 +1635,26 @@ export class Game {
       a.shadow.position.set(a.pos.x, this.groundAt(a.pos.x, a.pos.y, a.pos.z) + 0.025, a.pos.z);
       a.shadow.scale.setScalar(s);
       a.shadow.visible = this.riding !== a.uid && this.holding !== a.uid && !(this.pramming && equipped) && !(this.driving && equipped);
-      // need bubble
-      const kind = equipped && pet.need ? pet.need.kind : null;
-      a.bubble.visible = !!kind && this.riding !== a.uid && !(this.driving && equipped) && pose !== 'sleep';
-      if (kind) {
-        if (a.bubbleKind !== kind) {
-          (a.bubble.material as THREE.SpriteMaterial).map = this.needTexture(kind);
-          (a.bubble.material as THREE.SpriteMaterial).needsUpdate = true;
-          a.bubbleKind = kind;
+      // Up to three circular status badges, highest priority first, spaced so they don't overlap.
+      const showBadges = equipped && this.riding !== a.uid && !(this.driving && equipped) && pose !== 'sleep';
+      const badges = showBadges ? badgeNeeds(pet) : [];
+      const top = a.rig.topY * s;
+      const gap = 0.78;
+      const rx = Math.cos(a.yaw);
+      const rz = -Math.sin(a.yaw);
+      for (let i = 0; i < a.bubbles.length; i++) {
+        const spr = a.bubbles[i];
+        const need = badges[i];
+        spr.visible = !!need;
+        if (!need) continue;
+        if (a.bubbleKinds[i] !== need.kind) {
+          (spr.material as THREE.SpriteMaterial).map = this.needTexture(need.kind);
+          (spr.material as THREE.SpriteMaterial).needsUpdate = true;
+          a.bubbleKinds[i] = need.kind;
         }
-        const top = a.rig.topY * s;
-        a.bubble.position.set(a.pos.x, a.pos.y + top + 0.9 + Math.sin(t * 3) * 0.1, a.pos.z);
-        a.bubble.scale.setScalar(1.5);
+        const xOff = (i - (badges.length - 1) / 2) * gap;
+        spr.position.set(a.pos.x + rx * xOff, a.pos.y + top + 1.05 + Math.sin(t * 3 + i) * 0.05, a.pos.z + rz * xOff);
+        spr.scale.setScalar(badges.length > 2 ? 0.92 : badges.length > 1 ? 1.05 : 1.25);
       }
     }
   }
@@ -1710,7 +1737,7 @@ export class Game {
       }
       // Vet: heal prompt overrides the plain "Dyrlegen" zone when a sick pet needs the bed button.
       if (inVet && !this.driving) {
-        const sick = this.equippedPets().find((pet) => pet.need?.kind === 'syk');
+        const sick = this.equippedPets().find((pet) => allNeeds(pet).some((n) => n.kind === 'syk'));
         if (sick && this.vetHealUid !== sick.uid) {
           near = { kind: 'vet-heal', label: `Legg ${sick.name} i sengen 🛏️`, uid: sick.uid };
         }
@@ -1769,47 +1796,74 @@ export class Game {
       if (!a) continue;
       const jobHold = this.petJob && this.petJob.uid === pet.uid;
       if (!jobHold) a.care = null;
-      if (!pet.need) continue;
       if (jobHold) continue; // pet is busy picking apples / partying
-      const where: CareWhere = NEED_INFO[pet.need.kind].where;
-      let amount = 0;
-      if (where === 'dyrlege' && inVet) {
-        // Healing only after the player presses the vet prompt (vetHealUid).
-        if (this.vetHealUid === pet.uid) {
-          amount = dt;
-          const beds = [...this.town.vetBeds].sort((b1, b2) => Math.hypot(b1.x - p.x, b1.z - p.z) - Math.hypot(b2.x - p.x, b2.z - p.z));
-          const bed = beds[0];
-          a.care = { x: bed.x, z: bed.z, y: bed.y, pose: 'sleep' };
-          // Snap onto the mattress so healing clearly reads as "lying in bed".
-          a.pos.set(bed.x, bed.y, bed.z);
-          a.speed = 0;
-        }
-      } else if (where === 'lek' && inPlay) {
-        amount = dt;
-        a.care = { x: p.x + Math.sin(this.time * 2) * 2, z: p.z + Math.cos(this.time * 2) * 2, pose: 'happy' };
-      } else if (where === 'tur' && this.mode === 'town') amount = moved;
-      else if (house && (where === 'seng' || where === 'bad' || where === 'lek')) {
-        for (const it of careItems(house, where)) {
-          const def = FURN_BY_ID[it.itemId];
-          if (it.floor === this.playerFloor() && Math.hypot(p.x - it.x, p.z - it.z) < def.size * it.scale * 0.7 + 2.2) {
+      const live = save.pets.find((x) => x.uid === pet.uid) ?? pet;
+      const needs = allNeeds(live);
+      if (!needs.length) continue;
+      let healQuest = false;
+      for (const need of needs) {
+        const where: CareWhere = NEED_INFO[need.kind].where;
+        let amount = 0;
+        let poseCare: PetActor['care'] = null;
+        if (where === 'dyrlege' && inVet) {
+          if (this.vetHealUid === pet.uid) {
             amount = dt;
-            const lift = def.model === 'petbed' ? 0.25 : where === 'seng' ? 0.85 : where === 'bad' && (def.model === 'bathtub' || def.model === 'hottub') ? 0.7 : 0;
-            a.care = { x: it.x, z: it.z, y: lift * it.scale + it.floor * FLOOR_H, pose: where === 'seng' ? 'sleep' : 'happy' };
-            break;
+            const beds = [...this.town.vetBeds].sort((b1, b2) => Math.hypot(b1.x - p.x, b1.z - p.z) - Math.hypot(b2.x - p.x, b2.z - p.z));
+            const bed = beds[0];
+            poseCare = { x: bed.x, z: bed.z, y: bed.y, pose: 'sleep' };
+            a.pos.set(bed.x, bed.y, bed.z);
+            a.speed = 0;
+          }
+        } else if (where === 'lek' && inPlay) {
+          amount = dt;
+          poseCare = { x: p.x + Math.sin(this.time * 2) * 2, z: p.z + Math.cos(this.time * 2) * 2, pose: 'happy' };
+        } else if (where === 'tur' && this.mode === 'town') amount = moved;
+        else if (house && (where === 'seng' || where === 'bad' || where === 'lek')) {
+          for (const it of careItems(house, where)) {
+            const def = FURN_BY_ID[it.itemId];
+            if (it.floor === this.playerFloor() && Math.hypot(p.x - it.x, p.z - it.z) < def.size * it.scale * 0.7 + 2.2) {
+              amount = dt;
+              const lift = def.model === 'petbed' ? 0.25 : where === 'seng' ? 0.85 : where === 'bad' && (def.model === 'bathtub' || def.model === 'hottub') ? 0.7 : 0;
+              poseCare = { x: it.x, z: it.z, y: lift * it.scale + it.floor * FLOOR_H, pose: where === 'seng' ? 'sleep' : 'happy' };
+              break;
+            }
+          }
+        }
+        if (this.holding === pet.uid || this.riding === pet.uid) poseCare = null;
+        if (poseCare && !a.care) a.care = poseCare;
+        if (amount > 0) {
+          const beforeLessons = live.flyLessons ?? 0;
+          const r = careAt(save, pet.uid, where, amount, now, this.rng);
+          if (r.save !== save) {
+            save = r.save;
+            changed = true;
+          }
+          if (r.done) {
+            if (this.vetHealUid === pet.uid && where === 'dyrlege') this.vetHealUid = null;
+            if (where === 'dyrlege') healQuest = true;
+            this.celebrate(pet, r.reward, r.grewUp, save);
+            const after = save.pets.find((x) => x.uid === pet.uid);
+            if (r.learnedFly) toast(`${pet.name} har lært å fly! Trykk Fly 🪽`, 'gold');
+            else if (after && SPECIES_BY_ID[after.speciesId]?.wings && !after.flyable && (after.flyLessons ?? 0) > beforeLessons) {
+              toast(`${pet.name} øver på å fly! ${after.flyLessons}/${FLIGHT_LESSONS} 🪽`, 'ok');
+            }
           }
         }
       }
-      if (this.holding === pet.uid || this.riding === pet.uid) a.care = null;
-      if (amount > 0) {
-        const r = careAt(save, pet.uid, where, amount, now, this.rng);
-        if (r.save !== save) {
-          save = r.save;
+      if (healQuest && questActive(save.quests, 'dyrlege')) {
+        const q = bumpQuest(save.quests ?? freshQuestLog(), 'dyrlege', 1);
+        if (q.changed) {
+          save = {
+            ...save,
+            quests: q.log,
+            bucks: save.bucks + (q.completed?.reward ?? 0),
+            stats: q.completed ? { ...save.stats, tasks: save.stats.tasks + 1 } : save.stats,
+          };
           changed = true;
-        }
-        if (r.done) {
-          if (this.vetHealUid === pet.uid) this.vetHealUid = null;
-          if (this.mission?.kind === 'dyrlege' && where === 'dyrlege') this.bumpMission(1);
-          this.celebrate(pet, r.reward, r.grewUp, save);
+          if (q.completed) {
+            toast(`Oppdrag klart! ${q.completed.emoji} +${q.completed.reward} bucks`, 'gold');
+            sfx.coin();
+          }
         }
       }
     }
@@ -1829,16 +1883,16 @@ export class Game {
       this.commit({ ...this.save, bucks: this.save.bucks + pay });
       toast(job.kind === 'epler' ? `Epler plukket! +${pay} 🍎` : `Fest ferdig! +${pay} 💃`, 'gold');
       sfx.coin();
-      if (this.mission?.kind === job.kind) this.bumpMission(1);
+      if (questActive(this.save.quests, job.kind)) this.bumpMission(job.kind, 1);
     }
 
     // Driving distance counts toward the drive mission.
-    if (this.driving && this.mission?.kind === 'kjør' && moved > 0) {
-      this.bumpMission(Math.min(0.08, moved * 0.02));
+    if (this.driving && questActive(this.save.quests, 'kjør') && moved > 0) {
+      this.bumpMission('kjør', Math.min(0.08, moved * 0.02));
     }
     // Visiting the shop on foot.
-    if (!this.driving && this.town.insideBuilding(this.player.pos.x, this.player.pos.z) === 'shop' && this.mission?.kind === 'butikk') {
-      this.bumpMission(0.08);
+    if (!this.driving && this.town.insideBuilding(this.player.pos.x, this.player.pos.z) === 'shop' && questActive(this.save.quests, 'butikk')) {
+      this.bumpMission('butikk', 0.08);
     }
   }
 
@@ -2084,7 +2138,7 @@ export class Game {
         a.care = null;
         i++;
       }
-      if (this.mission?.kind === 'kjør') this.bumpMission(0.4);
+      if (questActive(this.save.quests, 'kjør')) this.bumpMission('kjør', 0.4);
     }
     this.updateHud();
   }

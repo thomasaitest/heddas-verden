@@ -345,30 +345,47 @@ body.building .jump, body.building .pet-bar, body.building .tasks, body.building
   box-shadow: 0 4px 0 rgba(0,0,0,0.14);
 }
 .mission-btn b { font-size: 11px; font-weight: 800; letter-spacing: 0.02em; }
-.mission-chip {
+.quest-rail {
   position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  top: calc(58px + env(safe-area-inset-top));
+  left: max(8px, env(safe-area-inset-left));
+  top: calc(54px + env(safe-area-inset-top));
   z-index: 5;
-  background: rgba(123, 140, 255, 0.95);
-  color: #fff;
-  font-weight: 800;
-  font-size: 13px;
-  padding: 6px 14px;
-  border-radius: 999px;
-  box-shadow: 0 3px 0 rgba(0,0,0,0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: min(46vw, 176px);
+  max-height: 32vh;
+  overflow: auto;
   pointer-events: none;
+  -webkit-overflow-scrolling: touch;
+}
+.quest-pill {
+  display: block;
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.25;
+  box-shadow: 0 2px 0 rgba(0,0,0,0.12);
   white-space: nowrap;
-  max-width: min(80vw, 320px);
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.quest-pill.active { background: #2ee56b; color: #073018; box-shadow: 0 0 0 2px #b8ffcf, 0 2px 0 rgba(0,0,0,0.12); }
+.quest-pill.done { background: #b7bdc7; color: #3c4250; }
+.quest-pill.upcoming { background: rgba(255,255,255,0.9); color: #3a4158; }
+.quest-row { border-radius: 14px; padding: 8px 10px; margin: 6px 0; }
+.quest-row b, .quest-row small { display: block; }
+.quest-row.active { background: #2ee56b; color: #073018; }
+.quest-row.done { background: #c5cad3; color: #3c4250; }
+.quest-row.upcoming { background: #f4f6fb; color: #3a4158; }
+.quest-row small { font-weight: 600; opacity: 0.9; }
 @media (hover: hover) and (pointer: fine) {
   .mission-btn { bottom: calc(24px + env(safe-area-inset-bottom)); }
 }
 @media (max-width: 700px) {
   .mission-btn { bottom: calc(200px + env(safe-area-inset-bottom)); padding: 8px 10px; font-size: 20px; }
-  .mission-chip { top: calc(52px + env(safe-area-inset-top)); font-size: 12px; }
+  .quest-rail { top: calc(50px + env(safe-area-inset-top)); width: min(48vw, 168px); max-height: 28vh; }
+  .quest-pill { font-size: 10px; padding: 2px 7px; }
 }
-body.building .mission-btn, body.building .mission-chip { display: none; }
+body.building .mission-btn, body.building .quest-rail { display: none; }

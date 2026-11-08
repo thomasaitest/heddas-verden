@@ -58,6 +58,35 @@ describe('collision', () => {
     movePlayer(p, 8, -8, 0.5, c);
     expect(blocked(p.x, p.z, 0.5, c)).toBe(false);
   });
+
+  it('a fast diagonal into an inside corner stays on the near side of both walls', () => {
+    const c: Colliders = {
+      rects: [
+        { x: 0, z: 0, hw: 8, hd: 0.15, rot: 0 },
+        { x: 0, z: 0, hw: 0.15, hd: 8, rot: 0 },
+      ],
+      circles: [],
+    };
+    const p = { x: 3, y: 0, z: 3 };
+    movePlayer(p, -20, -20, 0.55, c);
+    expect(p.x).toBeGreaterThan(0.4);
+    expect(p.z).toBeGreaterThan(0.4);
+    expect(blocked(p.x, p.z, 0.55, c)).toBe(false);
+  });
+
+  it('a car-sized body cannot tunnel a thin fence at high speed', () => {
+    const wall: Colliders = { rects: [{ x: 0, z: 0, hw: 8, hd: 0.07, rot: 0 }], circles: [] };
+    const p = { x: 0, y: 0, z: 6 };
+    movePlayer(p, 0, -40, 2.45, wall);
+    expect(p.z).toBeGreaterThan(2);
+    const rot = Math.PI / 5;
+    const slanted: Colliders = { rects: [{ x: 0, z: 0, hw: 80, hd: 0.07, rot }], circles: [] };
+    const q = { x: 0, y: 0, z: 6 };
+    movePlayer(q, 0, -40, 2.45, slanted);
+    const lz = q.x * Math.sin(rot) + q.z * Math.cos(rot);
+    expect(lz).toBeGreaterThan(0.5);
+    expect(blocked(q.x, q.z, 2.45, slanted)).toBe(false);
+  });
 });
 
 describe('camera', () => {

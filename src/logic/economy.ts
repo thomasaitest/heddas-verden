@@ -1,7 +1,7 @@
 import { CAR_BY_ID, FOOD_BY_ID, FURN_BY_ID, HOUSE_BY_STYLE, PET_SHOP_BY_ID, TOY_BY_ID, type HouseStyle } from './catalog.ts';
 import { canEdit, newHouse, placeItem, removeItem, type House } from './house.ts';
-import { addCare, addJoy, CARE_AMOUNT, completeNeed, joyNow, newPetState, NEED_INFO, tickPet, type CareWhere, type PetState } from './needs.ts';
-import { cleanPetName, EGG_BY_ID, hatch } from './pets.ts';
+import { addCare, addJoy, allNeeds, CARE_AMOUNT, completeNeed, joyNow, newPetState, NEED_INFO, tickPet, type CareWhere, type PetState } from './needs.ts';
+import { cleanPetName, EGG_BY_ID, FLIGHT_LESSONS, hatch } from './pets.ts';
 import type { Rng } from './rng.ts';
 import { MAX_EQUIPPED, type SaveData } from './save.ts';
 
@@ -62,7 +62,7 @@ export function playWithToy(save: SaveData, petUid: string, toyId: string, now: 
   if (!save.bag[toyId]) return { ...none, reason: 'empty' };
   let next = setPet(save, addJoy(pet, TOY_JOY, now));
   let out: CareOutcome = { save: next, done: false, reward: 0, grewUp: false };
-  if (pet.need && NEED_INFO[pet.need.kind].where === 'lek') out = careAt(next, petUid, 'lek', CARE_AMOUNT.lek, now, rng);
+  if (allNeeds(pet).some((n) => NEED_INFO[n.kind].where === 'lek')) out = careAt(next, petUid, 'lek', CARE_AMOUNT.lek, now, rng);
   next = out.save;
   return { ...out, save: next, joy: joyOf(next, petUid, now) };
 }
@@ -92,7 +92,7 @@ export function usePotion(save: SaveData, id: 'flygedrikk' | 'ridedrikk', petUid
   const pet = save.pets.find((p) => p.uid === petUid);
   if (!pet) return fail(save, 'no-pet');
   if ((id === 'flygedrikk' && pet.flyable) || (id === 'ridedrikk' && pet.rideable)) return fail(save, 'owned');
-  const next = id === 'flygedrikk' ? { ...pet, flyable: true } : { ...pet, rideable: true };
+  const next = id === 'flygedrikk' ? { ...pet, flyable: true, flyLessons: FLIGHT_LESSONS } : { ...pet, rideable: true };
   return { ok: true, save: { ...setPet(save, next), bag: add(save.bag, id, -1) } };
 }
 
@@ -182,11 +182,20 @@ export interface CareOutcome {
   done: boolean;
   reward: number;
   grewUp: boolean;
+  learnedFly?: boolean;
+  flyLessons?: number;
 }
 
 function finish(save: SaveData, pet: PetState, now: number, rng: Rng): CareOutcome {
   const r = completeNeed(pet, now, rng);
-  return { save: { ...setPet(save, r.pet), bucks: save.bucks + r.reward, stats: { ...save.stats, tasks: save.stats.tasks + 1 } }, done: true, reward: r.reward, grewUp: r.grewUp };
+  return {
+    save: { ...setPet(save, r.pet), bucks: save.bucks + r.reward, stats: { ...save.stats, tasks: save.stats.tasks + 1 } },
+    done: true,
+    reward: r.reward,
+    grewUp: r.grewUp,
+    learnedFly: r.learnedFly,
+    flyLessons: r.flyLessons,
+  };
 }
 
 /** Care at a place (bed, bath, playground, vet, walk distance). */
@@ -205,7 +214,7 @@ export function feed(save: SaveData, petUid: string, foodId: string, now: number
   const pet = save.pets.find((p) => p.uid === petUid);
   if (!food || !pet) return { save, done: false, reward: 0, grewUp: false, reason: 'unknown' };
   if (!save.bag[foodId]) return { save, done: false, reward: 0, grewUp: false, reason: 'empty' };
-  if (!pet.need || NEED_INFO[pet.need.kind].where !== food.fixes) return { save, done: false, reward: 0, grewUp: false, reason: 'wrong' };
+  if (!allNeeds(pet).some((n) => NEED_INFO[n.kind].where === food.fixes)) return { save, done: false, reward: 0, grewUp: false, reason: 'wrong' };
   const r = careAt({ ...save, bag: add(save.bag, foodId, -1) }, petUid, food.fixes, 1, now, rng);
   return r;
 }

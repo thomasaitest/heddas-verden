@@ -74,8 +74,12 @@ export function surfaceUnder(x: number, z: number, y: number, surfaces: readonly
   return best;
 }
 
-/** Push a circle (centre + radius r) out of everything. Slides naturally along walls. Mutates pos. */
-export function resolve(pos: Pos, r: number, c: Colliders, passes = 4): boolean {
+/**
+ * Push a circle (centre + radius r) out of everything. Slides naturally along walls. Mutates pos.
+ * `incoming` is the step we just took. If the centre lands inside a solid, we leave through the
+ * face we entered, so a corner or a thin wall cannot spit us out the far side.
+ */
+export function resolve(pos: Pos, r: number, c: Colliders, passes = 8, incoming?: { x: number; z: number }): boolean {
   let hit = false;
   for (let pass = 0; pass < passes; pass++) {
     let moved = false;
@@ -107,15 +111,26 @@ export function resolve(pos: Pos, r: number, c: Colliders, passes = 4): boolean 
       let nx: number;
       let nz: number;
       if (cx === lx && cz === lz) {
-        // centre is inside: leave through the nearest side
-        const px = b.hw - Math.abs(lx);
-        const pz = b.hd - Math.abs(lz);
-        if (px < pz) {
-          nx = (lx < 0 ? -1 : 1) * (b.hw + r);
-          nz = lz;
+        // centre is inside: leave the way we came in when we know it, otherwise the nearest side
+        const ilx = incoming ? incoming.x * cos - incoming.z * sin : 0;
+        const ilz = incoming ? incoming.x * sin + incoming.z * cos : 0;
+        const know = Math.hypot(ilx, ilz) > 1e-8;
+        if (know && Math.abs(ilx) >= Math.abs(ilz)) {
+          nx = (ilx > 0 ? -1 : 1) * (b.hw + r);
+          nz = Math.max(-b.hd, Math.min(b.hd, lz));
+        } else if (know) {
+          nx = Math.max(-b.hw, Math.min(b.hw, lx));
+          nz = (ilz > 0 ? -1 : 1) * (b.hd + r);
         } else {
-          nx = lx;
-          nz = (lz < 0 ? -1 : 1) * (b.hd + r);
+          const px = b.hw - Math.abs(lx);
+          const pz = b.hd - Math.abs(lz);
+          if (px < pz) {
+            nx = (lx < 0 ? -1 : 1) * (b.hw + r);
+            nz = lz;
+          } else {
+            nx = lx;
+            nz = (lz < 0 ? -1 : 1) * (b.hd + r);
+          }
         }
       } else {
         const dx = lx - cx;
@@ -139,17 +154,21 @@ export function resolve(pos: Pos, r: number, c: Colliders, passes = 4): boolean 
  * Move by (dx, dz) in small sub-steps so a fast player (or a long frame) can never
  * jump over a thin wall, resolving collisions after each step.
  */
-export function movePlayer(pos: Pos, dx: number, dz: number, r: number, c: Colliders, bounds?: number, maxStep = 0.3): void {
+export function movePlayer(pos: Pos, dx: number, dz: number, r: number, c: Colliders, bounds?: number, maxStep = 0.08): void {
   const dist = Math.hypot(dx, dz);
-  const steps = Math.max(1, Math.ceil(dist / maxStep));
+  // Shorter than the thinnest rail, so a fast step cannot leap a solid.
+  const step = Math.min(0.08, Math.max(0.02, maxStep));
+  const steps = Math.max(1, Math.ceil(dist / step));
+  const sx = dx / steps;
+  const sz = dz / steps;
   for (let i = 0; i < steps; i++) {
-    pos.x += dx / steps;
-    pos.z += dz / steps;
+    pos.x += sx;
+    pos.z += sz;
     if (bounds !== undefined) {
       pos.x = Math.max(-bounds, Math.min(bounds, pos.x));
       pos.z = Math.max(-bounds, Math.min(bounds, pos.z));
     }
-    resolve(pos, r, c);
+    resolve(pos, r, c, 8, { x: sx, z: sz });
   }
 }
 

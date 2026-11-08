@@ -1,3 +1,4 @@
+import type { QuestRow } from '../logic/missions.ts';
 import type { PetState } from '../logic/needs.ts';
 import { TasksPanel } from './tasks.ts';
 import { bucksText, button, el } from './dom.ts';
@@ -35,6 +36,8 @@ export interface PetActionState {
   flying: boolean;
   canRide: boolean;
   canFly: boolean;
+  /** Winged pet that still has to practice. The Fly button explains why. */
+  flyTraining: boolean;
   hungry: boolean;
   canPlay: boolean;
   canDrive: boolean;
@@ -60,7 +63,7 @@ export class Hud {
   joyKnob: HTMLElement;
   jump: HTMLButtonElement;
   missionBtn: HTMLButtonElement;
-  missionChip: HTMLElement;
+  questRail: HTMLElement;
   petBar: HTMLElement;
   private petBtns: Record<'hold' | 'ride' | 'fly' | 'feed' | 'play' | 'drive' | 'pram' | 'activity', HTMLButtonElement>;
 
@@ -97,7 +100,7 @@ export class Hud {
     this.joyZone = el('div', { class: 'joy-zone' }, this.joyBase);
     this.jump = el('button', { class: 'btn jump', type: 'button' }, '⬆');
     this.missionBtn = button(el('span', {}, '📜', el('b', {}, 'Oppdrag')), a.mission, 'btn mission-btn');
-    this.missionChip = el('div', { class: 'mission-chip hidden' }, '');
+    this.questRail = el('div', { class: 'quest-rail' });
     this.petBtns = {
       hold: button('🤲 Hold', a.hold, 'btn pet-act'),
       ride: button('🐎 Ri', a.ride, 'btn pet-act'),
@@ -109,7 +112,7 @@ export class Hud {
       activity: button('💃 Fest', a.activity, 'btn pet-act'),
     };
     this.petBar = el('div', { class: 'pet-bar' }, this.petBtns.feed, this.petBtns.play, this.petBtns.hold, this.petBtns.ride, this.petBtns.fly, this.petBtns.drive, this.petBtns.pram, this.petBtns.activity);
-    this.root = el('div', { class: 'hud' }, top, this.tasks, this.missionChip, this.prompt, dock, this.petBar, this.joyZone, this.missionBtn, this.jump);
+    this.root = el('div', { class: 'hud' }, top, this.tasks, this.questRail, this.prompt, dock, this.petBar, this.joyZone, this.missionBtn, this.jump);
     host.append(this.root);
   }
 
@@ -130,22 +133,15 @@ export class Hud {
     this.tasksPanel.update(pets, onTap);
   }
 
-  setMission(m: { kind: string; progress: number } | null) {
-    if (!m) {
-      this.missionChip.classList.add('hidden');
-      this.missionChip.textContent = '';
-      return;
-    }
-    const titles: Record<string, string> = {
-      kjør: '🚗 Biltur',
-      benk: '🪑 Benk',
-      butikk: '🛒 Butikk',
-      epler: '🍎 Epler',
-      fest: '💃 Fest',
-      dyrlege: '🩺 Dyrlege',
-    };
-    this.missionChip.textContent = `${titles[m.kind] ?? 'Oppdrag'} · ${Math.round(m.progress * 100)}%`;
-    this.missionChip.classList.remove('hidden');
+  setQuests(rows: readonly QuestRow[]) {
+    const html = rows
+      .map((r) => {
+        const pct = r.state === 'active' ? ` ${Math.round(r.progress * 100)}%` : '';
+        const mark = r.state === 'done' ? ' ✓' : r.state === 'upcoming' ? '' : '';
+        return `<span class="quest-pill ${r.state}">${r.emoji} ${r.title}${pct}${mark}</span>`;
+      })
+      .join('');
+    if (this.questRail.innerHTML !== html) this.questRail.innerHTML = html;
   }
 
   setPrompt(label: string | null) {
@@ -166,8 +162,8 @@ export class Hud {
     // Phones: hide Ride/Fly/Vogn unless already mounted or the only useful action (keeps Mat/Lek/Kjør clear).
     this.petBtns.ride.classList.toggle('hidden', !s.canRide || s.holding || s.driving || s.pramming || (narrow && !s.riding));
     put(this.petBtns.ride, s.riding ? '🛑 Gå av' : '🐎 Ri');
-    this.petBtns.fly.classList.toggle('hidden', !s.canFly || s.holding || s.driving || s.pramming || (narrow && !s.flying));
-    put(this.petBtns.fly, s.flying ? '🛬 Land' : '🪽 Fly');
+    this.petBtns.fly.classList.toggle('hidden', !s.canFly || s.holding || s.driving || s.pramming || (narrow && !s.flying && !s.flyTraining));
+    put(this.petBtns.fly, s.flying ? '🛬 Land' : s.flyTraining ? '🪽 Øv' : '🪽 Fly');
     this.petBtns.feed.classList.toggle('hidden', !s.hungry || s.driving);
     this.petBtns.play.classList.toggle('hidden', !s.canPlay || s.driving || s.pramming);
     this.petBtns.drive.classList.toggle('hidden', !(s.canDrive || s.driving));
