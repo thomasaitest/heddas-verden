@@ -401,6 +401,48 @@ describe('playground equipment in the town', () => {
   });
 });
 
+describe('prams and pet-shop shelves', () => {
+  it('each vogn has a different silhouette', async () => {
+    const { buildPram } = await import('./vehicles.ts');
+    const { PET_SHOP } = await import('../logic/catalog.ts');
+    const THREE = await import('three');
+    const ids = PET_SHOP.filter((i) => i.kind === 'vogn').map((i) => i.id);
+    expect(ids.length).toBeGreaterThanOrEqual(6);
+    const sizes = ids.map((id) => {
+      const g = buildPram(id);
+      const b = new THREE.Box3().setFromObject(g);
+      return b.getSize(new THREE.Vector3());
+    });
+    let distinct = 0;
+    for (let i = 0; i < sizes.length; i++) {
+      for (let j = i + 1; j < sizes.length; j++) {
+        const d = Math.hypot(sizes[i].x - sizes[j].x, sizes[i].y - sizes[j].y, sizes[i].z - sizes[j].z);
+        if (d > 0.35) distinct++;
+      }
+    }
+    expect(distinct).toBeGreaterThan(8);
+  });
+
+  it('pet shop shelves hold recognisable goods, not plain blobs only', async () => {
+    const { fillPetShop } = await import('./buildings.ts');
+    const THREE = await import('three');
+    const g = new THREE.Group();
+    fillPetShop(g);
+    const kinds = new Set<string>();
+    let n = 0;
+    g.traverse((o) => {
+      const k = o.userData.shelfProduct as string | undefined;
+      if (k) {
+        kinds.add(k);
+        n++;
+      }
+    });
+    expect(n).toBeGreaterThan(16);
+    expect(kinds.size).toBeGreaterThanOrEqual(6);
+    expect([...kinds]).toEqual(expect.arrayContaining(['ball', 'mouse', 'fish', 'bowl']));
+  });
+});
+
 describe('toy models', () => {
   it('every toy has a small 3D model standing on the ground, and a made-up one is an error', async () => {
     const { buildToy } = await import('./toys.ts');
@@ -452,6 +494,25 @@ describe('town roads, benches and shop signs (next round)', () => {
       const dot = Math.sin(b.yaw) * back.x + Math.cos(b.yaw) * back.z;
       expect(dot).toBeLessThan(-0.2);
     }
+  });
+
+  it('shop signs sit on the front edge of the roof and the playground has none', () => {
+    expect(town.shopSigns.map((s) => s.id).sort()).toEqual(['cars', 'doors', 'eggs', 'pets', 'shop', 'vet']);
+    for (const s of town.shopSigns) {
+      expect(s.frontZ, s.id).toBeGreaterThan(2);
+      expect(s.boardY - s.roofTop, s.id).toBeGreaterThan(0.4);
+      expect(s.boardY - s.roofTop, s.id).toBeLessThan(1.6);
+    }
+    expect(town.shopSigns.some((s) => s.id === 'play')).toBe(false);
+  });
+
+  it('a walker cannot pass through a bench seat', () => {
+    const b = town.benches[0];
+    const start = { x: b.x + Math.sin(b.yaw) * 4, y: 0, z: b.z + Math.cos(b.yaw) * 4 };
+    const pos = { ...start };
+    movePlayer(pos, b.x - start.x, b.z - start.z, R, col());
+    expect(Math.hypot(pos.x - b.x, pos.z - b.z)).toBeGreaterThan(0.7);
+    expect(blocked(pos.x, pos.z, R, col())).toBe(false);
   });
 
   it('a pet circle is pushed out of solid town colliders (same as avatar)', () => {

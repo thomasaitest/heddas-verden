@@ -75,6 +75,8 @@ export interface Town {
   roads: RoadSeg[];
   /** Neighbourhood house plots (each multiplayer player gets one). */
   housePlots: { x: number; z: number; rot: number }[];
+  /** Shop signs: board sits on posts at the front edge of the roof, not floating over the middle. */
+  shopSigns: { id: string; frontZ: number; roofTop: number; boardY: number }[];
   /** Show a remote player's house exterior on a plot (style + label). */
   setPlotHouse(plot: number, style: HouseStyle | null, label?: string, locked?: boolean): void;
   size: number;
@@ -93,32 +95,48 @@ function sign(parent: THREE.Object3D, text: string, y: number, z: number, bg: st
   return m;
 }
 
-/** Unique 3D shop signboard with logo mesh, mounted on posts (stays when roof lifts). */
-/** 3D shop signboard that sits ON TOP of the roof (never inside the roof slab). */
+/**
+ * Shop sign fixed to the FRONT edge of the roof.
+ * Posts start inside the roof slab and hold the board just above that edge.
+ * The logo sits on the board, not in the air above the roof.
+ */
 function shopSign3d(
   parent: THREE.Object3D,
-  opts: { label: string; bg: string; /** Roof-top Y (above roof slab). */ y: number; z?: number; w?: number; logo: (g: THREE.Group) => void },
+  opts: { id: string; label: string; bg: string; roofTop: number; frontZ: number; w?: number; logo: (g: THREE.Group) => void },
+  record: { id: string; frontZ: number; roofTop: number; boardY: number }[],
 ) {
   const w = opts.w ?? 6.5;
-  const z = opts.z ?? 0; // centre of roof by default so it is never under the front overhang
+  const z = opts.frontZ;
+  const boardY = opts.roofTop + 0.95;
   const g = new THREE.Group();
-  // Short posts standing on the roof surface
+  g.name = `shop-sign-${opts.id}`;
+  g.userData.shopSign = { id: opts.id, frontZ: z, roofTop: opts.roofTop, boardY };
+  // Bracket plate on the front eave, so the sign is visibly attached.
+  rbox(g, '#6b4428', [0, opts.roofTop + 0.02, z], [w * 0.78, 0.18, 0.55]);
+  const postH = boardY - opts.roofTop + 0.25;
   for (const s of [-1, 1]) {
-    cyl(g, '#8a5a3c', [s * (w / 2 - 0.35), opts.y - 0.55, z], [0.18, 1.1, 0.18]);
+    cyl(g, '#8a5a3c', [s * (w / 2 - 0.4), opts.roofTop - 0.1 + postH / 2, z], [0.16, postH, 0.16]);
   }
-  // board above the roof
-  rbox(g, opts.bg, [0, opts.y, z], [w, 1.5, 0.35]);
-  rbox(g, '#ffffff', [0, opts.y, z + 0.2], [w - 0.35, 1.15, 0.08]);
+  rbox(g, opts.bg, [0, boardY, z], [w, 1.25, 0.28]);
+  rbox(g, '#ffffff', [0, boardY, z + 0.16], [w - 0.4, 0.95, 0.06]);
   const tex = textTexture(opts.label, { bg: opts.bg, fg: '#ffffff', stroke: '#00000044', w: 512, h: 128 });
-  const plate = new THREE.Mesh(new THREE.PlaneGeometry(w - 0.8, 0.7), new THREE.MeshBasicMaterial({ map: tex, transparent: true }));
-  plate.position.set(0, opts.y - 0.15, z + 0.26);
+  const plate = new THREE.Mesh(new THREE.PlaneGeometry(w - 0.7, 0.62), new THREE.MeshBasicMaterial({ map: tex, transparent: true }));
+  plate.position.set(0, boardY, z + 0.22);
+  plate.name = `shop-sign-plate-${opts.id}`;
   g.add(plate);
   const logo = new THREE.Group();
-  logo.position.set(0, opts.y + 1.35, z);
+  // Sit the logo on the top edge of the board, sharing the same posts.
+  logo.position.set(0, boardY + 0.62, z);
   opts.logo(logo);
   g.add(logo);
   parent.add(g);
+  record.push({ id: opts.id, frontZ: z, roofTop: opts.roofTop, boardY });
   return g;
+}
+
+/** Front lip of an openBuilding roof (local +Z) and the top of the roof slab. */
+function roofFront(d: number, h: number): { roofTop: number; frontZ: number } {
+  return { roofTop: h + 0.8, frontZ: (d + 2.2) / 2 - 0.2 };
 }
 
 function awning(g: THREE.Group, w: number, y: number, z: number, a: string, b: string) {
@@ -245,7 +263,7 @@ function homeExterior(style: HouseStyle, locked = false): THREE.Group {
 
 function tree(g: THREE.Group, x: number, z: number, s: number, kind: number, collide = false) {
   const trunk = cyl(g, '#8a5a3c', [x, 1.35 * s, z], [0.55 * s, 2.7 * s, 0.55 * s]);
-  if (collide) solid(trunk, 'circle', 0.85 * s, 8 * s);
+  if (collide) solid(trunk, 'circle', 1.05 * s, 8 * s);
   const puff = (col: string, ox: number, oy: number, oz: number, sx: number, sy: number, sz: number) =>
     sph(g, col, [x + ox * s, oy * s, z + oz * s], [sx * s, sy * s, sz * s]);
   if (kind === 0) {
@@ -303,6 +321,7 @@ export function buildTown(): Town {
   const vehicleRects: RectCollider[] = [];
   const vehicleCircles: CircleCollider[] = [];
   const appleTrees: { x: number; z: number }[] = [];
+  const shopSigns: Town['shopSigns'] = [];
 
   // plaza + fountain (outer wall jumpable; rim and upper bowl are landable)
   cyl(stat, ROAD, [0, 0.04, 0], [PLAZA_R * 2, 0.08, PLAZA_R * 2]);
@@ -372,10 +391,10 @@ export function buildTown(): Town {
     awning(roofG, 14, 5.4, 5.6, '#ff6f6f', '#ffffff');
     // 3D sign ON TOP of the roof (stays with roof when it lifts)
     shopSign3d(roofG, {
+      id: 'shop',
       label: 'Butikk',
       bg: '#ff6f6f',
-      y: 8.0,
-      z: 0,
+      ...roofFront(10, 6),
       w: 6.2,
       logo: (lg) => {
         rbox(lg, '#ffffff', [0, 0, 0], [1.1, 0.9, 0.35]);
@@ -383,7 +402,7 @@ export function buildTown(): Town {
         cyl(lg, '#8a5a3c', [-0.35, -0.55, 0.1], [0.12, 0.25, 0.12], [0, 0, Math.PI / 2]);
         cyl(lg, '#8a5a3c', [0.35, -0.55, 0.1], [0.12, 0.25, 0.12], [0, 0, Math.PI / 2]);
       },
-    });
+    }, shopSigns);
     const inside = fillShop(g);
     const f = front(P.shop, 0);
     stat.add(g);
@@ -409,16 +428,16 @@ export function buildTown(): Town {
     box(crossMast, '#ffffff', [0, 9.4, 5.7], [1.15, 3.1, 0.2]);
     g.add(crossMast);
     shopSign3d(roofG, {
+      id: 'vet',
       label: 'Dyrlegen',
       bg: '#3fa4ff',
-      y: 8.4,
-      z: 0,
+      ...roofFront(11, 6.5),
       w: 7.0,
       logo: (lg) => {
         box(lg, '#ff4b4b', [0, 0, 0], [0.55, 1.5, 0.3]);
         box(lg, '#ff4b4b', [0, 0, 0], [1.5, 0.55, 0.3]);
       },
-    });
+    }, shopSigns);
     const inside = fillHospital(g);
     const f = front(P.vet, 0);
     stat.add(g);
@@ -436,16 +455,16 @@ export function buildTown(): Town {
     const g = openBuilding(12, 9, 6, '#e2c6ff', '#ffd23f', '#ffffff');
     awning(g, 12, 5.4, 5.1, '#c88bff', '#ffffff');
     shopSign3d(g, {
+      id: 'eggs',
       label: 'Eggbutikk',
       bg: '#b05cff',
-      y: 11.2,
-      z: 0,
+      ...roofFront(9, 6),
       w: 5.8,
       logo: (lg) => {
         sph(lg, '#fff4c2', [0, 0.1, 0], [1.0, 1.25, 1.0]);
         for (let i = 0; i < 4; i++) sph(lg, '#ff8fc7', [Math.cos(i * 1.5) * 0.35, 0.2 + Math.sin(i) * 0.2, 0.45], [0.22, 0.22, 0.15]);
       },
-    });
+    }, shopSigns);
     sph(g, '#fff4c2', [0, 9.8, 0], [3, 3.8, 3]);
     for (let i = 0; i < 5; i++) sph(g, '#ff8fc7', [Math.cos(i * 1.26) * 1.4, 9.8 + Math.sin(i * 2) * 0.8, Math.sin(i * 1.26) * 1.4], [0.7, 0.7, 0.4]);
     solid(rbox(g, '#ffd23f', [0, 1, 1.2], [7, 2, 1.6]));
@@ -468,17 +487,17 @@ export function buildTown(): Town {
     const roofG = g.userData.roof as THREE.Group;
     awning(roofG, 18, 6.0, 7.2, '#3fa4ff', '#ffffff');
     shopSign3d(roofG, {
+      id: 'cars',
       label: 'Bilbutikk',
       bg: '#3fa4ff',
-      y: 9.0,
-      z: 0,
+      ...roofFront(13, 7),
       w: 7.5,
       logo: (lg) => {
         rbox(lg, '#ff8fb1', [0, 0, 0], [1.6, 0.55, 0.7]);
         rbox(lg, '#bfe9ff', [0.1, 0.35, 0], [0.9, 0.4, 0.6], undefined, 0.2);
         for (const s of [-1, 1]) cyl(lg, '#2b2b38', [s * 0.45, -0.35, 0.35], [0.35, 0.2, 0.35], [0, 0, Math.PI / 2]);
       },
-    });
+    }, shopSigns);
     const inside = fillCarShop(g);
     const f = front(P.cars, 0);
     stat.add(g);
@@ -496,10 +515,10 @@ export function buildTown(): Town {
     const roofG = g.userData.roof as THREE.Group;
     awning(roofG, 16, 5.6, 6.6, '#ff8fb1', '#ffffff');
     shopSign3d(roofG, {
+      id: 'pets',
       label: 'Dyrebutikk',
       bg: '#ff8fb1',
-      y: 8.6,
-      z: 0,
+      ...roofFront(12, 6.5),
       w: 7.2,
       logo: (lg) => {
         // paw print
@@ -508,7 +527,7 @@ export function buildTown(): Town {
           sph(lg, '#ffffff', [ox, oy, 0.1], [0.28, 0.28, 0.15]);
         }
       },
-    });
+    }, shopSigns);
     const inside = fillPetShop(g);
     const f = front(P.pets, 0);
     stat.add(g);
@@ -545,17 +564,19 @@ export function buildTown(): Town {
       part(g, G.star(), '#ffffff', [-3 + i * 3, 4.3, 3.1], [0.6, 0.6, 0.3]);
     });
     shopSign3d(g, {
+      id: 'doors',
       label: 'Dørspillet',
       bg: '#ff4fa8',
-      y: 11.0,
-      z: 0,
+      // Hut body top is y=6; the sign posts stand on the front eave, not above the cone.
+      roofTop: 6.05,
+      frontZ: 3.15,
       w: 5.6,
       logo: (lg) => {
         rbox(lg, '#ffe066', [0, 0, 0], [0.9, 1.3, 0.2]);
         sph(lg, '#ffffff', [0.25, 0, 0.15], [0.15, 0.15, 0.1]);
         part(lg, G.star(), '#ff6f6f', [0, 0.85, 0.05], [0.35, 0.35, 0.1]);
       },
-    });
+    }, shopSigns);
     const f = front(P.doors, 0);
     g.position.set(P.doors.x, 0, P.doors.z);
     g.rotation.y = f.rot;
@@ -753,8 +774,9 @@ export function buildTown(): Town {
       // short legs stay solid so you can't walk through the bench footprint
       solid(cyl(stat, '#8a5a3c', [lx, 0.35, lz], [0.16, 0.7, 0.16]), 'circle', 0.05, 0.8);
     }
-    // seat plank — visual only (no collider)
-    box(stat, '#c98a55', [seatX, 0.78, seatZ], [2.8, 0.16, 1.0], [0, sitYaw, 0]);
+    // Seat blocks walkers and cars. Sit pose is allowed because resting skips collision,
+    // and standing up steps in front of the plank.
+    solid(box(stat, '#c98a55', [seatX, 0.78, seatZ], [2.8, 0.16, 1.05], [0, sitYaw, 0]), 'rect', 0.08, 2.6);
     // backrest — visual only (collider was shoving sitters behind the bench)
     box(
       stat,
@@ -909,6 +931,7 @@ export function buildTown(): Town {
     vehicleRects,
     vehicleCircles,
     appleTrees,
+    shopSigns,
     roads,
     housePlots,
     get spawn() {

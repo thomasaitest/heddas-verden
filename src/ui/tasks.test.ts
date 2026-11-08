@@ -2,9 +2,15 @@ import { describe, expect, it } from 'vitest';
 import type { PetState } from '../logic/needs.ts';
 import { reconcileTasks, taskViews } from './tasks.ts';
 
-const pet = (uid: string, kind: string | null, progress = 0, name = 'Pus'): PetState =>
-  ({ uid, name, speciesId: 'x', need: kind ? { kind, progress, since: 0 } : undefined }) as unknown as PetState;
-const keyed = (pets: PetState[]) => taskViews(pets).map((v) => ({ uid: v.uid, kind: pets.find((p) => p.uid === v.uid)!.need!.kind }));
+const pet = (uid: string, kind: string | null, progress = 0, name = 'Pus', extra: { kind: string; progress: number }[] = []): PetState =>
+  ({
+    uid,
+    name,
+    speciesId: 'x',
+    need: kind ? { kind, progress, since: 0 } : null,
+    needs: kind ? [{ kind, progress, since: 0 }, ...extra.map((e) => ({ ...e, since: 0 }))] : extra,
+  }) as unknown as PetState;
+const keyed = (pets: PetState[]) => taskViews(pets).map((v) => ({ uid: v.uid, kind: v.uid.slice(v.uid.lastIndexOf(':') + 1) }));
 
 describe('oppgaver panel does not flicker', () => {
   it('progress moving never rebuilds a card', () => {
@@ -21,14 +27,18 @@ describe('oppgaver panel does not flicker', () => {
   });
   it('a new task, a different task or a finished task changes the cards', () => {
     const a = keyed([pet('a', 'sulten')]);
-    expect(reconcileTasks(a, keyed([pet('a', 'sulten'), pet('b', 'syk')]))).toEqual({ add: ['b'], remove: [] });
-    expect(reconcileTasks(a, keyed([pet('a', 'torst')]))).toEqual({ add: ['a'], remove: ['a'] });
-    expect(reconcileTasks(a, [])).toEqual({ add: [], remove: ['a'] });
+    expect(reconcileTasks(a, keyed([pet('a', 'sulten'), pet('b', 'syk')]))).toEqual({ add: ['b:syk'], remove: [] });
+    expect(reconcileTasks(a, keyed([pet('a', 'torst')]))).toEqual({ add: ['a:torst'], remove: ['a:sulten'] });
+    expect(reconcileTasks(a, [])).toEqual({ add: [], remove: ['a:sulten'] });
   });
   it('views carry rounded percent and the sick flag; pets without a need are skipped', () => {
     const v = taskViews([pet('a', 'syk', 0.456), pet('b', null)]);
     expect(v.length).toBe(1);
     expect(v[0].pct).toBe(46);
     expect(v[0].sick).toBe(true);
+  });
+  it('shows each simultaneous need as its own card', () => {
+    const v = taskViews([pet('a', 'syk', 0.2, 'Pus', [{ kind: 'skitten', progress: 0.4 }])]);
+    expect(v.map((x) => x.uid).sort()).toEqual(['a:skitten', 'a:syk']);
   });
 });

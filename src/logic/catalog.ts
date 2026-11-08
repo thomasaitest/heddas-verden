@@ -150,8 +150,8 @@ export interface Potion {
   text: string;
 }
 export const POTIONS: Potion[] = [
-  { id: 'ridedrikk', name: 'Ridedrikk', emoji: '🧪', price: 0, text: 'Gjør et dyr til et ridedyr (finnes hos flygedyr)' },
-  { id: 'flygedrikk', name: 'Flygedrikk', emoji: '🪽', price: 0, text: 'Gjør et dyr til et flygedyr (finnes hos flygedyr)' },
+  { id: 'ridedrikk', name: 'Ridedrikk', emoji: '🧪', price: 0, text: 'Kan ikke kjøpes. En sjelden premie fra flygedyr. Gjør et dyr til et ridedyr.' },
+  { id: 'flygedrikk', name: 'Flygedrikk', emoji: '🪽', price: 0, text: 'Kan ikke kjøpes. En sjelden premie fra flygedyr. Gjør et dyr til et flygedyr.' },
 ];
 
 export type HouseStyle = 'hytte' | 'villa' | 'gard' | 'slott' | 'moderne' | 'trehus' | 'sjohus';
@@ -203,9 +203,12 @@ export interface PetShopItem {
   text: string;
 }
 export const PET_SHOP: PetShopItem[] = [
-  { id: 'vogn-rosa', name: 'Rosa vogn', emoji: '🍼', price: 80, kind: 'vogn', text: 'Koselig barnevogn til dyrene' },
-  { id: 'vogn-blaa', name: 'Blå vogn', emoji: '🩵', price: 80, kind: 'vogn', text: 'Luftig vogn for små dyr' },
-  { id: 'vogn-gull', name: 'Gullvogn', emoji: '✨', price: 200, kind: 'vogn', text: 'Eksklusiv vogn med glitter' },
+  { id: 'vogn-rosa', name: 'Rosa barnevogn', emoji: '🍼', price: 80, kind: 'vogn', text: 'Dyp kasse med kaleche og fire små hjul' },
+  { id: 'vogn-blaa', name: 'Blå paraplyvogn', emoji: '🩵', price: 90, kind: 'vogn', text: 'Høy, smal vogn med stor kaleche' },
+  { id: 'vogn-gull', name: 'Gullkarosse', emoji: '✨', price: 200, kind: 'vogn', text: 'Lukket karosse med krone og store hjul' },
+  { id: 'vogn-gronn', name: 'Grønn kjerre', emoji: '🧺', price: 95, kind: 'vogn', text: 'Trevogn med høye sider og dragstang' },
+  { id: 'vogn-lilla', name: 'Lilla jogger', emoji: '🏃', price: 140, kind: 'vogn', text: 'Tre store hjul og lang styrestang' },
+  { id: 'vogn-rod', name: 'Rød tvillingvogn', emoji: '👶', price: 160, kind: 'vogn', text: 'To seter ved siden av hverandre' },
   { id: 'dyreleke-mus', name: 'Lekemus', emoji: '🐭', price: 15, kind: 'dyreleke', text: 'En myk mus å jage' },
   { id: 'dyreleke-tau', name: 'Tauleke', emoji: '🪢', price: 12, kind: 'dyreleke', text: 'Tau å tygge og trekke i' },
   { id: 'dyreleke-fjols', name: 'Fjølsball', emoji: '🎾', price: 10, kind: 'dyreleke', text: 'Softball som piper' },

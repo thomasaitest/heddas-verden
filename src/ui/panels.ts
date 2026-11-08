@@ -1,11 +1,12 @@
 import { sfx } from '../audio.ts';
 import { ACCESSORIES, BOTTOMS, CLOTH_COLORS, FACES, HAIR_COLORS, HAIR_STYLES, HATS, OUTFIT_PRESETS, randomAvatar, SHIRT_PRINTS, SHOES, SKIN, type Avatar } from '../logic/avatar.ts';
 import { CARS, FLOOR_COLORS, FOODS, FOOD_BY_ID, FURN_BY_ID, FURN_CATS, FURNITURE, HOUSES, PALETTE, PET_SHOP, POTIONS, TOYS, WALL_COLORS, type FurnCat } from '../logic/catalog.ts';
+import { type QuestRow } from '../logic/missions.ts';
 import { POINTS, ITEM_INFO, newGame, openDoor, useMagnifier, type DoorGame } from '../logic/doors.ts';
 import { activeHouse, addBucks, buyAndHatch, buyCar, buyFood, buyFurniture, buyHouse, buyPetShopItem, buyToy, editHouse, placeFromInventory, renamePet, storeItem, toggleEquip, usePotion } from '../logic/economy.ts';
 import { rotateItem, updateItem } from '../logic/house.ts';
-import { joyNow, NEED_INFO, stageOf, stageProgress, STAGES, type PetState } from '../logic/needs.ts';
-import { EGGS, RARITY_INFO, SPECIES_BY_ID, type EggType } from '../logic/pets.ts';
+import { allNeeds, badgeNeeds, joyNow, NEED_INFO, stageOf, stageProgress, STAGES, type PetState } from '../logic/needs.ts';
+import { EGGS, FLIGHT_LESSONS, RARITY_INFO, SPECIES_BY_ID, type EggType } from '../logic/pets.ts';
 import type { Game } from '../game.ts';
 import { buildAvatar } from '../three/avatarModel.ts';
 import { buildFurniture } from '../three/furniture.ts';
@@ -155,7 +156,7 @@ export function showHatch(game: Game, pet: PetState, egg: EggType) {
       el('img', { class: 'hatch-pet', src: petThumb(game, sp.id), alt: sp.name }),
       el('div', { class: 'rarity', style: { background: rar.color } }, rar.label),
       el('h2', {}, `Du fikk en ${sp.name}!`),
-      el('div', { class: 'badges' }, pet.flyable ? el('span', { class: 'badge fly' }, '🪽 Kan fly') : null, pet.rideable ? el('span', { class: 'badge ride' }, '🐎 Kan ris') : null),
+      el('div', { class: 'badges' }, pet.flyable ? el('span', { class: 'badge fly' }, '🪽 Kan fly') : sp.wings ? el('span', { class: 'badge fly' }, `🪽 Må øve ${(pet.flyLessons ?? 0)}/${FLIGHT_LESSONS}`) : null, pet.rideable ? el('span', { class: 'badge ride' }, '🐎 Kan ris') : null),
       el('label', { class: 'name-label' }, 'Gi dyret et navn:', name),
       button('Hurra! 🎉', () => {
         game.commit(renamePet(game.save, pet.uid, name.value), { pets: true });
@@ -199,7 +200,7 @@ export function openBag(game: Game) {
       el('h3', {}, 'Trylledrikker'),
       POTIONS.some((p) => bag[p.id])
         ? el('div', { class: 'grid small' }, ...POTIONS.filter((p) => bag[p.id]).map((p) => el('div', { class: 'card mini' }, el('div', { class: 'big-emoji' }, p.emoji), el('b', {}, `${p.name} ×${bag[p.id]}`), el('small', {}, 'Brukes fra 🐾 Dyr'))))
-        : el('p', { class: 'empty' }, 'Ingen drikker ennå.'),
+        : el('p', { class: 'empty' }, 'Ingen drikker. De kan ikke kjøpes — bare en sjelden premie når du flyr med et flygedyr.'),
       el('h3', {}, 'Møbler som ikke er plassert'),
       furn.length
         ? el('div', { class: 'grid small' }, ...furn.map(([id, n]) => el('div', { class: 'card mini' }, el('img', { class: 'thumb', src: furnThumb(game, id), alt: '' }), el('b', {}, `${FURN_BY_ID[id].name} ×${n}`))))
@@ -237,7 +238,8 @@ export function feedMenu(game: Game, uid: string) {
   const s = sheet(`Gi ${pet.name} noe`, '#7ccf6a', undefined, 'narrow');
   const render = () => {
     const p = game.save.pets.find((x) => x.uid === uid)!;
-    const want = p.need ? NEED_INFO[p.need.kind].where : null;
+    const foodNeed = allNeeds(p).find((n) => NEED_INFO[n.kind].where === 'mat' || NEED_INFO[n.kind].where === 'drikke');
+    const want = foodNeed ? NEED_INFO[foodNeed.kind].where : null;
     const list = FOODS.filter((f) => game.save.bag[f.id] && (want === null || f.fixes === want));
     if (want !== 'mat' && want !== 'drikke') {
       s.body.replaceChildren(el('p', { class: 'lead' }, `${p.name} er ikke sulten eller tørst nå.`));
@@ -303,7 +305,13 @@ export function openPets(game: Game) {
               el('div', { class: 'row-l' }, el('span', { class: 'rarity sm', style: { background: rar.color } }, rar.label), el('span', { class: 'sp' }, sp.name)),
               el('div', { class: 'age' }, `${st.name}`, el('span', { class: 'bar' }, el('i', { style: { width: `${Math.round(stageProgress(p.xp) * 100)}%` } })), STAGES[STAGES.length - 1].name === st.name ? '⭐' : ''),
               el('div', { class: 'age joy' }, '💖 Glede', el('span', { class: 'bar' }, el('i', { style: { width: `${Math.round(joyNow(p, Date.now()) * 100)}%`, background: 'linear-gradient(90deg,#ffb3d1,#ff5fa2)' } }))),
-              el('div', { class: 'badges' }, p.flyable ? el('span', { class: 'badge fly' }, '🪽 Fly') : null, p.rideable ? el('span', { class: 'badge ride' }, '🐎 Ri') : null, p.need && eq ? el('span', { class: 'badge need' }, `${NEED_INFO[p.need.kind].emoji} ${NEED_INFO[p.need.kind].label}`) : null),
+              el(
+                'div',
+                { class: 'badges' },
+                p.flyable ? el('span', { class: 'badge fly' }, '🪽 Fly') : SPECIES_BY_ID[p.speciesId]?.wings ? el('span', { class: 'badge fly' }, `🪽 Øver ${p.flyLessons ?? 0}/${FLIGHT_LESSONS}`) : null,
+                p.rideable ? el('span', { class: 'badge ride' }, '🐎 Ri') : null,
+                ...(eq ? badgeNeeds(p).map((n) => el('span', { class: 'badge need' }, `${NEED_INFO[n.kind].emoji} ${NEED_INFO[n.kind].label}`)) : []),
+              ),
             ),
             el(
               'div',
@@ -471,7 +479,7 @@ export function openMap(game: Game) {
 // ---------- Dyrlege ----------
 export function openVetInfo(game: Game) {
   const s = sheet('Dyrlegen 🩺', '#3fa4ff', undefined, 'narrow');
-  const sick = game.equippedPets().filter((p) => p.need?.kind === 'syk');
+  const sick = game.equippedPets().filter((p) => allNeeds(p).some((n) => n.kind === 'syk'));
   s.body.replaceChildren(
     sick.length
       ? el('p', { class: 'lead' }, `Stå på den grønne matten, så gjør dyrlegen ${sick.map((p) => p.name).join(' og ')} frisk igjen! 💚`)
@@ -891,22 +899,19 @@ export function foodName(id: string) {
 }
 
 
-/** Oppdrag sheet: show current quest and optionally roll a new one. */
-export function openMissionSheet(
-  _game: import('../game.ts').Game,
-  def: { title: string; hint: string; emoji: string; reward: number },
-  progress: number,
-  onNew: () => void,
-): void {
-  const s = sheet(`Oppdrag ${def.emoji}`, '#7b8cff');
+/** Oppdrag sheet: active quests are green, finished are grey, the rest stay visible. No skip. */
+export function openMissionSheet(_game: import('../game.ts').Game, rows: readonly QuestRow[]): void {
+  const s = sheet('Oppdrag 📜', '#2ee56b');
   s.body.replaceChildren(
-    el('p', { class: 'lead' }, def.title),
-    el('p', { class: 'hint' }, def.hint),
-    el('p', {}, `Fremgang: ${Math.round(progress * 100)}% · Belønning +${def.reward} bucks`),
-    button('Nytt oppdrag 🎲', () => {
-      onNew();
-      s.close();
-    }, 'btn buy'),
+    el('p', { class: 'hint' }, 'Grønt er det du holder på med — du kan ha to samtidig. Grått er ferdig. De andre venter. Du må fullføre dem, de kan ikke hoppes over.'),
+    ...rows.map((row) =>
+      el(
+        'div',
+        { class: `quest-row ${row.state}` },
+        el('b', {}, `${row.emoji} ${row.title}`),
+        el('small', {}, row.state === 'active' ? `${row.hint} · ${Math.round(row.progress * 100)}% · +${row.reward}` : row.state === 'done' ? `Ferdig · +${row.reward}` : `${row.hint} · senere`),
+      ),
+    ),
     button('Lukk', () => s.close(), 'btn'),
   );
 }

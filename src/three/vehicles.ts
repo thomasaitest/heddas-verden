@@ -1,7 +1,7 @@
 /** Cute low-poly cars and prams. Each car id has a distinct body style; avatar sits inside. */
 import * as THREE from 'three';
 import { CAR_BY_ID, PET_SHOP_BY_ID } from '../logic/catalog.ts';
-import { cyl, rbox, sph } from './kit.ts';
+import { cone, cyl, rbox, sph } from './kit.ts';
 
 function glassPanel(
   parent: THREE.Object3D,
@@ -164,23 +164,85 @@ export function buildCar(carId: string): THREE.Group {
   return g;
 }
 
+function wheel(g: THREE.Group, x: number, z: number, r: number, thick = 0.16) {
+  cyl(g, '#2b2b38', [x, r, z], [r * 2, thick, r * 2], [0, 0, Math.PI / 2]);
+  cyl(g, '#f4f4f8', [x, r, z], [r * 0.45, thick + 0.02, r * 0.45], [0, 0, Math.PI / 2]);
+}
+
+/** Six vogner, each a different shape — not a recolour of the same pram. */
 export function buildPram(pramId: string): THREE.Group {
-  const color = pramId.includes('gull') ? '#ffd76a' : pramId.includes('blaa') ? '#5cc3f2' : '#ff8fb1';
   const g = new THREE.Group();
-  rbox(g, color, [0, 0.85, 0], [1.35, 0.6, 1.85]);
-  rbox(g, '#fff6fb', [0, 1.2, -0.1], [1.15, 0.18, 1.35]);
-  rbox(g, color, [0, 1.55, -0.55], [1.25, 0.55, 0.7], [0.5, 0, 0]);
-  for (const [x, z] of [
-    [-0.45, 0.55],
-    [0.45, 0.55],
-    [-0.45, -0.55],
-    [0.45, -0.55],
-  ] as const) {
-    cyl(g, '#2b2b38', [x, 0.28, z], [0.45, 0.18, 0.45], [0, 0, Math.PI / 2]);
+  const item = PET_SHOP_BY_ID[pramId];
+  if (pramId === 'vogn-blaa') {
+    // Tall umbrella stroller: narrow seat, big hood, small wheels.
+    rbox(g, '#5cc3f2', [0, 0.72, 0.05], [0.85, 0.16, 0.7]);
+    rbox(g, '#e8f7ff', [0, 0.95, -0.05], [0.78, 0.55, 0.16], [-0.35, 0, 0]);
+    rbox(g, '#3fa4ff', [0, 1.35, -0.15], [0.95, 0.55, 0.7], [0.9, 0, 0]);
+    cyl(g, '#8a5a3c', [0, 1.15, 0.55], [0.08, 1.15, 0.08], [0.55, 0, 0]);
+    cyl(g, '#2b2b38', [0, 1.45, 0.85], [0.08, 0.7, 0.08], [0, 0, Math.PI / 2]);
+    for (const x of [-0.42, 0.42]) wheel(g, x, 0.28, 0.22, 0.1);
+    for (const x of [-0.42, 0.42]) wheel(g, x, -0.15, 0.16, 0.08);
+  } else if (pramId === 'vogn-gull') {
+    // Closed carriage with a crown and large spoked wheels.
+    rbox(g, '#ffd76a', [0, 0.95, 0], [1.35, 0.85, 1.7]);
+    rbox(g, '#fff4c2', [0, 1.15, 0.15], [1.05, 0.45, 1.15]);
+    rbox(g, '#e6b84a', [0, 1.55, 0], [1.45, 0.12, 1.85]);
+    cone(g, '#ff8fb1', [0, 1.95, 0], [0.45, 0.4, 0.45]);
+    sph(g, '#ffd23f', [0, 2.2, 0], [0.22, 0.22, 0.22]);
+    for (const x of [-0.78, 0.78]) {
+      wheel(g, x, 0.45, 0.48, 0.14);
+      wheel(g, x, -0.45, 0.48, 0.14);
+    }
+    cyl(g, '#8a5a3c', [0, 1.2, 1.05], [0.08, 0.7, 0.08], [0.8, 0, 0]);
+  } else if (pramId === 'vogn-gronn') {
+    // Wooden wagon / kjerre: high slatted sides and a long pull handle.
+    rbox(g, '#c98a55', [0, 0.55, 0], [1.3, 0.18, 1.6]);
+    for (const x of [-0.62, 0.62]) rbox(g, '#7ccf6a', [x, 0.95, 0], [0.1, 0.7, 1.55]);
+    for (const z of [-0.75, 0.75]) rbox(g, '#7ccf6a', [0, 0.95, z], [1.25, 0.7, 0.1]);
+    rbox(g, '#fff6e8', [0, 0.68, 0], [1.05, 0.12, 1.3]);
+    cyl(g, '#8a5a3c', [0, 0.85, 1.35], [0.1, 1.5, 0.1], [1.15, 0, 0]);
+    cyl(g, '#d9a066', [0, 1.35, 1.85], [0.1, 0.55, 0.1], [0, 0, Math.PI / 2]);
+    for (const [x, z] of [[-0.55, 0.45], [0.55, 0.45], [-0.55, -0.45], [0.55, -0.45]] as const) wheel(g, x, z, 0.32, 0.14);
+  } else if (pramId === 'vogn-lilla') {
+    // Jogger: one big front wheel, two big rear wheels, long frame.
+    cyl(g, '#c88bff', [0, 0.55, 0.15], [0.08, 1.7, 0.08], [Math.PI / 2, 0, 0]);
+    rbox(g, '#c88bff', [0, 0.85, -0.15], [0.7, 0.12, 0.55]);
+    rbox(g, '#f3e8ff', [0, 1.05, -0.35], [0.65, 0.4, 0.12], [-0.4, 0, 0]);
+    cyl(g, '#6b4a8a', [0, 1.15, 0.85], [0.07, 1.3, 0.07], [0.7, 0, 0]);
+    cyl(g, '#2b2b38', [0, 1.35, 1.25], [0.07, 0.7, 0.07], [0, 0, Math.PI / 2]);
+    wheel(g, 0, 0.85, 0.42, 0.12);
+    wheel(g, -0.42, -0.55, 0.4, 0.12);
+    wheel(g, 0.42, -0.55, 0.4, 0.12);
+  } else if (pramId === 'vogn-rod') {
+    // Twin pram: two bassinets side by side.
+    for (const x of [-0.55, 0.55]) {
+      rbox(g, '#ff6f6f', [x, 0.78, 0], [0.85, 0.48, 1.15]);
+      rbox(g, '#fff0f0', [x, 1.05, 0.05], [0.7, 0.12, 0.85]);
+      rbox(g, '#ff8fb1', [x, 1.28, -0.35], [0.8, 0.28, 0.4], [0.6, 0, 0]);
+    }
+    rbox(g, '#ffffff', [0, 0.7, 0], [0.16, 0.35, 1.0]);
+    cyl(g, '#8a5a3c', [0, 1.15, 0.85], [0.08, 0.85, 0.08], [0.65, 0, 0]);
+    cyl(g, '#2b2b38', [0, 1.4, 1.15], [0.08, 0.9, 0.08], [0, 0, Math.PI / 2]);
+    for (const x of [-0.95, 0.95]) {
+      wheel(g, x, 0.4, 0.24, 0.1);
+      wheel(g, x, -0.4, 0.24, 0.1);
+    }
+  } else {
+    // Classic bassinet pram (rosa, and any unknown id).
+    const color = item?.id === 'vogn-rosa' || !item ? '#ff8fb1' : '#ff8fb1';
+    rbox(g, color, [0, 0.85, 0], [1.35, 0.6, 1.85]);
+    rbox(g, '#fff6fb', [0, 1.2, -0.1], [1.15, 0.18, 1.35]);
+    rbox(g, color, [0, 1.55, -0.55], [1.25, 0.55, 0.7], [0.5, 0, 0]);
+    for (const [x, z] of [
+      [-0.55, 0.55],
+      [0.55, 0.55],
+      [-0.55, -0.55],
+      [0.55, -0.55],
+    ] as const) wheel(g, x, z, 0.22, 0.12);
+    cyl(g, '#8a5a3c', [0, 1.35, 0.95], [0.1, 0.85, 0.1], [0.7, 0, 0]);
+    cyl(g, '#d9a066', [0, 1.55, 1.2], [0.08, 0.7, 0.08], [0, 0, Math.PI / 2]);
   }
-  // handle
-  cyl(g, '#8a5a3c', [0, 1.55, 0.95], [0.12, 0.9, 0.12], [0.7, 0, 0]);
-  void PET_SHOP_BY_ID;
   g.userData.pramId = pramId;
+  g.userData.pramKind = pramId;
   return g;
 }

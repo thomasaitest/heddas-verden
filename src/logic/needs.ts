@@ -1,5 +1,5 @@
+import { FLIGHT_LESSONS, SPECIES_BY_ID, type OwnedPet } from './pets.ts';
 import { pickWeighted, type Rng } from './rng.ts';
-import type { OwnedPet } from './pets.ts';
 
 export type NeedKind = 'sulten' | 'torst' | 'trott' | 'skitten' | 'kjedelig' | 'syk' | 'tur';
 /** Where or how a need is fixed. */
@@ -14,7 +14,12 @@ export interface Need {
 
 export interface PetState extends OwnedPet {
   xp: number;
+  /** Highest-priority need (kept so older saves and care prompts stay simple). */
   need: Need | null;
+  /** Every current need. Sick, dirty and tired can be true together. */
+  needs?: Need[];
+  /** Wing practice for a pet that has wings but cannot fly yet. Full means it has learned, or was already able to fly. */
+  flyLessons?: number;
   nextNeedAt: number;
   lastNeed: NeedKind | null;
   /** How happy the pet is, 0–1 right after `joyAt` (playing with toys raises it; it fades over 10 minutes). Missing = 0. */
@@ -79,8 +84,51 @@ export function stageProgress(xp: number): number {
   return (xp - STAGES[i].at) / (next.at - STAGES[i].at);
 }
 
+/** How many needs a pet may carry at once. Badges only show the first three. */
+export const MAX_NEEDS = 4;
+export const MAX_STATUS_BADGES = 3;
+
+/** Lower number = shown and cared about first. */
+export const NEED_RANK: Record<NeedKind, number> = {
+  syk: 0,
+  sulten: 1,
+  torst: 2,
+  trott: 3,
+  skitten: 4,
+  kjedelig: 5,
+  tur: 6,
+};
+
+export function allNeeds(pet: { need?: Need | null; needs?: Need[] | null }): Need[] {
+  const listed = Array.isArray(pet.needs) ? pet.needs.filter((n) => !!n && !!NEED_INFO[n.kind]) : [];
+  if (listed.length) return listed;
+  return pet.need && NEED_INFO[pet.need.kind] ? [pet.need] : [];
+}
+
+/** Store needs in priority order and mirror the top one on `need`. */
+export function syncNeeds<T extends PetState>(pet: T, needs: Need[]): T {
+  const sorted = needs
+    .filter((n) => !!NEED_INFO[n.kind])
+    .slice(0, MAX_NEEDS)
+    .sort((a, b) => NEED_RANK[a.kind] - NEED_RANK[b.kind] || a.since - b.since);
+  return { ...pet, needs: sorted, need: sorted[0] ?? null };
+}
+
+/** Up to three badges, highest priority first. Extra needs stay in the save but are not drawn. */
+export function badgeNeeds(pet: { need?: Need | null; needs?: Need[] | null }, limit = MAX_STATUS_BADGES): Need[] {
+  return [...allNeeds(pet)].sort((a, b) => NEED_RANK[a.kind] - NEED_RANK[b.kind] || a.since - b.since).slice(0, limit);
+}
+
 export function newPetState(pet: OwnedPet, now: number): PetState {
-  return { ...pet, xp: 0, need: null, nextNeedAt: now + 4_000, lastNeed: null };
+  return {
+    ...pet,
+    xp: 0,
+    need: null,
+    needs: [],
+    flyLessons: pet.flyable ? FLIGHT_LESSONS : 0,
+    nextNeedAt: now + 4_000,
+    lastNeed: null,
+  };
 }
 
 export function nextDelay(rng: Rng): number {
@@ -93,38 +141,87 @@ export function rollNeed(last: NeedKind | null, rng: Rng, allowSick = true): Nee
   return pickWeighted(kinds, (k) => NEED_INFO[k].weight, rng);
 }
 
-/** Advance time for one pet: new needs appear, and ignored needs turn into sickness. */
+function withSickness(needs: Need[], now: number): Need[] {
+  const overdue = needs.some((n) => n.kind !== 'syk' && now - n.since > SICK_AFTER);
+  if (!overdue || needs.some((n) => n.kind === 'syk')) return needs;
+  return [...needs, { kind: 'syk', since: now, progress: 0 }];
+}
+
+/**
+ * Advance time for one pet.
+ * Several needs can be active together. One that is ignored too long adds sickness
+ * without erasing the others. A brand-new pet does not start out sick.
+ */
 export function tickPet(pet: PetState, now: number, rng: Rng): PetState {
-  if (pet.need) {
-    if (pet.need.kind !== 'syk' && now - pet.need.since > SICK_AFTER) {
-      return { ...pet, need: { kind: 'syk', since: now, progress: 0 } };
-    }
-    return pet;
+  let needs = allNeeds(pet);
+  const sick = withSickness(needs, now);
+  const legacy = !Array.isArray(pet.needs);
+  if (needs.length === 0) {
+    if (now < pet.nextNeedAt) return pet;
+    const kind = rollNeed(pet.lastNeed, rng, pet.xp >= 2);
+    return syncNeeds({ ...pet, nextNeedAt: now + nextDelay(rng) }, [{ kind, since: now, progress: 0 }]);
   }
-  // Brand-new pets don't fall ill out of the blue.
-  if (now >= pet.nextNeedAt) return { ...pet, need: { kind: rollNeed(pet.lastNeed, rng, pet.xp >= 2), since: now, progress: 0 } };
+  // Older saves stored a single need. Don't pile extras on the first load; just schedule the next one.
+  if (legacy) {
+    const nextAt = now >= pet.nextNeedAt ? now + nextDelay(rng) : pet.nextNeedAt;
+    const normalized = syncNeeds({ ...pet, nextNeedAt: nextAt }, sick);
+    return normalized.need?.kind === pet.need?.kind && sick.length === needs.length && nextAt === pet.nextNeedAt ? pet : normalized;
+  }
+  if (sick.length !== needs.length) needs = sick;
+  if (needs.length < MAX_NEEDS && now >= pet.nextNeedAt) {
+    const have = new Set(needs.map((n) => n.kind));
+    let kind = rollNeed(pet.lastNeed, rng, false);
+    for (let i = 0; i < 6 && (have.has(kind) || kind === 'syk'); i++) kind = rollNeed(needs[needs.length - 1]?.kind ?? pet.lastNeed, rng, false);
+    if (!have.has(kind)) needs = [...needs, { kind, since: now, progress: 0 }];
+    return syncNeeds({ ...pet, nextNeedAt: now + nextDelay(rng) }, needs);
+  }
+  if (needs !== sick || sick.length !== allNeeds(pet).length) return syncNeeds(pet, needs);
   return pet;
 }
 
-/** Add care at a place. Returns whether the need got fixed by this care. */
+/** Add care at a place. Any matching need counts, not only the top badge. */
 export function addCare(pet: PetState, where: CareWhere, amount: number): { pet: PetState; done: boolean } {
-  if (!pet.need || NEED_INFO[pet.need.kind].where !== where || amount <= 0) return { pet, done: false };
-  const progress = Math.min(1, pet.need.progress + amount / CARE_AMOUNT[where]);
-  return { pet: { ...pet, need: { ...pet.need, progress } }, done: progress >= 1 };
+  const needs = allNeeds(pet);
+  const idx = needs.findIndex((n) => NEED_INFO[n.kind].where === where);
+  if (idx < 0 || amount <= 0) return { pet, done: false };
+  const progress = Math.min(1, needs[idx].progress + amount / CARE_AMOUNT[where]);
+  const next = needs.map((n, i) => (i === idx ? { ...n, progress } : n));
+  return { pet: syncNeeds(pet, next), done: progress >= 1 };
 }
 
 export interface CompleteResult {
   pet: PetState;
   reward: number;
   grewUp: boolean;
+  /** A winged pet just finished flight practice. */
+  learnedFly: boolean;
+  flyLessons: number;
 }
 
-/** Finish the current need: pay bucks, add growth, and plan the next need. */
+/** Finish the need that reached the end. Other needs stay. Winged pets practice flying this way. */
 export function completeNeed(pet: PetState, now: number, rng: Rng): CompleteResult {
-  if (!pet.need) return { pet, reward: 0, grewUp: false };
+  const needs = allNeeds(pet);
+  const done = needs.find((n) => n.progress >= 1) ?? null;
+  if (!done) return { pet, reward: 0, grewUp: false, learnedFly: false, flyLessons: pet.flyLessons ?? 0 };
   const before = stageIndex(pet.xp);
   const xp = pet.xp + 1;
   const grewUp = stageIndex(xp) > before;
-  const reward = NEED_INFO[pet.need.kind].reward + (grewUp ? GROW_BONUS : 0);
-  return { pet: { ...pet, xp, need: null, lastNeed: pet.need.kind, nextNeedAt: now + nextDelay(rng) }, reward, grewUp };
+  const reward = NEED_INFO[done.kind].reward + (grewUp ? GROW_BONUS : 0);
+  const rest = needs.filter((n) => n.kind !== done.kind);
+  const winged = !!SPECIES_BY_ID[pet.speciesId]?.wings;
+  let flyLessons = pet.flyLessons ?? (pet.flyable ? FLIGHT_LESSONS : 0);
+  let learnedFly = false;
+  let flyable = pet.flyable;
+  if (winged && !flyable) {
+    flyLessons = Math.min(FLIGHT_LESSONS, flyLessons + 1);
+    if (flyLessons >= FLIGHT_LESSONS) {
+      flyable = true;
+      learnedFly = true;
+    }
+  }
+  const next = syncNeeds(
+    { ...pet, xp, flyable, flyLessons, lastNeed: done.kind, nextNeedAt: now + nextDelay(rng) },
+    rest,
+  );
+  return { pet: next, reward, grewUp, learnedFly, flyLessons };
 }
