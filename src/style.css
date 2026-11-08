@@ -374,6 +374,23 @@ body.building .jump, body.building .pet-bar, body.building .tasks, body.building
 .quest-pill.active { background: #2ee56b; color: #073018; box-shadow: 0 0 0 2px #b8ffcf, 0 2px 0 rgba(0,0,0,0.12); }
 .quest-pill.done { background: #b7bdc7; color: #3c4250; }
 .quest-pill.upcoming { background: rgba(255,255,255,0.9); color: #3a4158; }
+.sky-chip {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  top: calc(96px + env(safe-area-inset-top));
+  z-index: 5;
+  background: #7b5cff;
+  color: #fff;
+  font-weight: 800;
+  font-size: 13px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  pointer-events: none;
+  max-width: min(78vw, 280px);
+  text-align: center;
+  box-shadow: 0 3px 0 rgba(0,0,0,0.12);
+}
 .quest-row { border-radius: 14px; padding: 8px 10px; margin: 6px 0; }
 .quest-row b, .quest-row small { display: block; }
 .quest-row.active { background: #2ee56b; color: #073018; }

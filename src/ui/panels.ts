@@ -7,6 +7,7 @@ import { activeHouse, addBucks, buyAndHatch, buyCar, buyFood, buyFurniture, buyH
 import { rotateItem, updateItem } from '../logic/house.ts';
 import { allNeeds, badgeNeeds, joyNow, NEED_INFO, stageOf, stageProgress, STAGES, type PetState } from '../logic/needs.ts';
 import { EGGS, FLIGHT_LESSONS, RARITY_INFO, SPECIES_BY_ID, type EggType } from '../logic/pets.ts';
+import { groundShopEggs, RAINBOW_EGG_ID, ROPE_ID } from '../logic/sky.ts';
 import type { Game } from '../game.ts';
 import { buildAvatar } from '../three/avatarModel.ts';
 import { buildFurniture } from '../three/furniture.ts';
@@ -104,10 +105,35 @@ function eggArt(e: EggType, cls = '') {
   return el('div', { class: `egg ${cls}`, style: { '--egg': e.color, '--spot': e.spots } }, el('i'), el('i'), el('i'));
 }
 
+export function openRainbowEggs(game: Game) {
+  const egg = EGGS.find((e) => e.id === RAINBOW_EGG_ID);
+  const s = sheet('Regnbueegg 🌈', '#ff4fa8');
+  if (!egg) {
+    s.body.replaceChildren(el('p', {}, 'Egget er borte.'));
+    return;
+  }
+  s.body.replaceChildren(
+    eggArt(egg, 'wobble center'),
+    el('p', { class: 'lead' }, 'Et regnbueegg fra skyen. Det klekkes med en gang, og kan gi sjeldne dyr.'),
+    el('p', { class: 'hint' }, `Pris: ${egg.price} bucks. Du har ${game.save.bucks}.`),
+    button(`Kjøp og klekk · ${egg.price}`, () => {
+      const r = buyAndHatch(game.save, egg.id, game.rng);
+      if (!r.ok) {
+        toast(r.reason === 'too-expensive' ? 'Du har ikke nok bucks til regnbueegget.' : failText(r.reason), 'bad');
+        sfx.nope();
+        return;
+      }
+      s.close();
+      game.commit(r.save, { pets: true });
+      showHatch(game, r.pet, egg);
+    }, 'btn big buy'),
+  );
+}
+
 export function openEggs(game: Game) {
   const s = sheet('Eggbutikk 🥚', '#b05cff');
   const render = () => {
-    const eggs = EGGS.filter((e) => e.price > 0 || !game.save.starterClaimed);
+    const eggs = groundShopEggs(game.save.starterClaimed);
     s.body.replaceChildren(
       el('p', { class: 'lead' }, 'Kjøp et egg og se hvilket dyr som klekker! Sjeldne egg gir sjeldnere dyr.'),
       el(
@@ -175,6 +201,7 @@ export function openBag(game: Game) {
     const foods = FOODS.filter((f) => bag[f.id]);
     const furn = Object.entries(game.save.inventory);
     s.body.replaceChildren(
+      ...((bag[ROPE_ID] ?? 0) > 0 ? [el('p', { class: 'hint' }, 'Du har klatretau. Bruk det på fjellveggen i Skyverden. 🪢')] : []),
       el('h3', {}, 'Mat og drikke'),
       foods.length
         ? el('div', { class: 'grid small' }, ...foods.map((f) => el('div', { class: 'card mini' }, el('div', { class: 'big-emoji' }, f.emoji), el('b', {}, `${f.name} ×${bag[f.id]}`))))
@@ -436,7 +463,7 @@ export function openMap(game: Game) {
   let selected: { kind: string; name: string } | null = null;
   const render = () => {
     s.body.replaceChildren(
-      el('p', { class: 'lead' }, game.mode === 'town' ? 'Du er den rosa prikken. Trykk på et ikon for navnet – gå dit til fots.' : 'Gå ut døra for å utforske byen.'),
+      el('p', { class: 'lead' }, game.mode === 'town' ? 'Du er den rosa prikken. Trykk på et ikon for navnet – gå dit til fots. Skyverden ligger oppe i skyene, og kartet flyr deg ikke dit.' : 'Gå ut døra for å utforske byen.'),
       el('div', { class: 'minimap-wrap' }, minimap(selected, (v) => { selected = v; render(); })),
       selected ? el('p', { class: 'map-pin-name' }, selected.name) : el('p', { class: 'map-pin-hint' }, 'Trykk et ikon 👆'),
       el('h3', {}, 'Hus'),

@@ -3,6 +3,7 @@ import { CAR_BY_ID, FOOD_BY_ID, FURN_BY_ID, PET_SHOP_BY_ID, POTIONS, STARTER_TOY
 import { EGG_BY_ID, FLIGHT_LESSONS, SPECIES_BY_ID } from './pets.ts';
 import { deserializeHouse, ensureStarterFurniture, migrateFurnitureClearOfWalls, newHouse, type House } from './house.ts';
 import { normalizeQuestLog, type QuestLog } from './missions.ts';
+import { freshRain, normalizeRain, ROPE_ID, type SkyRainSave } from './sky.ts';
 import { MAX_NEEDS, NEED_INFO, syncNeeds, type Need, type NeedKind, type PetState } from './needs.ts';
 import { uid } from './rng.ts';
 
@@ -28,6 +29,10 @@ export interface SaveData {
   toysGiven?: boolean;
   /** Oppdrag board. Missing on older saves — they start at the first two quests, nothing is marked done. */
   quests?: QuestLog;
+  /** Rainbow-forest money rain. Missing on older saves — the first storm is 20 minutes after load, not immediate. */
+  skyRain?: SkyRainSave;
+  /** Last time the player finished a rope climb. */
+  lastClimbAt?: number;
 }
 
 export const SAVE_KEY = 'heddasverden-save-v1';
@@ -55,10 +60,11 @@ export function freshSave(now = Date.now()): SaveData {
     starterClaimed: false,
     toysGiven: true,
     quests: normalizeQuestLog(null, now),
+    skyRain: freshRain(now),
   };
 }
 
-const isBagId = (id: string) => !!FOOD_BY_ID[id] || !!TOY_BY_ID[id] || !!EGG_BY_ID[id] || !!CAR_BY_ID[id] || !!PET_SHOP_BY_ID[id] || POTIONS.some((p) => p.id === id);
+const isBagId = (id: string) => !!FOOD_BY_ID[id] || !!TOY_BY_ID[id] || !!EGG_BY_ID[id] || !!CAR_BY_ID[id] || !!PET_SHOP_BY_ID[id] || POTIONS.some((p) => p.id === id) || id === ROPE_ID;
 const counts = (raw: unknown, ok: (id: string) => boolean): Record<string, number> =>
   Object.fromEntries(
     Object.entries(raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {})
@@ -130,6 +136,8 @@ export function parseSave(json: string | null, now = Date.now()): SaveData {
       starterClaimed: !!raw.starterClaimed,
       toysGiven: true,
       quests: normalizeQuestLog(raw.quests, now),
+      skyRain: normalizeRain(raw.skyRain, now),
+      ...(Number.isFinite(Number(raw.lastClimbAt)) ? { lastClimbAt: Number(raw.lastClimbAt) } : {}),
     };
     if (!raw.toysGiven) {
       // saves from before the toys existed: one ball and one yarn ball as a gift, once

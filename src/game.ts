@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { sfx, setSoundEnabled, setLocationAmbient, startMusic, stopMusic, musicPlaying } from './audio.ts';
 import { CAR_BY_ID, FOODS, FURN_BY_ID, HOUSE_BY_STYLE, PET_SHOP_BY_ID, TOYS, TOY_BY_ID, type HouseStyle } from './logic/catalog.ts';
-import { activeHouse, buyFurniture, careAt, editHouse, feed, maybeDropPotionFromFlight, placeFromInventory, playWithToy, tickSave } from './logic/economy.ts';
+import { activeHouse, buyFurniture, buyRope, careAt, climbWithRope, collectSkyCoin, editHouse, feed, maybeDropPotionFromFlight, placeFromInventory, playWithToy, tickSave } from './logic/economy.ts';
 import { playDone, startPlay, stepPlay, type PlayState } from './logic/toyplay.ts';
 import { buildToy } from './three/toys.ts';
 import { EQUIP_BY_ID, SIT_DROP, canUse, wantsOff } from './logic/playground.ts';
@@ -31,6 +31,28 @@ import { FLOOR_H, floorOfY, groundHeight, onStairs, roomAt } from './logic/layou
 import { blobShadow } from './three/kit.ts';
 import { animatePet, buildPet, type PetPose, type PetRig } from './three/petModel.ts';
 import { buildTown, type Town, type Zone } from './three/town.ts';
+import { buildSky, type SkyWorld } from './three/sky.ts';
+import {
+  CLOUD_FLOOR_Y,
+  FLY_CEILING,
+  canSplash,
+  climbPose,
+  cloudAtXZ,
+  cloudFloorAt,
+  formatCountdown,
+  freshRain,
+  rainCoinWorld,
+  rainView,
+  skyAccessText,
+  skyColliders,
+  skyZones,
+  slidePose,
+  SKY_COLLIDE_MIN_Y,
+  useSkyColliders,
+  worldOnCloud,
+  CLIMB_REWARD,
+  RAIN_COIN_COUNT,
+} from './logic/sky.ts';
 import { Thumbs } from './thumbs.ts';
 import { toast } from './ui/dom.ts';
 import { Hud } from './ui/hud.ts';
@@ -71,6 +93,7 @@ export interface PanelHooks {
   openCars(): void;
   openPetShop(): void;
   openEggs(): void;
+  openRainbowEggs(): void;
   openDoors(): void;
   openVetInfo(): void;
   openMissionSheet(rows: readonly QuestRow[]): void;
@@ -149,7 +172,7 @@ export class Game {
   private lastTickAt = 0;
   private stickyNear: Game['nearZone'] = null;
   private stickyNearUntil = 0;
-  private nearZone: Zone | { kind: 'exit'; label: string } | { kind: 'equip'; id: string; label: string } | { kind: 'equip-off'; label: string } | { kind: 'bench'; label: string; x: number; z: number; yaw: number } | { kind: 'bench-off'; label: string } | { kind: 'bed'; label: string; spot: SleepSpot } | { kind: 'bed-off'; label: string } | { kind: 'lock'; label: string } | { kind: 'visit'; label: string; peerId: string; peerName: string } | { kind: 'plaza'; label: string } | { kind: 'mini'; label: string } | { kind: 'vet-heal'; label: string; uid: string } | { kind: 'pet-apple'; label: string; uid: string; x: number; z: number } | { kind: 'pet-fest'; label: string; uid: string } | null = null;
+  private nearZone: Zone | { kind: 'exit'; label: string } | { kind: 'equip'; id: string; label: string } | { kind: 'equip-off'; label: string } | { kind: 'bench'; label: string; x: number; z: number; yaw: number } | { kind: 'bench-off'; label: string } | { kind: 'bed'; label: string; spot: SleepSpot } | { kind: 'bed-off'; label: string } | { kind: 'lock'; label: string } | { kind: 'visit'; label: string; peerId: string; peerName: string } | { kind: 'plaza'; label: string } | { kind: 'mini'; label: string } | { kind: 'vet-heal'; label: string; uid: string } | { kind: 'pet-apple'; label: string; uid: string; x: number; z: number } | { kind: 'pet-fest'; label: string; uid: string } | { kind: 'sky-info' | 'slide' | 'splash' | 'egg' | 'rope' | 'climb'; label: string } | null = null;
   /** The playground piece you are sitting on (swing, slide, seesaw, merry-go-round), if any. */
   using: { id: string; since: number } | null = null;
   private bubbleTex = new Map<string, THREE.Texture>();
@@ -158,6 +181,12 @@ export class Game {
   private onChange: (() => void)[] = [];
   paused = false;
   mp: MpClient | null = null;
+  /** Test-only clock for Skyverden rain. Normal play leaves this null and uses Date.now(). */
+  testNow: number | null = null;
+  private sky: SkyWorld;
+  private skyAction: { kind: 'slide' | 'climb'; t: number } | null = null;
+  private lastSplashAt = 0;
+  private lastRainToast: number | null = null;
 
   constructor(private host: HTMLElement, ui: HTMLElement) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance', preserveDrawingBuffer: false });
@@ -188,6 +217,8 @@ export class Game {
 
     this.town = buildTown();
     this.scene.add(this.town.group);
+    this.sky = buildSky();
+    this.scene.add(this.sky.group);
     this.interior = createInterior();
     this.interior.group.visible = false;
     this.scene.add(this.interior.group);
@@ -288,7 +319,9 @@ export class Game {
     this.hud.setEnergy(this.player.energy);
     const house = activeHouse(this.save);
     const liveHouse = this.guestHouse ?? house;
-    this.hud.setMode(this.mode, this.mode === 'house' ? (this.guestHouse ? `Besøk · ${HOUSE_BY_STYLE[liveHouse.style].name}` : HOUSE_BY_STYLE[liveHouse.style].name) : 'Heddas by', !this.guestHouse && canEdit(liveHouse, this.save.playerId));
+    const skyHere = this.mode === 'town' ? cloudAtXZ(this.player.pos.x, this.player.pos.z) : null;
+    const skyLabel = skyHere && this.player.pos.y > SKY_COLLIDE_MIN_Y ? `${skyHere.emoji} ${skyHere.name}` : null;
+    this.hud.setMode(this.mode, skyLabel ?? (this.mode === 'house' ? (this.guestHouse ? `Besøk · ${HOUSE_BY_STYLE[liveHouse.style].name}` : HOUSE_BY_STYLE[liveHouse.style].name) : 'Heddas by'), !this.guestHouse && canEdit(liveHouse, this.save.playerId) && !skyLabel);
     this.hud.setTasks(this.equippedPets(), (uid) => this.onTaskTap(uid));
     this.hud.setQuests(questBoard(this.save.quests ?? freshQuestLog()));
     const p = this.mainPet();
@@ -727,6 +760,113 @@ export class Game {
       case 'plaza':
         this.toggleActivity();
         break;
+      case 'sky-info':
+        toast(skyAccessText(!!this.mainPet()?.flyable), 'ok');
+        break;
+      case 'slide':
+        if (!this.skyAction) {
+          this.flying = false;
+          this.skyAction = { kind: 'slide', t: 0 };
+          toast('Der susen! 🛝', 'ok');
+        }
+        break;
+      case 'splash': {
+        const now = this.clockNow();
+        if (!canSplash(this.lastSplashAt, now)) {
+          toast('Vannet skvetter fortsatt. Vent litt! 💦', 'ok');
+          break;
+        }
+        this.lastSplashAt = now;
+        toast('Plask! 💦', 'ok');
+        sfx.pop();
+        break;
+      }
+      case 'egg':
+        this.panels.openRainbowEggs();
+        break;
+      case 'rope': {
+        const r = buyRope(this.save);
+        if (!r.ok) {
+          toast(r.reason === 'owned' ? 'Du har allerede et klatretau. Bruk det ved fjellveggen! 🪢' : 'Du har ikke nok bucks til klatretau.', 'bad');
+          if (r.reason !== 'owned') sfx.nope();
+        } else {
+          this.commit(r.save);
+          toast('Du kjøpte klatretau! Gå til fjellveggen og klatre. 🪢', 'gold');
+          sfx.buy();
+        }
+        break;
+      }
+      case 'climb': {
+        const now = this.clockNow();
+        const r = climbWithRope(this.save, now);
+        if (!r.ok) {
+          toast((this.save.bag.klatretau ?? 0) > 0 ? 'Tauet må hvile litt. Prøv igjen snart.' : 'Du trenger klatretau. Det selges inne i hulen.', 'bad');
+          sfx.nope();
+          break;
+        }
+        this.commit(r.save);
+        this.flying = false;
+        this.skyAction = { kind: 'climb', t: 0 };
+        break;
+      }
+    }
+  }
+
+  private stepSkyAction(dt: number) {
+    if (!this.skyAction) return;
+    const dur = this.skyAction.kind === 'slide' ? 2.6 : 3.2;
+    this.skyAction.t += dt / dur;
+    const pose = this.skyAction.kind === 'slide' ? slidePose(this.skyAction.t) : climbPose(this.skyAction.t);
+    const cloud = this.skyAction.kind === 'slide' ? 'badeland' : 'fjell';
+    const w = worldOnCloud(cloud, pose.lx, pose.lz);
+    this.player.pos.set(w.x, CLOUD_FLOOR_Y + pose.ly, w.z);
+    this.player.grounded = true;
+    this.player.vy = 0;
+    if (!pose.done) return;
+    if (this.skyAction.kind === 'climb') {
+      toast(`Du klatret opp fjellet! +${CLIMB_REWARD} bucks`, 'gold');
+      sfx.coin();
+    } else {
+      toast('Plask i bassenget! 💦', 'ok');
+      sfx.pop();
+    }
+    this.player.pos.y = CLOUD_FLOOR_Y;
+    this.skyAction = null;
+  }
+
+  /** Rainbow-forest clock. testNow is only for tests and labelled proofs. */
+  private syncSky() {
+    const now = this.clockNow();
+    const view = rainView(this.save.skyRain ?? freshRain(now), now);
+    const prev = this.save.skyRain;
+    const changed = !prev || prev.nextAt !== view.state.nextAt || prev.stormId !== view.state.stormId || prev.collected.join(',') !== view.state.collected.join(',');
+    if (changed) {
+      this.save = { ...this.save, skyRain: view.state };
+      this.dirty = true;
+    }
+    if (view.active && view.state.stormId !== this.lastRainToast) {
+      this.lastRainToast = view.state.stormId;
+      toast('Det regner bucks i regnbueskogen! Fly dit og plukk myntene. 🌈', 'gold');
+    }
+    this.sky.update(this.time, { active: view.active, collected: view.state.collected });
+    const here = cloudAtXZ(this.player.pos.x, this.player.pos.z);
+    const onSkog = here?.id === 'skog' && this.player.pos.y > SKY_COLLIDE_MIN_Y;
+    this.hud.setSkyChip(
+      onSkog ? (view.active ? `Det regner bucks! ${formatCountdown(view.msUntil)} igjen` : `Regn om ${formatCountdown(view.msUntil)}`) : null,
+    );
+    if (!view.active || !onSkog) return;
+    for (let i = 0; i < RAIN_COIN_COUNT; i++) {
+      if (view.state.collected.includes(i)) continue;
+      const c = rainCoinWorld(i);
+      if (Math.hypot(this.player.pos.x - c.x, this.player.pos.z - c.z) < 1.25) {
+        const r = collectSkyCoin(this.save, i, now);
+        if (r.ok) {
+          this.commit(r.save);
+          toast(`Du plukket ${r.value} bucks! 💰`, 'gold');
+          sfx.coin();
+        }
+        break;
+      }
     }
   }
 
@@ -1045,7 +1185,8 @@ export class Game {
     }
     const mlen = Math.hypot(mx, mz);
     const speed = vehicleSpeed({ flying: this.flying, driving: !!this.driving, pramming: !!this.pramming, riding: !!this.riding });
-    if (mlen > 0.05) {
+    if (this.skyAction && this.mode === 'town') this.stepSkyAction(dt);
+    if (!this.skyAction && mlen > 0.05) {
       // move in small steps so nothing thin can be skipped, sliding along whatever we hit
       movePlayer(p.pos, mx * speed * dt, mz * speed * dt, this.playerRadius(), this.colliders(), this.mode === 'town' ? this.town.size / 2 - 2 : undefined);
       if (this.mode === 'house') this.clampPlayerToRoom();
@@ -1056,7 +1197,10 @@ export class Game {
     }
     p.speed = mlen;
     // jump / fly (or: sitting on a playground piece, which carries you)
-    if (this.using) {
+    if (this.skyAction) {
+      p.vy = 0;
+      p.grounded = true;
+    } else if (this.using) {
       const seat = this.town.seatWorld(this.using.id, this.time - this.using.since);
       p.pos.set(seat.x, seat.y, seat.z);
       p.yaw = seat.yaw;
@@ -1075,11 +1219,15 @@ export class Game {
       if (inp.jump && !frozen) p.vy = Math.min(p.vy + 40 * dt, 9);
       else p.vy = Math.max(p.vy - 14 * dt, -4);
       p.pos.y += p.vy * dt;
-      if (p.pos.y > 34) {
-        p.pos.y = 34;
+      if (p.pos.y > FLY_CEILING) {
+        p.pos.y = FLY_CEILING;
         p.vy = 0;
       }
-      if (p.pos.y <= 0) {
+      const deck = cloudFloorAt(p.pos.x, p.pos.z, p.pos.y);
+      if (deck != null && p.pos.y <= deck) {
+        p.pos.y = deck;
+        p.vy = 0;
+      } else if (p.pos.y <= 0) {
         p.pos.y = 0;
         p.vy = 0;
       }
@@ -1113,6 +1261,8 @@ export class Game {
       if (this.mode === 'town' && p.vy <= 0) {
         const surf = surfaceUnder(p.pos.x, p.pos.z, p.pos.y, this.town.surfaces, 0.45, 0.2);
         if (surf !== null && surf > ground) ground = surf;
+        const deck = cloudFloorAt(p.pos.x, p.pos.z, p.pos.y + 1);
+        if (deck !== null && deck > ground && p.pos.y >= deck - 1.2) ground = deck;
       }
       // walking up/down the stairs keeps you on the ramp; a jump or a fall lands on it
       if (p.pos.y <= ground || (p.grounded && p.vy <= 0 && p.pos.y - ground < 1.5 && this.mode === 'house')) {
@@ -1239,6 +1389,7 @@ export class Game {
 
     // zones + care
     this.updateZones(dt, moved, now);
+    if (this.mode === 'town') this.syncSky();
 
     // camera
     if (this.freezeCam) {
@@ -1297,8 +1448,12 @@ export class Game {
   }
   /** Height of the walkable floor under the player (stairs are a ramp). */
   private groundHere(): number {
-    if (this.mode !== 'house') return 0;
-    return groundHeight(this.interior.layout, this.player.pos.x, this.player.pos.z, floorOfY(this.player.pos.y));
+    if (this.mode === 'house') return groundHeight(this.interior.layout, this.player.pos.x, this.player.pos.z, floorOfY(this.player.pos.y));
+    return cloudFloorAt(this.player.pos.x, this.player.pos.z, this.player.pos.y) ?? 0;
+  }
+
+  private clockNow(): number {
+    return this.testNow ?? Date.now();
   }
 
   /** Player body size: smaller indoors so furniture doesn't feel like a maze. */
@@ -1308,13 +1463,15 @@ export class Game {
   }
   private colliders(): Colliders {
     if (this.mode === 'house') return this.interior.collidersFor(this.playerFloor());
+    const sky = useSkyColliders(this.player.pos.y) ? skyColliders() : null;
     if (this.driving || this.pramming) {
       return {
-        rects: [...this.town.rects, ...this.town.vehicleRects],
-        circles: [...this.town.circles, ...this.town.vehicleCircles],
+        rects: [...this.town.rects, ...this.town.vehicleRects, ...(sky?.rects ?? [])],
+        circles: [...this.town.circles, ...this.town.vehicleCircles, ...(sky?.circles ?? [])],
       };
     }
-    return this.town;
+    if (!sky) return this.town;
+    return { rects: [...this.town.rects, ...sky.rects], circles: [...this.town.circles, ...sky.circles] };
   }
   /** Settle the player after jumping/placing furniture: push out of anything solid. */
   private collide() {
@@ -1611,7 +1768,7 @@ export class Game {
         const onCareBed = !!(a.care && (a.care.y ?? 0) > 0.4 && Math.hypot(a.care.x - a.pos.x, a.care.z - a.pos.z) < 1.5);
         if (!flyingPet && !onCareBed) resolve(a.pos, 0.5, this.colliders());
         const near = a.care && Math.hypot(a.care.x - a.pos.x, a.care.z - a.pos.z) < 1.2;
-        let targetY = near ? (a.care!.y ?? 0) : equipped && p.pos.y > 1 && !inHouse ? Math.max(0, p.pos.y - 0.5) : 0;
+        let targetY = near ? (a.care!.y ?? 0) : equipped && p.pos.y > SKY_COLLIDE_MIN_Y && !inHouse ? p.pos.y : equipped && p.pos.y > 1 && !inHouse ? Math.max(0, p.pos.y - 0.5) : 0;
         if (inHouse && !near) targetY = groundHeight(lay, a.pos.x, a.pos.z, floorOfY(a.pos.y));
         if (inHouse && !near && onStairs(lay.stairs, a.pos.x, a.pos.z)) a.pos.y = targetY;
         else a.pos.y += (targetY - a.pos.y) * Math.min(1, dt * 4);
@@ -1770,6 +1927,13 @@ export class Game {
       }
     }
     if (this.building || this.editingAvatar || this.paused) near = null;
+    if (this.mode === 'town' && !this.skyAction) {
+      const high = this.player.pos.y > SKY_COLLIDE_MIN_Y;
+      for (const z of skyZones()) {
+        if (z.kind === 'sky-info' ? high : !high) continue;
+        if (Math.hypot(p.x - z.x, p.z - z.z) < z.r) near = { kind: z.kind, label: z.label };
+      }
+    }
     this.nearZone = near;
     if (near) {
       this.stickyNear = near;

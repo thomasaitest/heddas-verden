@@ -2,6 +2,7 @@ import { CAR_BY_ID, FOOD_BY_ID, FURN_BY_ID, HOUSE_BY_STYLE, PET_SHOP_BY_ID, TOY_
 import { canEdit, newHouse, placeItem, removeItem, type House } from './house.ts';
 import { addCare, addJoy, allNeeds, CARE_AMOUNT, completeNeed, joyNow, newPetState, NEED_INFO, tickPet, type CareWhere, type PetState } from './needs.ts';
 import { cleanPetName, EGG_BY_ID, FLIGHT_LESSONS, hatch } from './pets.ts';
+import { CLIMB_REWARD, canClimb, collectRainCoin, RAIN_COIN_VALUE, ROPE_ID, ROPE_PRICE } from './sky.ts';
 import type { Rng } from './rng.ts';
 import { MAX_EQUIPPED, type SaveData } from './save.ts';
 
@@ -125,6 +126,34 @@ export function buyCar(save: SaveData, id: string): Result {
   if (save.bag[id]) return fail(save, 'owned');
   if (save.bucks < car.price) return fail(save, 'too-expensive');
   return { ok: true, save: { ...save, bucks: save.bucks - car.price, bag: add(save.bag, id, 1) } };
+}
+
+/** Climbing rope is bought once, like a toy. It is not a new currency. */
+export function buyRope(save: SaveData): Result {
+  if ((save.bag[ROPE_ID] ?? 0) > 0) return fail(save, 'owned');
+  if (save.bucks < ROPE_PRICE) return fail(save, 'too-expensive');
+  return { ok: true, save: { ...save, bucks: save.bucks - ROPE_PRICE, bag: add(save.bag, ROPE_ID, 1) } };
+}
+
+export function climbWithRope(save: SaveData, now: number): Result<{ reward: number }> {
+  const gate = canClimb((save.bag[ROPE_ID] ?? 0) > 0, save.lastClimbAt, now);
+  if (!gate.ok) return fail(save, gate.reason === 'no-rope' ? 'empty' : 'wrong');
+  return {
+    ok: true,
+    reward: CLIMB_REWARD,
+    save: { ...save, bucks: save.bucks + CLIMB_REWARD, lastClimbAt: now },
+  };
+}
+
+export function collectSkyCoin(save: SaveData, index: number, now: number): Result<{ value: number }> {
+  const rain = save.skyRain ?? { nextAt: now, stormId: null, collected: [] };
+  const r = collectRainCoin(rain, index, now);
+  if (!r.ok) return { ok: false, reason: r.reason === 'taken' ? 'owned' : 'empty', save: { ...save, skyRain: r.state } };
+  return {
+    ok: true,
+    value: RAIN_COIN_VALUE,
+    save: { ...save, bucks: save.bucks + RAIN_COIN_VALUE, skyRain: r.state },
+  };
 }
 
 export function buyPetShopItem(save: SaveData, id: string): Result {

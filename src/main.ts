@@ -5,7 +5,7 @@ import './style.css';
 import { registerSW } from 'virtual:pwa-register';
 import { unlockAudio } from './audio.ts';
 import { Game } from './game.ts';
-import { feedMenu, toyMenu, openAvatar, openBag, openBuild, openCars, openDoors, openEggs, openMap, openMissionSheet, openPets, openPetShop, openShop, openVetInfo, starterFlow } from './ui/panels.ts';
+import { feedMenu, toyMenu, openAvatar, openBag, openBuild, openCars, openDoors, openEggs, openMap, openMissionSheet, openPets, openPetShop, openRainbowEggs, openShop, openVetInfo, starterFlow } from './ui/panels.ts';
 
 window.addEventListener('pointerdown', unlockAudio, { capture: true });
 document.addEventListener('gesturestart', (e) => e.preventDefault());
@@ -28,6 +28,7 @@ async function boot() {
     openCars: () => openCars(game),
     openPetShop: () => openPetShop(game),
     openEggs: () => openEggs(game),
+    openRainbowEggs: () => openRainbowEggs(game),
     openDoors: () => openDoors(game),
     openVetInfo: () => openVetInfo(game),
     openMissionSheet: (rows) => openMissionSheet(game, rows),

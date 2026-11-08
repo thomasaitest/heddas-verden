@@ -91,6 +91,7 @@ export const EGGS: EggType[] = [
   { id: 'egg-vanlig', name: 'Vanlig egg', price: 60, color: '#ffe8a8', spots: '#ffb84d', weights: { vanlig: 55, uvanlig: 30, sjelden: 12, ultra: 3, legendarisk: 0 } },
   { id: 'egg-eventyr', name: 'Eventyregg', price: 180, color: '#e2c6ff', spots: '#ff8fc7', weights: { vanlig: 15, uvanlig: 30, sjelden: 30, ultra: 18, legendarisk: 7 } },
   { id: 'egg-gull', name: 'Gullegg', price: 450, color: '#ffd23f', spots: '#fff4c2', weights: { vanlig: 0, uvanlig: 0, sjelden: 35, ultra: 40, legendarisk: 25 } },
+  { id: 'egg-regnbue', name: 'Regnbueegg', price: 260, color: '#ff8ad8', spots: '#7cf0ff', weights: { vanlig: 8, uvanlig: 22, sjelden: 35, ultra: 25, legendarisk: 10 } },
 ];
 export const EGG_BY_ID: Record<string, EggType> = Object.fromEntries(EGGS.map((e) => [e.id, e]));
 

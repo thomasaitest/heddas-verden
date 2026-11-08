@@ -64,6 +64,7 @@ export class Hud {
   jump: HTMLButtonElement;
   missionBtn: HTMLButtonElement;
   questRail: HTMLElement;
+  skyChip: HTMLElement;
   petBar: HTMLElement;
   private petBtns: Record<'hold' | 'ride' | 'fly' | 'feed' | 'play' | 'drive' | 'pram' | 'activity', HTMLButtonElement>;
 
@@ -101,6 +102,7 @@ export class Hud {
     this.jump = el('button', { class: 'btn jump', type: 'button' }, '⬆');
     this.missionBtn = button(el('span', {}, '📜', el('b', {}, 'Oppdrag')), a.mission, 'btn mission-btn');
     this.questRail = el('div', { class: 'quest-rail' });
+    this.skyChip = el('div', { class: 'sky-chip hidden' }, '');
     this.petBtns = {
       hold: button('🤲 Hold', a.hold, 'btn pet-act'),
       ride: button('🐎 Ri', a.ride, 'btn pet-act'),
@@ -112,7 +114,7 @@ export class Hud {
       activity: button('💃 Fest', a.activity, 'btn pet-act'),
     };
     this.petBar = el('div', { class: 'pet-bar' }, this.petBtns.feed, this.petBtns.play, this.petBtns.hold, this.petBtns.ride, this.petBtns.fly, this.petBtns.drive, this.petBtns.pram, this.petBtns.activity);
-    this.root = el('div', { class: 'hud' }, top, this.tasks, this.questRail, this.prompt, dock, this.petBar, this.joyZone, this.missionBtn, this.jump);
+    this.root = el('div', { class: 'hud' }, top, this.tasks, this.questRail, this.skyChip, this.prompt, dock, this.petBar, this.joyZone, this.missionBtn, this.jump);
     host.append(this.root);
   }
 
@@ -171,6 +173,15 @@ export class Hud {
     this.petBtns.pram.classList.toggle('hidden', (!(s.canPram || s.pramming)) || (narrow && !s.pramming));
     put(this.petBtns.pram, s.pramming ? '🛑 Sett vogn' : '🍼 Vogn');
     this.petBtns.activity.classList.toggle('hidden', !s.canActivity);
+  }
+
+  setSkyChip(text: string | null) {
+    if (!text) {
+      this.skyChip.classList.add('hidden');
+      return;
+    }
+    put(this.skyChip, text);
+    this.skyChip.classList.remove('hidden');
   }
 
   setWhere(label: string) {
