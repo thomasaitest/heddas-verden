@@ -1386,12 +1386,7 @@ export class Game {
     const log = this.save.quests ?? freshQuestLog();
     if (this.save.quests !== log) this.save = { ...this.save, quests: log };
     const rows = questBoard(log);
-    const active = rows.filter((r) => r.state === 'active');
-    if (active.length) {
-      toast(active.map((r) => `${r.emoji} ${r.title} ${Math.round(r.progress * 100)}%`).join(' · '), 'ok');
-    } else {
-      toast('Alle oppdrag er ferdige! ⭐', 'gold');
-    }
+    if (!rows.some((r) => r.state !== 'done')) toast('Alle oppdrag er ferdige! ⭐', 'gold');
     this.panels.openMissionSheet(rows);
   }
 

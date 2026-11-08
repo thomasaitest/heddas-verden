@@ -113,7 +113,7 @@ body.building .jump, body.building .pet-bar, body.building .tasks, body.building
 .toast.out { opacity: 0; transform: translateY(-10px); }
 
 /* ---------- sheets ---------- */
-.sheet-wrap { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(60, 30, 90, 0.25); z-index: 5; padding: 14px; }
+.sheet-wrap { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(60, 30, 90, 0.25); z-index: 8; padding: 14px; }
 .sheet { --accent: #3fa4ff; width: min(760px, 100%); max-height: min(86vh, 900px); display: flex; flex-direction: column; background: #fff; border-radius: 30px; border: 5px solid var(--accent); box-shadow: 0 10px 0 rgba(0, 0, 0, 0.18); overflow: hidden; animation: pop 0.25s; }
 .sheet-head { display: flex; align-items: center; justify-content: space-between; background: var(--accent); color: #fff; padding: 8px 10px 8px 22px; }
 .sheet-head h2 { font-size: 26px; text-shadow: 0 2px 0 rgba(0, 0, 0, 0.2); }
