@@ -59,6 +59,16 @@ export const RAIN_COIN_COUNT = 6;
 /** Each coin. Six of them is 24 bucks, about one small quest, not a fortune. */
 export const RAIN_COIN_VALUE = 4;
 
+/** Trunks in the rainbow forest. Kept off the centre and off the rain coins. */
+export const FOREST_TREES: readonly [number, number][] = [
+  [-6, -4], [-2, -6], [3, -5], [7, -2],
+  [-8, 1], [8, 2], [-7, 5], [-3, 7],
+  [2, 6], [6, 5], [-4, 2], [4, -1],
+  [0, -3], [5, 3],
+  [-9, -7], [9, -7], [0, 9], [8, 7],
+  [-9, 3], [2, -8], [-4, -8], [10, 1],
+];
+
 export const SPLASH_COOLDOWN_MS = 2_500;
 
 export function cloudById(id: CloudId): CloudDef {
@@ -90,8 +100,8 @@ export function cloudFloorAt(x: number, z: number, y: number): number | null {
 }
 
 export function skyAccessText(canFly: boolean): string {
-  if (canFly) return 'Hold ⬆ og fly opp mot de fire skyene! Der er badeland, regnbueegg, fjellet og regnbueskogen.';
-  return 'Skyverden ligger oppe i skyene. Et dyr med vinger må øve fire ganger før det kan fly. Trylledrikk kan ikke kjøpes — den dukker bare opp hos flygedyr.';
+  if (canFly) return 'Hold ⬆ og fly opp. Fire skyer: badeland, egg, fjell og skog.';
+  return 'Skyverden er oppe i skyene. Et dyr med vinger må øve fire ganger. Trylledrikk kan ikke kjøpes.';
 }
 
 export interface SkySolid {
@@ -157,20 +167,15 @@ export function skySolids(): SkySolid[] {
   out.push(solid('cave-back', 'fjell', 0, 7.4, 4.2, 0.4, 3.2));
   out.push(solid('cave-left', 'fjell', -4.2, 4.8, 0.4, 2.6, 3.2));
   out.push(solid('cave-right', 'fjell', 4.2, 4.8, 0.4, 2.6, 3.2));
-  out.push(solid('cave-front-l', 'fjell', -2.9, 2.3, 1.3, 0.4, 3.2));
-  out.push(solid('cave-front-r', 'fjell', 2.9, 2.3, 1.3, 0.4, 3.2));
+  // Wide open mouth: the gap between these jambs is about 5.5 m.
+  out.push(solid('cave-front-l', 'fjell', -3.6, 2.3, 0.85, 0.45, 3.4));
+  out.push(solid('cave-front-r', 'fjell', 3.6, 2.3, 0.85, 0.45, 3.4));
   out.push(solid('rope-counter', 'fjell', 0, 6.4, 1.3, 0.55, 1.15));
   // The peak itself, behind the cave, so you walk around it to the climb spot.
   out.push(circ('peak', 'fjell', 0, 8.6, 2.4, 8));
 
-  // Rainbow trees. A clear path remains through the middle.
-  const treeSpots: [number, number][] = [
-    [-6, -4], [-2, -6], [3, -5], [7, -2],
-    [-8, 1], [8, 2], [-7, 5], [-3, 7],
-    [2, 6], [6, 5], [-4, 2], [4, -1],
-    [0, -3], [5, 3],
-  ];
-  treeSpots.forEach(([lx, lz], i) => out.push(circ(`tree-${i}`, 'skog', lx, lz, 0.85, 4.5)));
+  // Rainbow trees. The middle of the cloud, and every rain coin, stays open.
+  FOREST_TREES.forEach(([lx, lz], i) => out.push(circ(`tree-${i}`, 'skog', lx, lz, 0.55, 4.2)));
   return out;
 }
 

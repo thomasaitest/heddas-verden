@@ -54,7 +54,7 @@ import {
   RAIN_COIN_COUNT,
 } from './logic/sky.ts';
 import { Thumbs } from './thumbs.ts';
-import { toast } from './ui/dom.ts';
+import { button, el, toast } from './ui/dom.ts';
 import { Hud } from './ui/hud.ts';
 import { MpClient } from './mp/client.ts';
 import type { AvatarPoseWire } from './mp/protocol.ts';
@@ -187,6 +187,7 @@ export class Game {
   private skyAction: { kind: 'slide' | 'climb'; t: number } | null = null;
   private lastSplashAt = 0;
   private lastRainToast: number | null = null;
+  private skyNoteEl: HTMLElement | null = null;
 
   constructor(private host: HTMLElement, ui: HTMLElement) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance', preserveDrawingBuffer: false });
@@ -761,7 +762,7 @@ export class Game {
         this.toggleActivity();
         break;
       case 'sky-info':
-        toast(skyAccessText(!!this.mainPet()?.flyable), 'ok');
+        this.showSkyNote(!!this.mainPet()?.flyable);
         break;
       case 'slide':
         if (!this.skyAction) {
@@ -810,6 +811,22 @@ export class Game {
         break;
       }
     }
+  }
+
+  /** Short, closable flight note. It sits above the controls and does not cover the whole view. */
+  private showSkyNote(canFly: boolean) {
+    this.skyNoteEl?.remove();
+    const note = el(
+      'div',
+      { class: 'sky-note' },
+      el('p', {}, skyAccessText(canFly)),
+      button('✕', () => {
+        note.remove();
+        if (this.skyNoteEl === note) this.skyNoteEl = null;
+      }, 'btn round small'),
+    );
+    this.skyNoteEl = note;
+    document.getElementById('ui')!.append(note);
   }
 
   private stepSkyAction(dt: number) {

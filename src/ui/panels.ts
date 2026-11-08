@@ -102,7 +102,8 @@ export function openShop(game: Game) {
 
 // ---------- Eggbutikk ----------
 function eggArt(e: EggType, cls = '') {
-  return el('div', { class: `egg ${cls}`, style: { '--egg': e.color, '--spot': e.spots } }, el('i'), el('i'), el('i'));
+  const rainbow = e.id === 'egg-regnbue' ? 'rainbow' : '';
+  return el('div', { class: `egg ${rainbow} ${cls}`.trim(), style: { '--egg': e.color, '--spot': e.spots } }, el('i'), el('i'), el('i'));
 }
 
 export function openRainbowEggs(game: Game) {

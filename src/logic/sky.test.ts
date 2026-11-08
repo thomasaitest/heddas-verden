@@ -19,14 +19,17 @@ import {
   cloudAtXZ,
   cloudFloorAt,
   collectRainCoin,
+  FOREST_TREES,
   formatCountdown,
   freshRain,
   groundShopEggs,
   normalizeRain,
+  rainCoinWorld,
   rainView,
   skyAccessText,
   skyColliders,
   skyZones,
+  slidePose,
   useSkyColliders,
 } from './sky.ts';
 
@@ -68,6 +71,9 @@ describe('sky clouds', () => {
     const pos = { ...door };
     movePlayer(pos, inside.x - door.x, inside.z - door.z, R, cols);
     expect(Math.hypot(pos.x - inside.x, pos.z - inside.z)).toBeLessThan(0.8);
+    expect(blocked(fjell.x, fjell.z + 2.3, R, cols, CLOUD_FLOOR_Y)).toBe(false);
+    expect(blocked(fjell.x + 2.2, fjell.z + 2.3, R, cols, CLOUD_FLOOR_Y)).toBe(false);
+    expect(blocked(fjell.x - 3.6, fjell.z + 2.3, R, cols, CLOUD_FLOOR_Y)).toBe(true);
     expect(blocked(fjell.x, fjell.z + 6.4, R, cols, CLOUD_FLOOR_Y)).toBe(true);
     expect(blocked(fjell.x - 4.2, fjell.z + 4.8, R, cols, CLOUD_FLOOR_Y)).toBe(true);
     const outside = { x: fjell.x - 6, y: CLOUD_FLOOR_Y, z: fjell.z + 4.8 };
@@ -82,6 +88,9 @@ describe('sky clouds', () => {
     expect(blocked(b.x - 6.3, b.z - 2.4, R, cols, CLOUD_FLOOR_Y)).toBe(true);
     const slide = skyZones().find((z) => z.kind === 'slide')!;
     const splash = skyZones().find((z) => z.kind === 'splash')!;
+    const end = slidePose(1);
+    expect(blocked(b.x + end.lx, b.z + end.lz, R, cols, CLOUD_FLOOR_Y)).toBe(false);
+    expect(Math.hypot(b.x + end.lx - splash.x, b.z + end.lz - splash.z)).toBeLessThan(splash.r);
     expect(cloudAtXZ(slide.x, slide.z)?.id).toBe('badeland');
     expect(cloudAtXZ(splash.x, splash.z)?.id).toBe('badeland');
   });
@@ -90,6 +99,16 @@ describe('sky clouds', () => {
     const skog = CLOUDS.find((c) => c.id === 'skog')!;
     expect(blocked(skog.x, skog.z, R, cols, CLOUD_FLOOR_Y)).toBe(false);
     expect(blocked(skog.x - 6, skog.z - 4, R, cols, CLOUD_FLOOR_Y)).toBe(true);
+    for (const [lx, lz] of FOREST_TREES) {
+      expect(Math.hypot(lx, lz), `${lx},${lz}`).toBeLessThan(13.5);
+    }
+    for (let i = 0; i < RAIN_COIN_COUNT; i++) {
+      const coin = rainCoinWorld(i);
+      for (const [lx, lz] of FOREST_TREES) {
+        const d = Math.hypot(coin.x - (skog.x + lx), coin.z - (skog.z + lz));
+        expect(d, `coin ${i} tree ${lx},${lz}`).toBeGreaterThan(1.3);
+      }
+    }
   });
 });
 
