@@ -5,7 +5,7 @@ import { animateAvatar, buildAvatar, type AvatarPose, type AvatarRig } from '../
 import { animatePet, buildPet, type PetRig } from '../three/petModel.ts';
 import { blobShadow } from '../three/kit.ts';
 import { buildCar, buildPram, CAR_DRIVER_LAT, CAR_SEAT_Y, PRAM_PULL_BACK } from '../three/vehicles.ts';
-import { carCabinPetScale, carPassengerSeat } from '../logic/vehicles.ts';
+import { carCabinPetScale, carPassengerSeat, vehicleBodyRadius } from '../logic/vehicles.ts';
 import { EMOTE_BY_ID, type EmoteId, type MountWire, type PlaceWire } from './protocol.ts';
 import type { MpSession } from './session.ts';
 
@@ -27,6 +27,7 @@ function avatarKey(a: { skin: string; hair: string; hairColor: string; face: str
   return JSON.stringify(a);
 }
 
+import { resolve, type Colliders } from '../logic/collision.ts';
 import { nearestCopy } from '../logic/wrap.ts';
 import { ridePetScale, rideSeatOffset } from './ride.ts';
 export { ridePetScale, rideSeatOffset };
@@ -109,6 +110,7 @@ export class RemotePlayers {
     localPlace: PlaceWire = 'town',
     localArea: string | null = null,
     viewer: { x: number; z: number; size: number } | null = null,
+    solids: Colliders | null = null,
   ) {
     const live = new Set<string>();
     for (const r of session.tickRemotes(now)) {
@@ -167,6 +169,13 @@ export class RemotePlayers {
       const mount: MountWire = r.mount ?? 'none';
       const riding = mount === 'ride' || mount === 'fly';
       const driving = mount === 'drive';
+      if (solids && !hidden && !r.equip) {
+        const body = vehicleBodyRadius({ driving, pramming: mount === 'pram', riding });
+        const p = { x, y, z };
+        resolve(p, body, solids);
+        x = p.x;
+        z = p.z;
+      }
       const pramming = mount === 'pram';
 
       actor.holder.visible = !hidden;

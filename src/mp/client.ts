@@ -1,4 +1,5 @@
 import type * as THREE from 'three';
+import type { Colliders } from '../logic/collision.ts';
 import type { Avatar } from '../logic/avatar.ts';
 import { isRemotePlot } from '../logic/visitDoor.ts';
 import type { HouseStyle } from '../logic/catalog.ts';
@@ -33,6 +34,7 @@ export interface MpHost {
     size: number;
   };
   mainPet(): PetState | null;
+  solids(): Colliders;
   activeHouseStyle(): HouseStyle;
   onVisitAsk(from: string, fromName: string, fromPlayerId: string): void;
   onVisitReply(from: string, ok: boolean, house?: HouseWire): void;
@@ -159,6 +161,7 @@ export class MpClient {
       place,
       area,
       place === 'town' ? { x: g.player.pos.x, z: g.player.pos.z, size: g.town.size } : null,
+      g.solids(),
     );
     this.syncHousePlots();
   }

@@ -218,13 +218,14 @@ function mountain(parent: THREE.Group) {
   box(g, '#6d7684', [0, 2.45, 0.85], [3.5, 0.4, 0.7]);
   sph(g, '#ffb26b', [0, 1.85, 0.7], [0.18, 0.18, 0.18], undefined, 0.9);
   box(g, '#9aa4b5', [-5.2, 1.6, -1.6], [0.9, 3.2, 1.8]);
-  sign(g, 'Fjellskyen', 2.6, -4.6, '#6b7c93');
-  const fjellSign = g.children[g.children.length - 1] as THREE.Object3D;
-  fjellSign.rotation.y = 0;
-  const fjellSignBack = fjellSign.clone();
-  fjellSignBack.rotation.y = Math.PI;
-  fjellSignBack.position.z -= 0.06;
-  g.add(fjellSignBack);
+  sign(g, 'Fjellskyen', 2.4, -3.2, '#6b7c93');
+  // Off to the side, facing the path you walk up. The copy faces the other way so the back is not mirrored text.
+  const fjellSign = g.children[g.children.length - 1];
+  fjellSign.position.x = -3.6;
+  const fjellBack = fjellSign.clone();
+  fjellBack.rotation.y = 0;
+  fjellBack.position.z += 0.08;
+  g.add(fjellBack);
   parent.add(g);
 }
 

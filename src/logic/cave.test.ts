@@ -10,9 +10,9 @@ describe('inner cave', () => {
   const cols = caveColliders();
 
   it('is larger than the little peak, and the rope counter stops you', () => {
-    expect(CAVE_R).toBeGreaterThan(24);
+    expect(CAVE_R).toBeGreaterThan(80);
     const fjell = CLOUDS.find((c) => c.id === 'fjell')!;
-    expect(CAVE_R).toBeGreaterThan(fjell.r * 3);
+    expect(CAVE_R).toBeGreaterThan(fjell.r * 8);
     expect(inCave(0, 0)).toBe(true);
     expect(inCave(0, CAVE_R + 2)).toBe(false);
     expect(blocked(CAVE_ROPE.x, CAVE_ROPE.z + 1.4, R, cols)).toBe(true);
