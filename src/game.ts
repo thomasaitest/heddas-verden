@@ -32,6 +32,10 @@ import { blobShadow } from './three/kit.ts';
 import { animatePet, buildPet, type PetPose, type PetRig } from './three/petModel.ts';
 import { buildTown, type Town, type Zone } from './three/town.ts';
 import { buildSky, type SkyWorld } from './three/sky.ts';
+import { buildCave, type CaveWorld } from './three/cave.ts';
+import { collectColliders } from './three/colliders.ts';
+import { CAVE_EXIT, CAVE_R, CAVE_ROPE, CAVE_SPAWN, caveColliders, inCave } from './logic/cave.ts';
+import { CAVE_MOUTH } from './logic/sky.ts';
 import {
   CLOUD_FLOOR_Y,
   FLY_CEILING,
@@ -121,7 +125,7 @@ export class Game {
   hud: Hud;
   input: Input;
   save: SaveData;
-  mode: 'town' | 'house' = 'town';
+  mode: 'town' | 'house' | 'cave' = 'town';
   player = { pos: new THREE.Vector3(), vy: 0, yaw: 0, grounded: true, speed: 0, energy: ENERGY_MAX };
   /** Sitting on an outdoor bench to rest. */
   resting: { x: number; z: number; yaw: number } | null = null;
@@ -178,7 +182,7 @@ export class Game {
   private lastTickAt = 0;
   private stickyNear: Game['nearZone'] = null;
   private stickyNearUntil = 0;
-  private nearZone: Zone | { kind: 'exit'; label: string } | { kind: 'equip'; id: string; label: string } | { kind: 'equip-off'; label: string } | { kind: 'bench'; label: string; x: number; z: number; yaw: number } | { kind: 'bench-off'; label: string } | { kind: 'bed'; label: string; spot: SleepSpot } | { kind: 'bed-off'; label: string } | { kind: 'lock'; label: string } | { kind: 'visit'; label: string; peerId: string; peerName: string } | { kind: 'plaza'; label: string } | { kind: 'mini'; label: string } | { kind: 'vet-heal'; label: string; uid: string } | { kind: 'pet-apple'; label: string; uid: string; x: number; z: number } | { kind: 'pet-fest'; label: string; uid: string } | { kind: 'sky-info' | 'slide' | 'splash' | 'egg' | 'rope' | 'climb' | 'ladder'; label: string } | null = null;
+  private nearZone: Zone | { kind: 'exit'; label: string } | { kind: 'equip'; id: string; label: string } | { kind: 'equip-off'; label: string } | { kind: 'bench'; label: string; x: number; z: number; yaw: number } | { kind: 'bench-off'; label: string } | { kind: 'bed'; label: string; spot: SleepSpot } | { kind: 'bed-off'; label: string } | { kind: 'lock'; label: string } | { kind: 'visit'; label: string; peerId: string; peerName: string } | { kind: 'plaza'; label: string } | { kind: 'mini'; label: string } | { kind: 'vet-heal'; label: string; uid: string } | { kind: 'pet-apple'; label: string; uid: string; x: number; z: number } | { kind: 'pet-fest'; label: string; uid: string } | { kind: 'sky-info' | 'slide' | 'splash' | 'egg' | 'rope' | 'climb' | 'ladder' | 'cave-enter'; label: string } | { kind: 'cave-exit'; label: string } | null = null;
   /** The playground piece you are sitting on (swing, slide, seesaw, merry-go-round), if any. */
   using: { id: string; since: number } | null = null;
   private bubbleTex = new Map<string, THREE.Texture>();
@@ -190,6 +194,8 @@ export class Game {
   /** Test-only clock for Skyverden rain. Normal play leaves this null and uses Date.now(). */
   testNow: number | null = null;
   private sky: SkyWorld;
+  private cave: CaveWorld;
+  private caveCooldown = 0;
   private skyAction: { kind: 'slide' | 'climb' | 'ladder'; t: number } | null = null;
   private lastSplashAt = 0;
   private lastRainToast: number | null = null;
@@ -226,6 +232,8 @@ export class Game {
     this.scene.add(this.town.group);
     this.sky = buildSky();
     this.scene.add(this.sky.group);
+    this.cave = buildCave();
+    this.scene.add(this.cave.group);
     this.interior = createInterior();
     this.interior.group.visible = false;
     this.scene.add(this.interior.group);
@@ -278,6 +286,9 @@ export class Game {
     this.resize();
     this.updateHud();
     this.mp = new MpClient(this);
+    if (this.save.skyRealm === 'cave') {
+      this.enterCave({ x: this.save.caveX ?? CAVE_SPAWN.x, z: this.save.caveZ ?? CAVE_SPAWN.z }, false);
+    }
   }
 
   // ---------- state ----------
@@ -311,6 +322,9 @@ export class Game {
     return () => (this.onChange = this.onChange.filter((x) => x !== f));
   }
   flush() {
+    if (this.mode === 'cave') {
+      this.save = { ...this.save, skyRealm: 'cave', caveX: this.player.pos.x, caveZ: this.player.pos.z };
+    }
     writeSave(localStorage, this.save);
     this.dirty = false;
   }
@@ -328,7 +342,8 @@ export class Game {
     const liveHouse = this.guestHouse ?? house;
     const skyHere = this.mode === 'town' ? cloudAtXZ(this.player.pos.x, this.player.pos.z) : null;
     const skyLabel = skyHere && this.player.pos.y > SKY_COLLIDE_MIN_Y ? `${skyHere.emoji} ${skyHere.name}` : null;
-    this.hud.setMode(this.mode, skyLabel ?? (this.mode === 'house' ? (this.guestHouse ? `Besøk · ${HOUSE_BY_STYLE[liveHouse.style].name}` : HOUSE_BY_STYLE[liveHouse.style].name) : 'Heddas by'), !this.guestHouse && canEdit(liveHouse, this.save.playerId) && !skyLabel);
+    const where = this.mode === 'cave' ? 'Hulen' : skyLabel ?? (this.mode === 'house' ? (this.guestHouse ? `Besøk · ${HOUSE_BY_STYLE[liveHouse.style].name}` : HOUSE_BY_STYLE[liveHouse.style].name) : 'Heddas by');
+    this.hud.setMode(this.mode === 'house' ? 'house' : 'town', where, this.mode === 'house' && !this.guestHouse && canEdit(liveHouse, this.save.playerId) && !skyLabel);
     this.hud.setTasks(this.equippedPets(), (uid) => this.onTaskTap(uid));
     this.hud.setQuests(questBoard(this.save.quests ?? freshQuestLog()));
     const p = this.mainPet();
@@ -611,6 +626,92 @@ export class Game {
     this.updateHud();
   }
 
+  private fade(then: () => void) {
+    const veil = document.createElement('div');
+    veil.className = 'realm-fade';
+    document.body.append(veil);
+    requestAnimationFrame(() => veil.classList.add('on'));
+    setTimeout(() => {
+      then();
+      veil.classList.remove('on');
+      setTimeout(() => veil.remove(), 420);
+    }, 380);
+  }
+
+  /** Step through the little mouth into the large cave. Pets come along. */
+  enterCave(at?: { x: number; z: number }, fade = true) {
+    const go = () => {
+      this.resting = null;
+      this.sleeping = null;
+      if (this.using) this.stopUse();
+      this.cancelPlays();
+      this.clearVehicle();
+      this.activity = null;
+      this.skyAction = null;
+      this.mode = 'cave';
+      this.holding = null;
+      this.riding = null;
+      this.flying = false;
+      this.freezeCam = null;
+      this.town.group.visible = false;
+      this.sky.group.visible = false;
+      this.cave.group.visible = true;
+      this.scene.background = new THREE.Color('#140e1c');
+      this.scene.fog = new THREE.Fog('#140e1c', 22, 78);
+      const spot = at && inCave(at.x, at.z, 2) ? at : CAVE_SPAWN;
+      this.player.pos.set(spot.x, 0, spot.z);
+      this.player.vy = 0;
+      this.player.yaw = 0;
+      this.cam.yaw = Math.PI;
+      this.cam.pitch = 0.42;
+      this.cam.dist = 14;
+      this.actors.forEach((a) => a.pos.set(this.player.pos.x + (this.rng() - 0.5) * 2, 0, this.player.pos.z - 2));
+      this.save = { ...this.save, skyRealm: 'cave', caveX: this.player.pos.x, caveZ: this.player.pos.z };
+      this.dirty = true;
+      this.syncPets();
+      this.updateHud();
+    };
+    if (fade) this.fade(go);
+    else go();
+  }
+
+  exitCave() {
+    const back = worldOnCloud('fjell', CAVE_MOUTH.lx, CAVE_MOUTH.lz - CAVE_MOUTH.r - 1.1);
+    this.fade(() => {
+      this.mode = 'town';
+      this.cave.group.visible = false;
+      this.town.group.visible = true;
+      this.sky.group.visible = true;
+      this.scene.fog = null;
+      this.setSky();
+      this.player.pos.set(back.x, CLOUD_FLOOR_Y, back.z);
+      this.player.vy = 0;
+      this.player.yaw = 0;
+      this.cam.yaw = Math.PI;
+      this.cam.pitch = 0.42;
+      this.cam.dist = 14;
+      this.actors.forEach((a) => a.pos.set(back.x + (this.rng() - 0.5) * 1.5, CLOUD_FLOOR_Y, back.z - 1.5));
+      const next = { ...this.save };
+      delete next.skyRealm;
+      delete next.caveX;
+      delete next.caveZ;
+      this.save = next;
+      this.dirty = true;
+      this.caveCooldown = this.time + 1.8;
+      this.syncPets();
+      this.updateHud();
+    });
+  }
+
+  private tryEnterCave() {
+    if (this.flying || !this.player.grounded || this.skyAction) return;
+    if (this.time < this.caveCooldown) return;
+    if (this.player.pos.y < CLOUD_FLOOR_Y - 0.3 || this.player.pos.y > CLOUD_FLOOR_Y + 2.4) return;
+    const mouth = worldOnCloud('fjell', CAVE_MOUTH.lx, CAVE_MOUTH.lz);
+    if (Math.hypot(this.player.pos.x - mouth.x, this.player.pos.z - mouth.z) > CAVE_MOUTH.r) return;
+    this.enterCave();
+  }
+
   /** Walk out of the front door: you appear on the street in front of your house. */
   exitHouse() {
     this.sleeping = null;
@@ -810,6 +911,12 @@ export class Game {
         }
         break;
       }
+      case 'cave-enter':
+        this.enterCave();
+        break;
+      case 'cave-exit':
+        this.exitCave();
+        break;
       case 'climb': {
         const now = this.clockNow();
         const r = climbWithRope(this.save, now);
@@ -1434,6 +1541,7 @@ export class Game {
     // zones + care
     this.updateZones(dt, moved, now);
     if (this.mode === 'town') this.syncSky();
+    if (this.mode === 'town') this.tryEnterCave();
 
     // camera
     if (this.freezeCam) {
@@ -1488,6 +1596,7 @@ export class Game {
 
   /** Ground under any point (for shadows). */
   private groundAt(x: number, y: number, z: number): number {
+    if (this.mode === 'cave') return 0;
     if (this.mode === 'house') return groundHeight(this.interior.layout, x, z, floorOfY(y));
     const deck = cloudFloorAt(x, z, y);
     if (deck != null) return deck;
@@ -1495,6 +1604,7 @@ export class Game {
   }
   /** Height of the walkable floor under the player (stairs are a ramp). */
   private groundHere(): number {
+    if (this.mode === 'cave') return 0;
     if (this.mode === 'house') return groundHeight(this.interior.layout, this.player.pos.x, this.player.pos.z, floorOfY(this.player.pos.y));
     const deck = cloudFloorAt(this.player.pos.x, this.player.pos.z, this.player.pos.y);
     if (deck != null) {
@@ -1507,8 +1617,20 @@ export class Game {
     return hillHeight(this.player.pos.x, this.player.pos.z);
   }
 
-  /** Keep the head under the cave roof. Walls already stop a sideways step. */
+  /** Keep the head under a roof. The inner cave is a dome; the little peak has a low tunnel. */
   private clampCaveRoof() {
+    if (this.mode === 'cave') {
+      const d = Math.hypot(this.player.pos.x, this.player.pos.z);
+      const radius = CAVE_R * 0.9;
+      const inside = Math.min(d, radius - 0.4);
+      const roof = Math.sqrt(Math.max(1, radius * radius - inside * inside));
+      const maxFeet = Math.max(0, roof - 1.7);
+      if (this.player.pos.y > maxFeet) {
+        this.player.pos.y = maxFeet;
+        if (this.player.vy > 0) this.player.vy = 0;
+      }
+      return;
+    }
     const roof = skyHeadroom(this.player.pos.x, this.player.pos.z);
     if (roof == null) return;
     const maxFeet = roof - 1.65;
@@ -1527,7 +1649,18 @@ export class Game {
     if (this.mode === 'house') return this.riding ? 1.0 : 0.45;
     return vehicleBodyRadius({ driving: !!this.driving, pramming: !!this.pramming, riding: !!this.riding });
   }
+  private caveCols: Colliders | null = null;
+  /** Walls from the cave plan, plus every mesh marked solid in the inner world. */
+  private caveCollision(): Colliders {
+    if (this.caveCols) return this.caveCols;
+    const base = caveColliders();
+    const seen = collectColliders(this.cave.group);
+    this.caveCols = { rects: [...base.rects, ...seen.rects], circles: [...base.circles, ...seen.circles] };
+    return this.caveCols;
+  }
+
   private worldColliders(): Colliders {
+    if (this.mode === 'cave') return this.caveCollision();
     const sky = useSkyColliders(this.player.pos.y) ? skyColliders() : null;
     if (this.driving || this.pramming) {
       return {
@@ -1845,7 +1978,9 @@ export class Game {
           a.pos.z = wrapCoord(a.pos.z, this.town.size);
         }
         const near = a.care && Math.hypot(a.care.x - a.pos.x, a.care.z - a.pos.z) < 1.2;
-        let targetY = near ? (a.care!.y ?? 0) : equipped && p.pos.y > SKY_COLLIDE_MIN_Y && !inHouse ? p.pos.y : equipped && p.pos.y > 1 && !inHouse ? Math.max(hillHeight(a.pos.x, a.pos.z), p.pos.y - 0.5) : hillHeight(a.pos.x, a.pos.z);
+        let targetY = 0;
+        if (this.mode === 'cave') targetY = near ? (a.care!.y ?? 0) : 0;
+        else targetY = near ? (a.care!.y ?? 0) : equipped && p.pos.y > SKY_COLLIDE_MIN_Y && !inHouse ? p.pos.y : equipped && p.pos.y > 1 && !inHouse ? Math.max(hillHeight(a.pos.x, a.pos.z), p.pos.y - 0.5) : hillHeight(a.pos.x, a.pos.z);
         if (inHouse && !near) targetY = groundHeight(lay, a.pos.x, a.pos.z, floorOfY(a.pos.y));
         if (inHouse && !near && onStairs(lay.stairs, a.pos.x, a.pos.z)) a.pos.y = targetY;
         else a.pos.y += (targetY - a.pos.y) * Math.min(1, dt * 4);
@@ -1899,7 +2034,10 @@ export class Game {
     let near: Game['nearZone'] = null;
     let inVet = false;
     let inPlay = false;
-    if (this.mode === 'town') {
+    if (this.mode === 'cave') {
+      if (Math.hypot(p.x - CAVE_EXIT.x, p.z - CAVE_EXIT.z) < CAVE_EXIT.r) near = { kind: 'cave-exit', label: 'Gå ut av hulen' };
+      else if (Math.hypot(p.x - CAVE_ROPE.x, p.z - CAVE_ROPE.z) < CAVE_ROPE.r) near = { kind: 'rope', label: 'Kjøp klatretau 🪢' };
+    } else if (this.mode === 'town') {
       let best = Infinity;
       for (const z of this.town.zones) {
         const d = this.flatDist(p.x, p.z, z.x, z.z);
@@ -1993,7 +2131,7 @@ export class Game {
       if (!near && nearPlaza(p.x, p.z) && !this.activity && !this.driving) {
         near = { kind: 'plaza', label: 'Fest 💃' } as Game['nearZone'];
       }
-    } else {
+    } else if (this.mode === 'house') {
       const d = Math.hypot(p.x - this.interior.door.x, p.z - this.interior.door.z);
       if (d < 2 && this.playerFloor() === 0) {
         near = { kind: 'exit', label: 'Gå ut 🚪' };

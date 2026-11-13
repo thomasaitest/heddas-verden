@@ -33,6 +33,13 @@ export interface SaveData {
   skyRain?: SkyRainSave;
   /** Last time the player finished a rope climb. */
   lastClimbAt?: number;
+  /**
+   * 'cave' means the player was inside the mountain.
+   * Missing on older saves, which stay in town.
+   */
+  skyRealm?: 'town' | 'cave';
+  caveX?: number;
+  caveZ?: number;
 }
 
 export const SAVE_KEY = 'heddasverden-save-v1';
@@ -138,6 +145,9 @@ export function parseSave(json: string | null, now = Date.now()): SaveData {
       quests: normalizeQuestLog(raw.quests, now),
       skyRain: normalizeRain(raw.skyRain, now),
       ...(Number.isFinite(Number(raw.lastClimbAt)) ? { lastClimbAt: Number(raw.lastClimbAt) } : {}),
+      ...(raw.skyRealm === 'cave'
+        ? { skyRealm: 'cave' as const, caveX: Number.isFinite(Number(raw.caveX)) ? Number(raw.caveX) : 0, caveZ: Number.isFinite(Number(raw.caveZ)) ? Number(raw.caveZ) : -21 }
+        : {}),
     };
     if (!raw.toysGiven) {
       // saves from before the toys existed: one ball and one yarn ball as a gift, once

@@ -64,12 +64,38 @@ export const G = {
 
 export type V3 = [number, number, number];
 
+export type CollisionKind = 'solid' | 'passable' | 'surface';
+
+const collisionStack: CollisionKind[] = [];
+let collisionDefault: CollisionKind | 'unmarked' = 'unmarked';
+
+/** Every mesh created inside the callback is tagged, unless `solid()` overrides it. */
+export function withCollision<T>(kind: CollisionKind, fn: () => T): T {
+  collisionStack.push(kind);
+  try {
+    return fn();
+  } finally {
+    collisionStack.pop();
+  }
+}
+
+/** Used by the existing town and sky builders. New worlds should use `withCollision` instead. */
+export function setDefaultCollision(kind: CollisionKind | 'unmarked') {
+  collisionDefault = kind;
+}
+
+function tagMesh(m: THREE.Mesh) {
+  const kind = collisionStack[collisionStack.length - 1] ?? collisionDefault;
+  m.userData.collision = kind;
+}
+
 /** Add a mesh with position, scale and optional rotation to a parent. */
 export function part(parent: THREE.Object3D, geo: THREE.BufferGeometry, color: string, pos: V3, scale: V3, rot: V3 = [0, 0, 0], emissive = 0): THREE.Mesh {
   const m = new THREE.Mesh(geo, mat(color, emissive));
   m.position.set(...pos);
   m.scale.set(...scale);
   m.rotation.set(...rot);
+  tagMesh(m);
   parent.add(m);
   return m;
 }

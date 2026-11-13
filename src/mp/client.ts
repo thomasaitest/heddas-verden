@@ -17,7 +17,7 @@ export interface MpHost {
   scene: THREE.Scene;
   save: { avatar: Avatar; playerId: string; houses?: { style: HouseStyle }[]; activeHouseId?: string };
   player: { pos: THREE.Vector3; yaw: number; speed: number };
-  mode: 'town' | 'house';
+  mode: 'town' | 'house' | 'cave';
   using: { id: string } | null;
   riding: string | null;
   holding: string | null;
@@ -120,7 +120,9 @@ export class MpClient {
     const place = this.currentPlace();
     const area =
       place === 'house'
-        ? g.visitingOwnerId ?? g.save.playerId
+        ? this.game.mode === 'cave'
+          ? `cave:${g.save.playerId}`
+          : g.visitingOwnerId ?? g.save.playerId
         : null;
 
     if (this.session.active) {
@@ -188,7 +190,7 @@ export class MpClient {
   }
 
   private currentPlace(): PlaceWire {
-    if (this.game.mode === 'house') return 'house';
+    if (this.game.mode === 'house' || this.game.mode === 'cave') return 'house';
     const inside = this.game.town.insideBuilding(this.game.player.pos.x, this.game.player.pos.z);
     if (inside) return inside;
     return 'town';

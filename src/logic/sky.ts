@@ -35,7 +35,7 @@ export const SKY_COLLIDE_MIN_Y = 30;
 export const CLOUDS: readonly CloudDef[] = [
   { id: 'badeland', name: 'Badeland', emoji: '💦', x: -34, z: -12, r: 17, blurb: 'Skli og plask' },
   { id: 'egg', name: 'Regnbueegg', emoji: '🥚', x: 34, z: -12, r: 16, blurb: 'Kjøp og klekk et regnbueegg' },
-  { id: 'fjell', name: 'Fjellskyen', emoji: '⛰️', x: 22, z: 30, r: 20, blurb: 'Hule med klatretau' },
+  { id: 'fjell', name: 'Fjellskyen', emoji: '⛰️', x: 22, z: 30, r: 9, blurb: 'Liten sky. Stor hule inni.' },
   { id: 'skog', name: 'Regnbueskog', emoji: '🌈', x: -24, z: 30, r: 18, blurb: 'Her regner det bucks' },
 ];
 
@@ -83,7 +83,8 @@ export const SUNBEDS: readonly { lx: number; lz: number; rot: number }[] = [
   { lx: 2.1, lz: -3.5, rot: -0.4 },
 ];
 
-/** Steps cut into the mountain slope, in front of the cave. */
+/** Mouth on the little peak. Walking into it opens the inner world. */
+export const CAVE_MOUTH = { lx: 0, lz: 0.85, r: 1.55 };
 export const MOUNTAIN_LEDGES: readonly { lx: number; lz: number; hw: number; hd: number; h: number }[] = [
   { lx: -3.4, lz: -4.4, hw: 1.8, hd: 1.4, h: 0.85 },
   { lx: -2.4, lz: -2.3, hw: 1.7, hd: 1.3, h: 1.65 },
@@ -185,18 +186,11 @@ export function skySolids(): SkySolid[] {
   out.push(circ('egg-post-l', 'egg', -1.7, 1.6, 0.28, 1.2));
   out.push(circ('egg-post-r', 'egg', 1.7, 1.6, 0.28, 1.2));
 
-  // Tunnel cut into the mountain, then a wider room. The mouth at z≈2 stays open.
-  out.push(solid('tunnel-left', 'fjell', -2.35, 4.3, 0.55, 1.9, 3.3));
-  out.push(solid('tunnel-right', 'fjell', 2.35, 4.3, 0.55, 1.9, 3.3));
-  out.push(solid('room-left', 'fjell', -3.9, 8.7, 0.5, 2.15, 3.5));
-  out.push(solid('room-right', 'fjell', 3.9, 8.7, 0.5, 2.15, 3.5));
-  out.push(solid('cave-back', 'fjell', 0, 11.15, 4.2, 0.45, 3.6));
-  out.push(solid('rope-counter', 'fjell', 0, 9.3, 1.15, 0.5, 1.15));
-  // Rock you walk around, not through. Kept off the tunnel and the ledge.
-  out.push(circ('bulk-west', 'fjell', -6.2, 4.2, 2.05, 8));
-  out.push(circ('bulk-east', 'fjell', 6.6, 5.4, 2.15, 7));
-  out.push(circ('peak', 'fjell', 1.4, 12.4, 2.1, 11));
-  out.push(solid('climb-face', 'fjell', -7.3, 0.3, 0.55, 1.3, 4.2));
+  // A small peak. The mouth stays open; the big world is through the portal.
+  out.push(circ('peak', 'fjell', 0, 3.6, 2.05, 6.5));
+  out.push(circ('cheek-l', 'fjell', -3.2, 2.4, 1.15, 4));
+  out.push(circ('cheek-r', 'fjell', 3.2, 2.4, 1.15, 4));
+  out.push(solid('climb-face', 'fjell', -5.2, -1.6, 0.45, 0.9, 3.2));
 
   // Rainbow trees. The middle of the cloud, and every rain coin, stays open.
   FOREST_TREES.forEach(([lx, lz], i) => out.push(circ(`tree-${i}`, 'skog', lx, lz, 0.55, 4.2)));
@@ -217,7 +211,7 @@ export function skySurfaces(): Surface[] {
   return CLOUDS.map((c) => ({ x: c.x, z: c.z, r: c.r - 0.3, top: CLOUD_FLOOR_Y }));
 }
 
-export type SkyZoneKind = 'sky-info' | 'slide' | 'splash' | 'egg' | 'rope' | 'climb' | 'ladder';
+export type SkyZoneKind = 'sky-info' | 'slide' | 'splash' | 'egg' | 'rope' | 'climb' | 'ladder' | 'cave-enter';
 
 export interface SkyZone {
   kind: SkyZoneKind;
@@ -233,15 +227,15 @@ export function skyZones(): SkyZone[] {
   const ladder = worldOnCloud('badeland', LADDER_BASE.lx, LADDER_BASE.lz);
   const pool = worldOnCloud('badeland', 3.2, 2.6);
   const egg = worldOnCloud('egg', 0, 1.2);
-  const rope = worldOnCloud('fjell', 0, 8.2);
   const climb = worldOnCloud('fjell', -5.2, 1.2);
+  const mouth = worldOnCloud('fjell', CAVE_MOUTH.lx, CAVE_MOUTH.lz);
   return [
     { kind: 'sky-info', cloud: null, x: SKY_GATE.x, z: SKY_GATE.z, r: SKY_GATE.r, label: 'Skyverden ☁️' },
     { kind: 'ladder', cloud: 'badeland', x: ladder.x, z: ladder.z, r: 1.35, label: 'Klatre opp stigen 🪜' },
     { kind: 'slide', cloud: 'badeland', x: slide.x, z: slide.z, r: 1.45, label: 'Ta sklien 🛝' },
     { kind: 'splash', cloud: 'badeland', x: pool.x, z: pool.z, r: 2.6, label: 'Plask 💦' },
     { kind: 'egg', cloud: 'egg', x: egg.x, z: egg.z, r: 2.2, label: 'Kjøp regnbueegg 🌈' },
-    { kind: 'rope', cloud: 'fjell', x: rope.x, z: rope.z, r: 1.8, label: 'Kjøp klatretau 🪢' },
+    { kind: 'cave-enter', cloud: 'fjell', x: mouth.x, z: mouth.z, r: CAVE_MOUTH.r, label: 'Gå inn i hulen' },
     { kind: 'climb', cloud: 'fjell', x: climb.x, z: climb.z, r: 1.8, label: 'Klatre 🧗' },
   ];
 }
