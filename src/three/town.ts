@@ -800,6 +800,11 @@ export function buildTown(): Town {
     // Cars (and prams) collide with the whole bench footprint — walkers still use tiny leg solids only.
     vehicleRects.push({ x: seatX, z: seatZ, hw: 1.5, hd: 0.55, rot: sitYaw, h: 1.15 });
   }
+  // Two different posts just inside opposite edges, so the wrap is easy to see.
+  solid(cyl(stat, '#ff7a1a', [SIZE / 2 - 8, 3.2, 6], [0.55, 6.4, 0.55]), 'circle', 0.55, 6.4);
+  sph(stat, '#ff7a1a', [SIZE / 2 - 8, 6.8, 6], [1.5, 1.5, 1.5], undefined, 0.25);
+  solid(cyl(stat, '#2f6bff', [-SIZE / 2 + 8, 3.2, 6], [0.55, 6.4, 0.55]), 'circle', 0.55, 6.4);
+  sph(stat, '#2f6bff', [-SIZE / 2 + 8, 6.8, 6], [1.5, 1.5, 1.5], undefined, 0.2);
   // Walkable mounds. The mesh crest matches hillHeight; trees are kept off the upper slope.
   for (const hill of GROUND_HILLS) {
     const bury = hill.r * 0.55;

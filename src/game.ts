@@ -47,6 +47,8 @@ import {
   skyColliders,
   skyZones,
   ladderPose,
+  mountainLedgeTop,
+  skyHeadroom,
   skyPlatformTop,
   slidePose,
   SKY_COLLIDE_MIN_Y,
@@ -1268,6 +1270,7 @@ export class Game {
         p.pos.y = hill;
         p.vy = 0;
       }
+      this.clampCaveRoof();
     } else if (this.resting) {
       // Seat top is ~0.78; keep feet-origin a bit up so sit pose lands on the plank
       p.pos.set(this.resting.x, 0.18, this.resting.z);
@@ -1310,6 +1313,7 @@ export class Game {
       } else {
         p.grounded = false;
       }
+      this.clampCaveRoof();
       if (mlen > 0.05) p.energy = drainWalk(p.energy, dt, true);
     }
     if (!this.using && !this.resting && !this.sleeping) this.collide();
@@ -1347,7 +1351,7 @@ export class Game {
       this.avatarHolder.scale.setScalar(1);
     }
     if (ride) this.avatarHolder.position.y += ride.rig.seatY * this.actorScale(ride) - 0.95;
-    const slideTilt = this.skyAction?.kind === 'slide' ? slidePose(Math.min(1, this.skyAction.t)).tilt : 0;
+    const slideTilt = this.skyAction?.kind === 'slide' ? 0.22 : 0;
     this.avatarHolder.rotation.set(seat ? seat.tilt : -slideTilt, p.yaw, 0);
     if (seat && seat.tilt !== 0) {
       // lean about the hips, not the feet: shift the origin so the seat stays under the avatar
@@ -1496,9 +1500,22 @@ export class Game {
     if (deck != null) {
       const plat = skyPlatformTop(this.player.pos.x, this.player.pos.z);
       if (plat != null && this.player.pos.y >= plat - 0.85) return plat;
+      const ledge = mountainLedgeTop(this.player.pos.x, this.player.pos.z);
+      if (ledge != null && this.player.pos.y >= ledge - 0.9) return ledge;
       return deck;
     }
     return hillHeight(this.player.pos.x, this.player.pos.z);
+  }
+
+  /** Keep the head under the cave roof. Walls already stop a sideways step. */
+  private clampCaveRoof() {
+    const roof = skyHeadroom(this.player.pos.x, this.player.pos.z);
+    if (roof == null) return;
+    const maxFeet = roof - 1.65;
+    if (this.player.pos.y > maxFeet) {
+      this.player.pos.y = maxFeet;
+      if (this.player.vy > 0) this.player.vy = 0;
+    }
   }
 
   private clockNow(): number {

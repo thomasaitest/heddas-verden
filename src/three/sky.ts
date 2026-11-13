@@ -107,18 +107,19 @@ function stripedRing(parent: THREE.Object3D, pos: [number, number, number]) {
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.wrapS = THREE.RepeatWrapping;
-  const mesh = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.14, 10, 28), new THREE.MeshLambertMaterial({ map: tex }));
+  const mesh = new THREE.Mesh(new THREE.TorusGeometry(0.95, 0.22, 12, 32), new THREE.MeshLambertMaterial({ map: tex }));
   mesh.position.set(...pos);
   mesh.rotation.x = Math.PI / 2;
   parent.add(mesh);
 }
 
 function sunbed(parent: THREE.Object3D, x: number, z: number, rot: number) {
-  rbox(parent, '#fff7ef', [x, 0.28, z], [1.55, 0.12, 0.72], [0, rot, 0]);
-  rbox(parent, '#ff8fb1', [x, 0.4, z], [1.4, 0.08, 0.6], [0, rot, 0]);
   const fx = Math.sin(rot);
   const fz = Math.cos(rot);
-  box(parent, '#ffe08a', [x - fx * 0.62, 0.62, z - fz * 0.62], [0.7, 0.42, 0.1], [0, rot, 0]);
+  rbox(parent, '#f4fbff', [x, 0.32, z], [2.15, 0.16, 0.95], [0, rot, 0]);
+  rbox(parent, '#ff5b8a', [x + fx * 0.15, 0.46, z + fz * 0.15], [1.7, 0.1, 0.78], [0, rot, 0]);
+  rbox(parent, '#ffe14d', [x - fx * 0.72, 0.58, z - fz * 0.72], [0.55, 0.16, 0.7], [0, rot, 0]);
+  box(parent, '#3fa4ff', [x - fx * 0.95, 0.85, z - fz * 0.95], [0.16, 0.7, 0.95], [0.4, rot, 0]);
 }
 
 function badeland(parent: THREE.Group): THREE.Mesh {
@@ -143,15 +144,15 @@ function badeland(parent: THREE.Group): THREE.Mesh {
   box(g, '#ffffff', [px + pw / 2, 0.28, pz], [0.38, 0.38, pd]);
   cyl(g, '#ffe08a', [px - 2.6, 0.45, pz + 0.4], [0.12, 0.9, 0.12]);
   for (const y of [0.15, 0.45, 0.75]) box(g, '#ffffff', [px - 2.35, y, pz + 0.4], [0.45, 0.08, 0.28]);
-  stripedRing(g, [px + 1.4, 0.36, pz - 0.5]);
+  stripedRing(g, [px, 0.42, pz]);
   sph(g, '#ffe14d', [px - 1.2, 0.4, pz + 1.5], [0.55, 0.55, 0.55], undefined, 0.15);
   sph(g, '#ff5b6e', [px - 1.05, 0.48, pz + 1.65], [0.22, 0.22, 0.22]);
 
-  rbox(g, '#ff8fb1', [-7.05, 1.75, -2.85], [1.7, 3.5, 1.7]);
-  rbox(g, '#ffe066', [SLIDE_START.lx, PLATFORM_TOP + 0.1, SLIDE_START.lz], [2.2, 0.22, 2.0]);
-  cyl(g, '#ffffff', [LADDER_BASE.lx - 0.38, 1.55, LADDER_BASE.lz], [0.1, 3.1, 0.1]);
-  cyl(g, '#ffffff', [LADDER_BASE.lx + 0.38, 1.55, LADDER_BASE.lz], [0.1, 3.1, 0.1]);
-  for (let i = 0; i < 6; i++) box(g, '#ffe08a', [LADDER_BASE.lx, 0.35 + i * 0.48, LADDER_BASE.lz], [0.78, 0.08, 0.16]);
+  rbox(g, '#3f7fd6', [-7.05, 1.7, -3.15], [1.05, 3.4, 1.05]);
+  rbox(g, '#ffe066', [SLIDE_START.lx, PLATFORM_TOP + 0.08, SLIDE_START.lz], [2.3, 0.2, 2.05]);
+  cyl(g, '#ffffff', [LADDER_BASE.lx - 0.55, 1.6, LADDER_BASE.lz], [0.16, 3.3, 0.16]);
+  cyl(g, '#ffffff', [LADDER_BASE.lx + 0.55, 1.6, LADDER_BASE.lz], [0.16, 3.3, 0.16]);
+  for (let i = 0; i < 7; i++) box(g, '#ff9a1a', [LADDER_BASE.lx, 0.28 + i * 0.42, LADDER_BASE.lz], [1.15, 0.12, 0.22]);
   {
     const a = slidePose(0.08);
     const b = slidePose(0.62);
@@ -204,37 +205,54 @@ function mountain(parent: THREE.Group) {
   const g = cloudGroup('fjell');
   cloudMass(g, cloudById('fjell').r, '#e7eef8', '#d5dbe6');
   cyl(g, '#d7dee8', [0, 0.06, 1.2], [14, 0.12, 12]);
-  const rock = '#8b93a3';
-  const rockDark = '#6d7686';
-  // Rocky mass behind and beside the mouth. The opening itself stays empty.
-  cone(g, rock, [1.2, 6.2, 10.2], [9.5, 12.4, 9.2]);
-  cone(g, '#f4f7fb', [1.2, 11.6, 10.2], [3.2, 2.4, 3.2]);
-  cone(g, rockDark, [-4.2, 4.4, 9.4], [5.6, 8.2, 5.4]);
-  sph(g, '#9aa3b2', [5.2, 2.2, 6.4], [3.2, 2.6, 3.2]);
-  sph(g, rockDark, [-6.2, 1.8, 5.2], [2.6, 2.2, 2.4]);
-  // Open arch. The hole is empty: you see the lit room and the rope coils through it.
-  sph(g, rock, [-3.3, 1.35, 2.35], [2.2, 2.7, 1.8]);
-  sph(g, rock, [3.3, 1.35, 2.35], [2.2, 2.7, 1.8]);
-  sph(g, rockDark, [-1.7, 2.85, 2.4], [1.7, 1.35, 1.5]);
-  sph(g, rockDark, [1.7, 2.85, 2.4], [1.7, 1.35, 1.5]);
-  sph(g, rock, [0, 3.45, 2.45], [2.2, 1.15, 1.6]);
-  box(g, rock, [-4.3, 1.8, 5], [1.1, 3.6, 5.4]);
-  box(g, rock, [4.3, 1.8, 5], [1.1, 3.6, 5.4]);
-  box(g, rockDark, [0, 1.8, 7.5], [8.4, 3.6, 1]);
-  box(g, '#e7c49a', [0, 0.1, 5], [6.4, 0.16, 4.8], undefined, 0.12);
-  box(g, '#6a5648', [0, 3.2, 5], [6.2, 0.28, 4.6]);
-  sph(g, '#ffe08a', [-2.3, 2.2, 3.5], [0.32, 0.32, 0.32], undefined, 0.7);
-  sph(g, '#ffe08a', [2.3, 2.1, 5.8], [0.26, 0.26, 0.26], undefined, 0.65);
-  rbox(g, '#e0a15c', [0, 0.72, 6.15], [2.5, 1.2, 0.95], undefined, 0.08);
-  for (const x of [-0.7, 0, 0.7]) {
-    part(g, G.torus(), '#f0b14a', [x, 1.45, 5.85], [0.85, 0.85, 0.6], [Math.PI / 2, 0, 0], 0.2);
+  const rock = '#7e8794';
+  const rockDark = '#5e6774';
+  // One sloping mass. The mouth is a gap in the front slope, not a hut stood in front.
+  const lobes: [number, number, number, number, number, number, string][] = [
+    [-4.8, 2.6, 4.2, 5.6, 5.2, 6.8, rock],
+    [5.1, 2.8, 4.8, 5.8, 5.6, 7.0, rockDark],
+    [0.1, 4.7, 3.5, 4.4, 2.0, 2.6, rock],
+    [0.4, 4.6, 9.2, 9.2, 8.2, 7.6, '#6d7684'],
+    [-2.2, 6.2, 11.0, 5.4, 6.4, 5.2, rock],
+    [3.2, 6.8, 11.6, 4.8, 7.4, 4.6, '#8b93a0'],
+    [-0.4, 9.4, 12.2, 3.2, 3.6, 3.0, '#f7fbff'],
+    [-2.6, 8.2, 11.6, 2.4, 2.2, 2.2, '#ffffff'],
+    [2.8, 8.6, 12.4, 2.2, 2.0, 2.0, '#f4f7fb'],
+  ];
+  cone(g, rock, [-1.6, 6.5, 8.5], [6.5, 13, 6.2]);
+  cone(g, rockDark, [3.4, 5.2, 9.2], [5.2, 10.5, 5]);
+  cone(g, '#f7fbff', [-1.6, 12.2, 8.5], [2.4, 2.6, 2.2]);
+  cone(g, '#ffffff', [3.4, 9.8, 9.2], [1.8, 2.2, 1.8]);
+  for (const [x, y, z, sx, sy, sz, col] of lobes) sph(g, col, [x, y, z], [sx, sy, sz]);
+  // Stone shelves you can walk up, west of the mouth.
+  rbox(g, '#9aa3b0', [-3.4, 0.42, -4.4], [3.6, 0.85, 2.8]);
+  rbox(g, '#8b93a0', [-2.4, 0.82, -2.3], [3.4, 1.65, 2.6]);
+  // Tunnel and room dug into the slope. Walls sit where the colliders are.
+  box(g, '#c4a574', [0, 0.08, 6.4], [3.1, 0.12, 9.2], undefined, 0.08);
+  box(g, rockDark, [-2.35, 1.45, 4.3], [1.1, 2.9, 3.8]);
+  box(g, rockDark, [2.35, 1.45, 4.3], [1.1, 2.9, 3.8]);
+  box(g, rock, [-3.9, 1.55, 8.7], [1.0, 3.1, 4.3]);
+  box(g, rock, [3.9, 1.55, 8.7], [1.0, 3.1, 4.3]);
+  box(g, rockDark, [0, 1.6, 11.15], [8.2, 3.2, 0.9]);
+  box(g, '#4a4038', [0, 2.55, 4.3], [3.0, 0.28, 3.6]);
+  box(g, '#4a4038', [0, 2.8, 8.6], [6.4, 0.28, 4.4]);
+  for (const [x, z] of [[-1.35, 3.2], [1.35, 5.4], [-2.6, 7.6], [2.6, 9.4]] as const) {
+    cyl(g, '#6a4a32', [x, 1.15, z], [0.08, 1.1, 0.08]);
+    sph(g, '#ff9a3c', [x, 1.85, z], [0.22, 0.28, 0.22], undefined, 0.85);
   }
-  part(g, G.torus(), '#f0b14a', [0, 1.25, 3.5], [1.35, 1.35, 0.7], [Math.PI / 2, 0.5, 0], 0.25);
-  cyl(g, '#8a5a3c', [0.85, 1.15, 6.55], [0.08, 0.7, 0.08]);
-  const lamp = new THREE.PointLight('#ffd8a8', 2.4, 16, 1.4);
-  lamp.position.set(0, 2.4, 5.1);
+  sph(g, '#9af6ff', [-1.6, 0.55, 8.2], [0.35, 0.55, 0.35], undefined, 0.55);
+  sph(g, '#d7b4ff', [1.7, 0.4, 9.6], [0.28, 0.42, 0.28], undefined, 0.45);
+  sph(g, '#fff4c2', [0.4, 0.35, 7.4], [0.22, 0.32, 0.22], undefined, 0.4);
+  rbox(g, '#e0a15c', [0, 0.62, 9.3], [2.3, 1.15, 0.95], undefined, 0.08);
+  for (const x of [-0.65, 0, 0.65]) {
+    part(g, G.torus(), '#f0b14a', [x, 1.35, 9.05], [0.8, 0.8, 0.55], [Math.PI / 2, 0, 0], 0.25);
+  }
+  const lamp = new THREE.PointLight('#ffd2a1', 2.8, 18, 1.2);
+  lamp.position.set(0, 2.1, 8.4);
   g.add(lamp);
-  sph(g, '#ffe7b0', [0, 2.35, 4.2], [0.28, 0.28, 0.28], undefined, 0.8);
+  const mouth = new THREE.PointLight('#ffb26b', 1.2, 8, 1.4);
+  mouth.position.set(0, 1.6, 2.4);
+  g.add(mouth);
   // Climbing face with holds, outside the cave. Matches the solid in logic/sky.ts.
   box(g, '#9aa4b5', [-7.3, 2.1, 0.3], [1.2, 4.2, 2.6]);
   for (const [x, y, z, col] of [

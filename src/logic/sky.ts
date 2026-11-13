@@ -79,8 +79,14 @@ export const PLATFORM_TOP = 3.15;
 export const LADDER_BASE = { lx: -7.05, lz: -1.15 };
 /** Sunbeds beside the pool. rot is yaw. */
 export const SUNBEDS: readonly { lx: number; lz: number; rot: number }[] = [
-  { lx: 7.5, lz: 0.6, rot: 0.5 },
-  { lx: -0.4, lz: 6.2, rot: -0.3 },
+  { lx: 5.6, lz: -1.9, rot: 0.15 },
+  { lx: 2.1, lz: -3.5, rot: -0.4 },
+];
+
+/** Steps cut into the mountain slope, in front of the cave. */
+export const MOUNTAIN_LEDGES: readonly { lx: number; lz: number; hw: number; hd: number; h: number }[] = [
+  { lx: -3.4, lz: -4.4, hw: 1.8, hd: 1.4, h: 0.85 },
+  { lx: -2.4, lz: -2.3, hw: 1.7, hd: 1.3, h: 1.65 },
 ];
 
 export function cloudById(id: CloudId): CloudDef {
@@ -179,19 +185,17 @@ export function skySolids(): SkySolid[] {
   out.push(circ('egg-post-l', 'egg', -1.7, 1.6, 0.28, 1.2));
   out.push(circ('egg-post-r', 'egg', 1.7, 1.6, 0.28, 1.2));
 
-  // Mountain cave: a room with a door toward the cloud centre (−z).
-  out.push(solid('cave-back', 'fjell', 0, 7.4, 4.2, 0.4, 3.2));
-  out.push(solid('cave-left', 'fjell', -4.2, 4.8, 0.4, 2.6, 3.2));
-  out.push(solid('cave-right', 'fjell', 4.2, 4.8, 0.4, 2.6, 3.2));
-  // Wide open mouth: the gap between these jambs is about 5.5 m.
-  out.push(solid('cave-front-l', 'fjell', -3.6, 2.3, 0.85, 0.45, 3.4));
-  out.push(solid('cave-front-r', 'fjell', 3.6, 2.3, 0.85, 0.45, 3.4));
-  out.push(solid('rope-counter', 'fjell', 0, 6.4, 1.3, 0.55, 1.15));
-  // The peak itself, behind the cave, so you walk around it to the climb spot.
-  out.push(circ('peak', 'fjell', 0, 8.6, 2.4, 8));
-  out.push(circ('ridge-l', 'fjell', -6.2, 7.2, 1.7, 6));
-  out.push(circ('ridge-r', 'fjell', 6.4, 6.8, 1.8, 5.5));
-  // Climbing face. The climb spot just east of it stays open.
+  // Tunnel cut into the mountain, then a wider room. The mouth at z≈2 stays open.
+  out.push(solid('tunnel-left', 'fjell', -2.35, 4.3, 0.55, 1.9, 3.3));
+  out.push(solid('tunnel-right', 'fjell', 2.35, 4.3, 0.55, 1.9, 3.3));
+  out.push(solid('room-left', 'fjell', -3.9, 8.7, 0.5, 2.15, 3.5));
+  out.push(solid('room-right', 'fjell', 3.9, 8.7, 0.5, 2.15, 3.5));
+  out.push(solid('cave-back', 'fjell', 0, 11.15, 4.2, 0.45, 3.6));
+  out.push(solid('rope-counter', 'fjell', 0, 9.3, 1.15, 0.5, 1.15));
+  // Rock you walk around, not through. Kept off the tunnel and the ledge.
+  out.push(circ('bulk-west', 'fjell', -6.2, 4.2, 2.05, 8));
+  out.push(circ('bulk-east', 'fjell', 6.6, 5.4, 2.15, 7));
+  out.push(circ('peak', 'fjell', 1.4, 12.4, 2.1, 11));
   out.push(solid('climb-face', 'fjell', -7.3, 0.3, 0.55, 1.3, 4.2));
 
   // Rainbow trees. The middle of the cloud, and every rain coin, stays open.
@@ -229,7 +233,7 @@ export function skyZones(): SkyZone[] {
   const ladder = worldOnCloud('badeland', LADDER_BASE.lx, LADDER_BASE.lz);
   const pool = worldOnCloud('badeland', 3.2, 2.6);
   const egg = worldOnCloud('egg', 0, 1.2);
-  const rope = worldOnCloud('fjell', 0, 5.2);
+  const rope = worldOnCloud('fjell', 0, 8.2);
   const climb = worldOnCloud('fjell', -5.2, 1.2);
   return [
     { kind: 'sky-info', cloud: null, x: SKY_GATE.x, z: SKY_GATE.z, r: SKY_GATE.r, label: 'Skyverden ☁️' },
@@ -286,6 +290,34 @@ export function ladderPose(u: number): { lx: number; ly: number; lz: number; yaw
 export function skyPlatformTop(x: number, z: number): number | null {
   const p = worldOnCloud('badeland', SLIDE_START.lx, SLIDE_START.lz);
   if (Math.hypot(x - p.x, z - p.z) <= 1.35) return CLOUD_FLOOR_Y + PLATFORM_TOP;
+  return null;
+}
+
+/** A stone shelf on the mountain. Higher shelves are further up the slope. */
+export function mountainLedgeTop(x: number, z: number): number | null {
+  const fjell = cloudById('fjell');
+  const lx = x - fjell.x;
+  const lz = z - fjell.z;
+  let best: number | null = null;
+  for (const step of MOUNTAIN_LEDGES) {
+    if (Math.abs(lx - step.lx) <= step.hw && Math.abs(lz - step.lz) <= step.hd) {
+      const top = CLOUD_FLOOR_Y + step.h;
+      if (best == null || top > best) best = top;
+    }
+  }
+  return best;
+}
+
+/**
+ * Highest the feet may be inside the cave. Null in the open.
+ * Standing fits; a jump stops on the roof instead of passing through it.
+ */
+export function skyHeadroom(x: number, z: number): number | null {
+  const fjell = cloudById('fjell');
+  const lx = x - fjell.x;
+  const lz = z - fjell.z;
+  if (Math.abs(lx) < 1.65 && lz > 1.7 && lz < 6.35) return CLOUD_FLOOR_Y + 2.5;
+  if (Math.abs(lx) < 3.3 && lz >= 6.35 && lz < 10.9) return CLOUD_FLOOR_Y + 2.75;
   return null;
 }
 
