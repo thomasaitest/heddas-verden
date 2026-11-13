@@ -166,6 +166,9 @@ export const OUTFIT_PRESETS: { id: string; name: string; patch: Partial<Avatar> 
   { id: 'shopper', name: 'Shopper', patch: { hat: 'ingen', shirt: '#ffe066', print: 'hjerte', pants: '#ff4f7f', bottom: 'miniskjort', shoes: '#ffffff', shoeStyle: 'sneakers', accessory: 'veske-hjerte', hair: 'hestehale', hairColor: '#a0632f' } },
 ];
 
+/** Standing body, arm included: shoulder at 0.72 plus half a sleeve (0.22). */
+export const AVATAR_BODY_R = 0.96;
+
 export function randomAvatar(rng: Rng): Avatar {
   return {
     skin: pick(rng() < 0.9 ? SKIN.slice(0, NATURAL_SKIN) : SKIN.slice(NATURAL_SKIN), rng),

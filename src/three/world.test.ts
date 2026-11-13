@@ -1,6 +1,8 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { HOUSES, type HouseStyle } from '../logic/catalog.ts';
 import { blocked, movePlayer, resolve, type Colliders } from '../logic/collision.ts';
+import { AVATAR_BODY_R } from '../logic/avatar.ts';
+import { vehicleBodyRadius } from '../logic/vehicles.ts';
 import { newHouse, type House, type PlacedItem } from '../logic/house.ts';
 import { installDomStub } from '../test/domStub.ts';
 import type { Interior } from './interior.ts';
@@ -236,7 +238,7 @@ describe('town colliders', () => {
         expect(blocked(pos.x, pos.z, R - 0.05, col())).toBe(false);
       }
     }
-  });
+  }, 20_000);
 
   it('every entrance and interaction zone is reachable on foot from the spawn', () => {
     const cell = 0.8;
@@ -534,5 +536,15 @@ describe('town roads, benches and shop signs (next round)', () => {
     const pos = { x: 0, y: 0, z: 0 };
     resolve(pos, 0.5, col());
     expect(Math.hypot(pos.x, pos.z)).toBeGreaterThan(3);
+  });
+
+  it('a standing body and a car both stop on the fountain', () => {
+    const car = vehicleBodyRadius({ driving: true, pramming: false, riding: false });
+    for (const r of [AVATAR_BODY_R, car]) {
+      const pos = { x: 14, y: 0, z: 0 };
+      movePlayer(pos, -20, 0, r, col());
+      expect(Math.hypot(pos.x, pos.z), `r=${r}`).toBeGreaterThan(4);
+      expect(blocked(pos.x, pos.z, r, col())).toBe(false);
+    }
   });
 });

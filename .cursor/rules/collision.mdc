@@ -5,10 +5,11 @@ alwaysApply: true
 
 # Kollisjon
 
-Ingenting skal gå gjennom et fast objekt: spiller, kjæledyr, biler og nye ting.
+Ingenting skal gå gjennom et fast objekt. Det gjelder bakken, byen, butikkene, huset, bilene, kjæledyrene, andre spillere, alle skyene og hulen.
 
+- Gående radius er `AVATAR_BODY_R` (armen er med). Ikke bruk en mindre sirkel mot synlige steiner.
 - Merk hver nye mesh med `withCollision('solid' | 'passable' | 'surface')`.
 - `passable` er bare for ting man skal kunne gå gjennom, som gress, blomster, lys og skilt.
-- `solid()` gjør en mesh om til en collider. Hulen leser disse i tillegg til veggene i `caveColliders()`.
-- By og skyer har egne lister. Et nytt fast objekt der trenger både en mesh og en collider, og en test som prøver å gå gjennom det.
-- Tester som dekker dette ligger i `src/logic/cave.test.ts`, `src/logic/sky.test.ts` og `src/three/cave.collision.test.ts`, og de kjører med `npm test` i CI.
+- `solid()` gjør en mesh om til en collider.
+- By, skyer og interiør har egne lister. Et nytt fast objekt der trenger både en mesh og en collider, og en test som prøver å gå gjennom det med kroppens radius.
+- Tester: `src/three/world.test.ts`, `src/logic/sky.test.ts`, `src/logic/cave.test.ts`, `src/three/cave.collision.test.ts`. De kjører med `npm test` i CI.

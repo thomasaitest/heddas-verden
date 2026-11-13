@@ -1,5 +1,6 @@
 /** Cars and prams (vogner): ownership helpers and movement speeds. */
 
+import { AVATAR_BODY_R } from './avatar.ts';
 import { CAR_BY_ID, PET_SHOP_BY_ID, type CarItem, type PetShopItem } from './catalog.ts';
 import { SPECIES_BY_ID, type BodyType } from './pets.ts';
 import type { SaveData } from './save.ts';
@@ -57,7 +58,8 @@ export function vehicleBodyRadius(opts: { driving: boolean; pramming: boolean; r
   if (opts.driving) return 2.45;
   if (opts.pramming) return 1.35;
   if (opts.riding) return 1.3;
-  return 0.55;
+  // Arms stick out past the old 0.55 circle, so limbs stayed inside rocks.
+  return AVATAR_BODY_R;
 }
 
 /** Convertible / family cabin: pets must stay inside the door line on the seat cushion. */

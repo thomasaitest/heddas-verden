@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { blocked, movePlayer } from './collision.ts';
+import { AVATAR_BODY_R } from './avatar.ts';
 import { buyAndHatch, buyRope, climbWithRope, collectSkyCoin } from './economy.ts';
 import { freshSave, parseSave, START_BUCKS } from './save.ts';
 import { seeded } from './rng.ts';
@@ -93,6 +94,9 @@ describe('sky clouds', () => {
     const rock = { x: fjell.x, y: CLOUD_FLOOR_Y, z: fjell.z + 6 };
     movePlayer(rock, 0, -4, R, cols);
     expect(rock.z).toBeGreaterThan(fjell.z + 3.6);
+    const body = { x: fjell.x, y: CLOUD_FLOOR_Y, z: fjell.z + 8 };
+    movePlayer(body, 0, -8, AVATAR_BODY_R, cols);
+    expect(Math.hypot(body.x - fjell.x, body.z - (fjell.z + 3.6))).toBeGreaterThan(AVATAR_BODY_R);
     const low = MOUNTAIN_LEDGES[0];
     const high = MOUNTAIN_LEDGES[1];
     expect(mountainLedgeTop(fjell.x + high.lx, fjell.z + high.lz)!).toBeGreaterThan(

@@ -34,7 +34,7 @@ import { buildTown, type Town, type Zone } from './three/town.ts';
 import { buildSky, type SkyWorld } from './three/sky.ts';
 import { buildCave, type CaveWorld } from './three/cave.ts';
 import { collectColliders } from './three/colliders.ts';
-import { CAVE_EXIT, CAVE_R, CAVE_ROPE, CAVE_SPAWN, caveColliders, inCave } from './logic/cave.ts';
+import { CAVE_CEILING, CAVE_EXIT, CAVE_ROPE, CAVE_SPAWN, caveColliders, inCave } from './logic/cave.ts';
 import { CAVE_MOUTH } from './logic/sky.ts';
 import {
   CLOUD_FLOOR_Y,
@@ -626,16 +626,42 @@ export class Game {
     this.updateHud();
   }
 
+  private veilEl: HTMLDivElement | null = null;
+  private veil = 0;
+  private veilTo = 0;
+  private veilSwap: (() => void) | null = null;
+
+  /** Black veil driven by game time, so a frame-by-frame recording still shows the fade. */
   private fade(then: () => void) {
-    const veil = document.createElement('div');
-    veil.className = 'realm-fade';
-    document.body.append(veil);
-    requestAnimationFrame(() => veil.classList.add('on'));
-    setTimeout(() => {
-      then();
-      veil.classList.remove('on');
-      setTimeout(() => veil.remove(), 420);
-    }, 380);
+    if (!this.veilEl) {
+      const veil = document.createElement('div');
+      veil.className = 'realm-fade';
+      veil.style.transition = 'none';
+      veil.style.opacity = '0';
+      document.body.append(veil);
+      this.veilEl = veil;
+    }
+    this.veilTo = 1;
+    this.veilSwap = then;
+  }
+
+  private stepVeil(dt: number) {
+    if (!this.veilEl && this.veil <= 0 && this.veilTo <= 0) return;
+    const step = dt / 0.55;
+    if (this.veil < this.veilTo) this.veil = Math.min(this.veilTo, this.veil + step);
+    else this.veil = Math.max(this.veilTo, this.veil - step);
+    if (this.veilEl) this.veilEl.style.opacity = String(this.veil);
+    if (this.veilSwap && this.veil >= 0.98) {
+      const job = this.veilSwap;
+      this.veilSwap = null;
+      this.veilTo = 0;
+      job();
+    }
+    if (this.veilEl && this.veil < 0.02 && this.veilTo === 0 && !this.veilSwap) {
+      this.veilEl.remove();
+      this.veilEl = null;
+      this.veil = 0;
+    }
   }
 
   /** Step through the little mouth into the large cave. Pets come along. */
@@ -656,15 +682,15 @@ export class Game {
       this.town.group.visible = false;
       this.sky.group.visible = false;
       this.cave.group.visible = true;
-      this.scene.background = new THREE.Color('#140e1c');
-      this.scene.fog = new THREE.Fog('#140e1c', 22, 78);
+      this.scene.background = new THREE.Color('#6d5c68');
+      this.scene.fog = new THREE.Fog('#6d5c68', 45, 130);
       const spot = at && inCave(at.x, at.z, 2) ? at : CAVE_SPAWN;
       this.player.pos.set(spot.x, 0, spot.z);
       this.player.vy = 0;
       this.player.yaw = 0;
       this.cam.yaw = Math.PI;
-      this.cam.pitch = 0.42;
-      this.cam.dist = 14;
+      this.cam.pitch = 0.22;
+      this.cam.dist = 12;
       this.actors.forEach((a) => a.pos.set(this.player.pos.x + (this.rng() - 0.5) * 2, 0, this.player.pos.z - 2));
       this.save = { ...this.save, skyRealm: 'cave', caveX: this.player.pos.x, caveZ: this.player.pos.z };
       this.dirty = true;
@@ -1285,13 +1311,14 @@ export class Game {
   /** Advance the game by dt seconds (also used by tests/screenshots). */
   step(dt: number) {
     this.time += dt;
+    this.stepVeil(dt);
     const t = this.time;
     const now = Date.now();
     const inp = this.input.poll();
     if (this.using && wantsOff(inp.move, inp.jumpPressed)) this.stopUse();
     const moveIntent = Math.hypot(inp.move.x, inp.move.y);
     if (this.sleeping && shouldWakeFromBed(moveIntent, inp.jumpPressed)) this.wakeFromBed();
-    const frozen = this.paused || this.editingAvatar || !!this.using || !!this.resting || !!this.sleeping;
+    const frozen = this.paused || this.editingAvatar || !!this.using || !!this.resting || !!this.sleeping || this.veil > 0.08;
 
     // needs tick
     if (now - this.lastTickAt > 1000) {
@@ -1620,11 +1647,7 @@ export class Game {
   /** Keep the head under a roof. The inner cave is a dome; the little peak has a low tunnel. */
   private clampCaveRoof() {
     if (this.mode === 'cave') {
-      const d = Math.hypot(this.player.pos.x, this.player.pos.z);
-      const radius = CAVE_R * 0.9;
-      const inside = Math.min(d, radius - 0.4);
-      const roof = Math.sqrt(Math.max(1, radius * radius - inside * inside));
-      const maxFeet = Math.max(0, roof - 1.7);
+      const maxFeet = CAVE_CEILING - 1.7;
       if (this.player.pos.y > maxFeet) {
         this.player.pos.y = maxFeet;
         if (this.player.vy > 0) this.player.vy = 0;
@@ -1657,6 +1680,11 @@ export class Game {
     const seen = collectColliders(this.cave.group);
     this.caveCols = { rects: [...base.rects, ...seen.rects], circles: [...base.circles, ...seen.circles] };
     return this.caveCols;
+  }
+
+  /** Colliders for whoever shares the player's room: town, house, sky or cave. */
+  solids(): Colliders {
+    return this.colliders();
   }
 
   private worldColliders(): Colliders {
@@ -2036,7 +2064,10 @@ export class Game {
     let inPlay = false;
     if (this.mode === 'cave') {
       if (Math.hypot(p.x - CAVE_EXIT.x, p.z - CAVE_EXIT.z) < CAVE_EXIT.r) near = { kind: 'cave-exit', label: 'Gå ut av hulen' };
-      else if (Math.hypot(p.x - CAVE_ROPE.x, p.z - CAVE_ROPE.z) < CAVE_ROPE.r) near = { kind: 'rope', label: 'Kjøp klatretau 🪢' };
+      else if (Math.hypot(p.x - CAVE_ROPE.x, p.z - CAVE_ROPE.z) < CAVE_ROPE.r) {
+        const owned = (this.save.bag.klatretau ?? 0) > 0;
+        near = { kind: 'rope', label: owned ? 'Klatretauet er i sekken 🪢' : 'Kjøp klatretau 🪢' };
+      }
     } else if (this.mode === 'town') {
       let best = Infinity;
       for (const z of this.town.zones) {
