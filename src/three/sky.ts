@@ -5,8 +5,13 @@ import {
   CLOUD_FLOOR_Y,
   CLOUDS,
   FOREST_TREES,
+  LADDER_BASE,
+  PLATFORM_TOP,
   RAIN_COIN_COUNT,
   SKY_GATE,
+  SLIDE_START,
+  SUNBEDS,
+  cloudById,
   rainCoinWorld,
   slidePose,
   type CloudId,
@@ -89,12 +94,39 @@ function cloudGroup(id: CloudId): THREE.Group {
   return g;
 }
 
+function stripedRing(parent: THREE.Object3D, pos: [number, number, number]) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 128;
+  canvas.height = 16;
+  const ctx = canvas.getContext('2d')!;
+  const bands = ['#ff5b6e', '#ffe14d', '#5cc3f2', '#ffffff'];
+  for (let i = 0; i < 16; i++) {
+    ctx.fillStyle = bands[i % bands.length];
+    ctx.fillRect((i * canvas.width) / 16, 0, canvas.width / 16 + 1, canvas.height);
+  }
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
+  const mesh = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.14, 10, 28), new THREE.MeshLambertMaterial({ map: tex }));
+  mesh.position.set(...pos);
+  mesh.rotation.x = Math.PI / 2;
+  parent.add(mesh);
+}
+
+function sunbed(parent: THREE.Object3D, x: number, z: number, rot: number) {
+  rbox(parent, '#fff7ef', [x, 0.28, z], [1.55, 0.12, 0.72], [0, rot, 0]);
+  rbox(parent, '#ff8fb1', [x, 0.4, z], [1.4, 0.08, 0.6], [0, rot, 0]);
+  const fx = Math.sin(rot);
+  const fz = Math.cos(rot);
+  box(parent, '#ffe08a', [x - fx * 0.62, 0.62, z - fz * 0.62], [0.7, 0.42, 0.1], [0, rot, 0]);
+}
+
 function badeland(parent: THREE.Group): THREE.Mesh {
   const g = cloudGroup('badeland');
-  cloudMass(g, 13, '#b9f4ff', '#ffe7c2');
-  cyl(g, '#ffe7c2', [1.2, 0.06, 0.6], [11.5, 0.12, 9.5]);
-  const px = 2.4;
-  const pz = 2.2;
+  cloudMass(g, cloudById('badeland').r, '#b9f4ff', '#ffe7c2');
+  cyl(g, '#ffe7c2', [1.2, 0.06, 0.6], [12.5, 0.12, 10.5]);
+  const px = 3.2;
+  const pz = 2.6;
   const pw = 7.4;
   const pd = 5.6;
   box(g, '#1d6fbe', [px, -0.02, pz], [pw, 0.45, pd]);
@@ -111,14 +143,15 @@ function badeland(parent: THREE.Group): THREE.Mesh {
   box(g, '#ffffff', [px + pw / 2, 0.28, pz], [0.38, 0.38, pd]);
   cyl(g, '#ffe08a', [px - 2.6, 0.45, pz + 0.4], [0.12, 0.9, 0.12]);
   for (const y of [0.15, 0.45, 0.75]) box(g, '#ffffff', [px - 2.35, y, pz + 0.4], [0.45, 0.08, 0.28]);
-  part(g, G.torus(), '#ff8ad8', [px + 1.5, 0.32, pz - 0.6], [1.1, 1.1, 1.1], [Math.PI / 2, 0, 0], 0.1);
+  stripedRing(g, [px + 1.4, 0.36, pz - 0.5]);
   sph(g, '#ffe14d', [px - 1.2, 0.4, pz + 1.5], [0.55, 0.55, 0.55], undefined, 0.15);
   sph(g, '#ff5b6e', [px - 1.05, 0.48, pz + 1.65], [0.22, 0.22, 0.22]);
 
-  rbox(g, '#ff8fb1', [-5.5, 1.9, -1.6], [1.7, 3.8, 1.7]);
-  rbox(g, '#ffe066', [-5.5, 3.9, -1.6], [2.15, 0.28, 2.15]);
-  cyl(g, '#ffffff', [-6.55, 1.7, -1.6], [0.1, 3.4, 0.1]);
-  for (let i = 0; i < 6; i++) cyl(g, '#ffe08a', [-6.55, 0.35 + i * 0.55, -1.6], [0.32, 0.08, 0.32]);
+  rbox(g, '#ff8fb1', [-7.05, 1.75, -2.85], [1.7, 3.5, 1.7]);
+  rbox(g, '#ffe066', [SLIDE_START.lx, PLATFORM_TOP + 0.1, SLIDE_START.lz], [2.2, 0.22, 2.0]);
+  cyl(g, '#ffffff', [LADDER_BASE.lx - 0.38, 1.55, LADDER_BASE.lz], [0.1, 3.1, 0.1]);
+  cyl(g, '#ffffff', [LADDER_BASE.lx + 0.38, 1.55, LADDER_BASE.lz], [0.1, 3.1, 0.1]);
+  for (let i = 0; i < 6; i++) box(g, '#ffe08a', [LADDER_BASE.lx, 0.35 + i * 0.48, LADDER_BASE.lz], [0.78, 0.08, 0.16]);
   {
     const a = slidePose(0.08);
     const b = slidePose(0.62);
@@ -136,8 +169,7 @@ function badeland(parent: THREE.Group): THREE.Mesh {
   cone(g, '#ff5b6e', [6.2, 2.35, -0.4], [1.7, 0.55, 1.7]);
   cyl(g, '#ffffff', [-1.4, 0.7, 5.4], [0.08, 1.4, 0.08]);
   cone(g, '#ffe14d', [-1.4, 1.5, 5.4], [1.35, 0.4, 1.35]);
-  rbox(g, '#ffffff', [5.6, 0.22, 5.1], [1.5, 0.18, 0.7]);
-  rbox(g, '#7cf0ff', [4.2, 0.22, 5.2], [1.5, 0.18, 0.7]);
+  for (const bed of SUNBEDS) sunbed(g, bed.lx, bed.lz, bed.rot);
   cyl(g, '#c88bff', [-2.4, 0.85, 4.6], [0.18, 1.7, 0.18]);
   sph(g, '#e8d4ff', [-2.4, 1.8, 4.6], [0.55, 0.55, 0.55], undefined, 0.25);
   sign(g, 'Badeland', 4.6, -7.2, '#3fa4ff');
@@ -147,7 +179,7 @@ function badeland(parent: THREE.Group): THREE.Mesh {
 
 function eggShop(parent: THREE.Group) {
   const g = cloudGroup('egg');
-  cloudMass(g, 12, '#ffd0f4', '#ffe4f6');
+  cloudMass(g, cloudById('egg').r, '#ffd0f4', '#ffe4f6');
   cyl(g, '#ffe4f6', [0, 0.06, 0.8], [8.5, 0.12, 7.2]);
   rbox(g, '#fff7fb', [0, 0.7, 1.6], [4.2, 1.35, 1.35]);
   rbox(g, '#ff4fa8', [0, 1.55, 1.6], [4.8, 0.22, 1.9]);
@@ -170,14 +202,14 @@ function eggShop(parent: THREE.Group) {
 
 function mountain(parent: THREE.Group) {
   const g = cloudGroup('fjell');
-  cloudMass(g, 14, '#e7eef8', '#d5dbe6');
-  cyl(g, '#d7dee8', [0, 0.06, 2.2], [10, 0.12, 9]);
+  cloudMass(g, cloudById('fjell').r, '#e7eef8', '#d5dbe6');
+  cyl(g, '#d7dee8', [0, 0.06, 1.2], [14, 0.12, 12]);
   const rock = '#8b93a3';
   const rockDark = '#6d7686';
   // Rocky mass behind and beside the mouth. The opening itself stays empty.
-  cone(g, rock, [2.2, 4.6, 9.4], [6.2, 8.2, 6.2]);
-  cone(g, '#f4f7fb', [2.2, 8.2, 9.4], [2.4, 1.8, 2.4]);
-  cone(g, rockDark, [-3.4, 3.2, 8.6], [4.4, 5.6, 4.4]);
+  cone(g, rock, [1.2, 6.2, 10.2], [9.5, 12.4, 9.2]);
+  cone(g, '#f4f7fb', [1.2, 11.6, 10.2], [3.2, 2.4, 3.2]);
+  cone(g, rockDark, [-4.2, 4.4, 9.4], [5.6, 8.2, 5.4]);
   sph(g, '#9aa3b2', [5.2, 2.2, 6.4], [3.2, 2.6, 3.2]);
   sph(g, rockDark, [-6.2, 1.8, 5.2], [2.6, 2.2, 2.4]);
   // Open arch. The hole is empty: you see the lit room and the rope coils through it.
@@ -199,24 +231,28 @@ function mountain(parent: THREE.Group) {
   }
   part(g, G.torus(), '#f0b14a', [0, 1.25, 3.5], [1.35, 1.35, 0.7], [Math.PI / 2, 0.5, 0], 0.25);
   cyl(g, '#8a5a3c', [0.85, 1.15, 6.55], [0.08, 0.7, 0.08]);
-  // Climbing face with holds, outside the cave.
-  box(g, '#9aa4b5', [-6.4, 2.1, 0.4], [1.5, 4.2, 3.2]);
+  const lamp = new THREE.PointLight('#ffd8a8', 2.4, 16, 1.4);
+  lamp.position.set(0, 2.4, 5.1);
+  g.add(lamp);
+  sph(g, '#ffe7b0', [0, 2.35, 4.2], [0.28, 0.28, 0.28], undefined, 0.8);
+  // Climbing face with holds, outside the cave. Matches the solid in logic/sky.ts.
+  box(g, '#9aa4b5', [-7.3, 2.1, 0.3], [1.2, 4.2, 2.6]);
   for (const [x, y, z, col] of [
     [-5.7, 1.1, -0.5, '#ff5b6e'],
     [-5.7, 1.9, 0.4, '#ffe14d'],
     [-5.7, 2.7, 1.2, '#5cc3f2'],
     [-5.7, 3.5, 0.1, '#7dff8a'],
   ] as const) {
-    sph(g, col, [x, y, z], [0.28, 0.22, 0.28]);
+    sph(g, col, [x + 0.5, y, z], [0.28, 0.22, 0.28]);
   }
-  cyl(g, '#e6b15a', [-5.7, 2.4, 0.4], [0.08, 3.2, 0.08]);
+  cyl(g, '#e6b15a', [-6.7, 2.4, 0.3], [0.08, 3.2, 0.08]);
   sign(g, 'Fjellskyen', 5.4, -7.4, '#6b7c93');
   parent.add(g);
 }
 
 function forest(parent: THREE.Group, coins: THREE.Object3D[], sparks: THREE.Object3D[]) {
   const g = cloudGroup('skog');
-  cloudMass(g, 15, '#d9ffd0', '#b6f0a8');
+  cloudMass(g, cloudById('skog').r, '#d9ffd0', '#b6f0a8');
   cyl(g, '#c6f2b4', [0, 0.05, 0], [8, 0.1, 8]);
   FOREST_TREES.forEach(([x, z], i) => {
     const h = 1.8 + (i % 4) * 0.45;

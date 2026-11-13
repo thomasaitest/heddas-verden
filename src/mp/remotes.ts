@@ -27,6 +27,7 @@ function avatarKey(a: { skin: string; hair: string; hairColor: string; face: str
   return JSON.stringify(a);
 }
 
+import { nearestCopy } from '../logic/wrap.ts';
 import { ridePetScale, rideSeatOffset } from './ride.ts';
 export { ridePetScale, rideSeatOffset };
 
@@ -107,6 +108,7 @@ export class RemotePlayers {
     seatWorld: ((id: string, u: number) => { x: number; y: number; z: number; yaw: number; pitch?: number } | null) | null,
     localPlace: PlaceWire = 'town',
     localArea: string | null = null,
+    viewer: { x: number; z: number; size: number } | null = null,
   ) {
     const live = new Set<string>();
     for (const r of session.tickRemotes(now)) {
@@ -154,6 +156,12 @@ export class RemotePlayers {
           z = seat.z;
           yaw = seat.yaw;
         }
+      }
+
+      if (viewer && !hidden && r.place === 'town') {
+        const near = nearestCopy(x, z, viewer.x, viewer.z, viewer.size);
+        x = near.x;
+        z = near.z;
       }
 
       const mount: MountWire = r.mount ?? 'none';

@@ -23,13 +23,19 @@ import {
   formatCountdown,
   freshRain,
   groundShopEggs,
+  LADDER_BASE,
+  ladderPose,
   normalizeRain,
+  PLATFORM_TOP,
   rainCoinWorld,
   rainView,
   skyAccessText,
   skyColliders,
+  skyPlatformTop,
   skyZones,
+  SLIDE_START,
   slidePose,
+  SUNBEDS,
   useSkyColliders,
 } from './sky.ts';
 
@@ -42,6 +48,16 @@ describe('sky clouds', () => {
     expect(CLOUDS.map((c) => c.id)).toEqual(['badeland', 'egg', 'fjell', 'skog']);
     expect(new Set(CLOUDS.map((c) => `${c.x},${c.z}`)).size).toBe(4);
     expect(CLOUD_FLOOR_Y).toBeGreaterThan(30);
+    expect(Math.min(...CLOUDS.map((c) => c.r))).toBeGreaterThanOrEqual(16);
+    expect(Math.max(...CLOUDS.map((c) => Math.hypot(c.x, c.z)))).toBeLessThan(48);
+    for (let i = 0; i < CLOUDS.length; i++) {
+      for (let j = i + 1; j < CLOUDS.length; j++) {
+        const a = CLOUDS[i];
+        const b = CLOUDS[j];
+        const gap = Math.hypot(a.x - b.x, a.z - b.z) - a.r - b.r;
+        expect(gap, `${a.id}-${b.id}`).toBeGreaterThan(6);
+      }
+    }
     expect(skyAccessText(false)).toMatch(/øve/);
     expect(skyAccessText(false)).toMatch(/kan ikke kjøpes/);
     expect(skyAccessText(true)).toMatch(/fly opp/);
@@ -93,6 +109,28 @@ describe('sky clouds', () => {
     expect(Math.hypot(b.x + end.lx - splash.x, b.z + end.lz - splash.z)).toBeLessThan(splash.r);
     expect(cloudAtXZ(slide.x, slide.z)?.id).toBe('badeland');
     expect(cloudAtXZ(splash.x, splash.z)?.id).toBe('badeland');
+    const b2 = CLOUDS.find((c) => c.id === 'badeland')!;
+    for (const bed of SUNBEDS) expect(blocked(b2.x + bed.lx, b2.z + bed.lz, R, cols, CLOUD_FLOOR_Y), 'sunbed').toBe(true);
+    expect(blocked(b2.x + 6.2, b2.z - 0.4, R, cols, CLOUD_FLOOR_Y), 'umbrella').toBe(true);
+    expect(blocked(b2.x + LADDER_BASE.lx, b2.z + LADDER_BASE.lz, R, cols, CLOUD_FLOOR_Y), 'ladder foot').toBe(false);
+  });
+
+  it('the ladder ends on the platform and the rider faces along the chute', () => {
+    const foot = ladderPose(0);
+    const top = ladderPose(1);
+    expect(foot.ly).toBeLessThan(0.05);
+    expect(top.ly).toBeCloseTo(PLATFORM_TOP);
+    expect(Math.hypot(top.lx - SLIDE_START.lx, top.lz - SLIDE_START.lz)).toBeLessThan(0.05);
+    const early = slidePose(0.15);
+    const later = slidePose(0.16);
+    const along = Math.atan2(later.lx - early.lx, later.lz - early.lz);
+    const yawGap = Math.atan2(Math.sin(early.yaw - along), Math.cos(early.yaw - along));
+    expect(Math.abs(yawGap)).toBeLessThan(0.05);
+    expect(early.tilt).toBeGreaterThan(0.25);
+    expect(early.ly).toBeGreaterThan(slidePose(0.85).ly);
+    const b = CLOUDS.find((c) => c.id === 'badeland')!;
+    expect(skyPlatformTop(b.x + SLIDE_START.lx, b.z + SLIDE_START.lz)).toBe(CLOUD_FLOOR_Y + PLATFORM_TOP);
+    expect(skyPlatformTop(b.x, b.z)).toBeNull();
   });
 
   it('rainbow trees block their trunks and leave the forest middle open', () => {

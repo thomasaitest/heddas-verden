@@ -46,6 +46,8 @@ import {
   skyAccessText,
   skyColliders,
   skyZones,
+  ladderPose,
+  skyPlatformTop,
   slidePose,
   SKY_COLLIDE_MIN_Y,
   useSkyColliders,
@@ -53,6 +55,8 @@ import {
   CLIMB_REWARD,
   RAIN_COIN_COUNT,
 } from './logic/sky.ts';
+import { hillHeight } from './logic/terrain.ts';
+import { moveWrapped, seamColliders, wrapCoord, wrapDelta } from './logic/wrap.ts';
 import { Thumbs } from './thumbs.ts';
 import { button, el, toast } from './ui/dom.ts';
 import { Hud } from './ui/hud.ts';
@@ -172,7 +176,7 @@ export class Game {
   private lastTickAt = 0;
   private stickyNear: Game['nearZone'] = null;
   private stickyNearUntil = 0;
-  private nearZone: Zone | { kind: 'exit'; label: string } | { kind: 'equip'; id: string; label: string } | { kind: 'equip-off'; label: string } | { kind: 'bench'; label: string; x: number; z: number; yaw: number } | { kind: 'bench-off'; label: string } | { kind: 'bed'; label: string; spot: SleepSpot } | { kind: 'bed-off'; label: string } | { kind: 'lock'; label: string } | { kind: 'visit'; label: string; peerId: string; peerName: string } | { kind: 'plaza'; label: string } | { kind: 'mini'; label: string } | { kind: 'vet-heal'; label: string; uid: string } | { kind: 'pet-apple'; label: string; uid: string; x: number; z: number } | { kind: 'pet-fest'; label: string; uid: string } | { kind: 'sky-info' | 'slide' | 'splash' | 'egg' | 'rope' | 'climb'; label: string } | null = null;
+  private nearZone: Zone | { kind: 'exit'; label: string } | { kind: 'equip'; id: string; label: string } | { kind: 'equip-off'; label: string } | { kind: 'bench'; label: string; x: number; z: number; yaw: number } | { kind: 'bench-off'; label: string } | { kind: 'bed'; label: string; spot: SleepSpot } | { kind: 'bed-off'; label: string } | { kind: 'lock'; label: string } | { kind: 'visit'; label: string; peerId: string; peerName: string } | { kind: 'plaza'; label: string } | { kind: 'mini'; label: string } | { kind: 'vet-heal'; label: string; uid: string } | { kind: 'pet-apple'; label: string; uid: string; x: number; z: number } | { kind: 'pet-fest'; label: string; uid: string } | { kind: 'sky-info' | 'slide' | 'splash' | 'egg' | 'rope' | 'climb' | 'ladder'; label: string } | null = null;
   /** The playground piece you are sitting on (swing, slide, seesaw, merry-go-round), if any. */
   using: { id: string; since: number } | null = null;
   private bubbleTex = new Map<string, THREE.Texture>();
@@ -184,7 +188,7 @@ export class Game {
   /** Test-only clock for Skyverden rain. Normal play leaves this null and uses Date.now(). */
   testNow: number | null = null;
   private sky: SkyWorld;
-  private skyAction: { kind: 'slide' | 'climb'; t: number } | null = null;
+  private skyAction: { kind: 'slide' | 'climb' | 'ladder'; t: number } | null = null;
   private lastSplashAt = 0;
   private lastRainToast: number | null = null;
   private skyNoteEl: HTMLElement | null = null;
@@ -764,6 +768,13 @@ export class Game {
       case 'sky-info':
         this.showSkyNote(!!this.mainPet()?.flyable);
         break;
+      case 'ladder':
+        if (!this.skyAction) {
+          this.flying = false;
+          this.skyAction = { kind: 'ladder', t: 0 };
+          toast('Opp stigen! 🪜', 'ok');
+        }
+        break;
       case 'slide':
         if (!this.skyAction) {
           this.flying = false;
@@ -831,23 +842,30 @@ export class Game {
 
   private stepSkyAction(dt: number) {
     if (!this.skyAction) return;
-    const dur = this.skyAction.kind === 'slide' ? 2.6 : 3.2;
+    const kind = this.skyAction.kind;
+    const dur = kind === 'slide' ? 2.6 : kind === 'ladder' ? 1.7 : 3.2;
     this.skyAction.t += dt / dur;
-    const pose = this.skyAction.kind === 'slide' ? slidePose(this.skyAction.t) : climbPose(this.skyAction.t);
-    const cloud = this.skyAction.kind === 'slide' ? 'badeland' : 'fjell';
+    const pose = kind === 'slide' ? slidePose(this.skyAction.t) : kind === 'ladder' ? ladderPose(this.skyAction.t) : climbPose(this.skyAction.t);
+    const cloud = kind === 'climb' ? 'fjell' : 'badeland';
     const w = worldOnCloud(cloud, pose.lx, pose.lz);
     this.player.pos.set(w.x, CLOUD_FLOOR_Y + pose.ly, w.z);
+    if (kind === 'slide') this.player.yaw = slidePose(this.skyAction.t).yaw;
+    else if (kind === 'ladder') this.player.yaw = ladderPose(this.skyAction.t).yaw;
     this.player.grounded = true;
     this.player.vy = 0;
     if (!pose.done) return;
-    if (this.skyAction.kind === 'climb') {
+    if (kind === 'climb') {
       toast(`Du klatret opp fjellet! +${CLIMB_REWARD} bucks`, 'gold');
       sfx.coin();
+      this.player.pos.y = CLOUD_FLOOR_Y;
+    } else if (kind === 'ladder') {
+      this.player.pos.y = CLOUD_FLOOR_Y + pose.ly;
+      toast('Du står øverst. Ta sklien! 🛝', 'ok');
     } else {
       toast('Plask i bassenget! 💦', 'ok');
       sfx.pop();
+      this.player.pos.y = CLOUD_FLOOR_Y;
     }
-    this.player.pos.y = CLOUD_FLOOR_Y;
     this.skyAction = null;
   }
 
@@ -1205,7 +1223,8 @@ export class Game {
     if (this.skyAction && this.mode === 'town') this.stepSkyAction(dt);
     if (!this.skyAction && mlen > 0.05) {
       // move in small steps so nothing thin can be skipped, sliding along whatever we hit
-      movePlayer(p.pos, mx * speed * dt, mz * speed * dt, this.playerRadius(), this.colliders(), this.mode === 'town' ? this.town.size / 2 - 2 : undefined);
+      if (this.mode === 'town') moveWrapped(p.pos, mx * speed * dt, mz * speed * dt, this.playerRadius(), this.worldColliders(), this.town.size);
+      else movePlayer(p.pos, mx * speed * dt, mz * speed * dt, this.playerRadius(), this.colliders());
       if (this.mode === 'house') this.clampPlayerToRoom();
       const targetYaw = Math.atan2(mx, mz);
       let d = targetYaw - p.yaw;
@@ -1241,11 +1260,12 @@ export class Game {
         p.vy = 0;
       }
       const deck = cloudFloorAt(p.pos.x, p.pos.z, p.pos.y);
+      const hill = hillHeight(p.pos.x, p.pos.z);
       if (deck != null && p.pos.y <= deck) {
         p.pos.y = deck;
         p.vy = 0;
-      } else if (p.pos.y <= 0) {
-        p.pos.y = 0;
+      } else if (p.pos.y <= hill) {
+        p.pos.y = hill;
         p.vy = 0;
       }
     } else if (this.resting) {
@@ -1282,7 +1302,8 @@ export class Game {
         if (deck !== null && deck > ground && p.pos.y >= deck - 1.2) ground = deck;
       }
       // walking up/down the stairs keeps you on the ramp; a jump or a fall lands on it
-      if (p.pos.y <= ground || (p.grounded && p.vy <= 0 && p.pos.y - ground < 1.5 && this.mode === 'house')) {
+      const onHill = this.mode === 'town' && !this.flying && p.grounded && p.vy <= 0 && ground < 30 && p.pos.y - ground < 2.4;
+      if (p.pos.y <= ground || (p.grounded && p.vy <= 0 && p.pos.y - ground < 1.5 && this.mode === 'house') || onHill) {
         p.pos.y = ground;
         p.vy = 0;
         p.grounded = true;
@@ -1306,6 +1327,7 @@ export class Game {
       p.pos.y = 0;
       pose = ap.pose === 'dance' ? 'dance' : ap.pose === 'wave' ? 'wave' : 'walk';
     } else if (ride) pose = this.flying ? 'fly' : 'sit';
+    else if (this.skyAction?.kind === 'slide') pose = 'sit';
     else if (this.driving) pose = 'drive';
     else if (this.resting) pose = 'sit';
     else if (this.sleeping) pose = 'sleep';
@@ -1325,7 +1347,8 @@ export class Game {
       this.avatarHolder.scale.setScalar(1);
     }
     if (ride) this.avatarHolder.position.y += ride.rig.seatY * this.actorScale(ride) - 0.95;
-    this.avatarHolder.rotation.set(seat ? seat.tilt : 0, p.yaw, 0);
+    const slideTilt = this.skyAction?.kind === 'slide' ? slidePose(Math.min(1, this.skyAction.t)).tilt : 0;
+    this.avatarHolder.rotation.set(seat ? seat.tilt : -slideTilt, p.yaw, 0);
     if (seat && seat.tilt !== 0) {
       // lean about the hips, not the feet: shift the origin so the seat stays under the avatar
       const hip = SIT_DROP;
@@ -1461,12 +1484,21 @@ export class Game {
 
   /** Ground under any point (for shadows). */
   private groundAt(x: number, y: number, z: number): number {
-    return this.mode === 'house' ? groundHeight(this.interior.layout, x, z, floorOfY(y)) : 0;
+    if (this.mode === 'house') return groundHeight(this.interior.layout, x, z, floorOfY(y));
+    const deck = cloudFloorAt(x, z, y);
+    if (deck != null) return deck;
+    return hillHeight(x, z);
   }
   /** Height of the walkable floor under the player (stairs are a ramp). */
   private groundHere(): number {
     if (this.mode === 'house') return groundHeight(this.interior.layout, this.player.pos.x, this.player.pos.z, floorOfY(this.player.pos.y));
-    return cloudFloorAt(this.player.pos.x, this.player.pos.z, this.player.pos.y) ?? 0;
+    const deck = cloudFloorAt(this.player.pos.x, this.player.pos.z, this.player.pos.y);
+    if (deck != null) {
+      const plat = skyPlatformTop(this.player.pos.x, this.player.pos.z);
+      if (plat != null && this.player.pos.y >= plat - 0.85) return plat;
+      return deck;
+    }
+    return hillHeight(this.player.pos.x, this.player.pos.z);
   }
 
   private clockNow(): number {
@@ -1478,8 +1510,7 @@ export class Game {
     if (this.mode === 'house') return this.riding ? 1.0 : 0.45;
     return vehicleBodyRadius({ driving: !!this.driving, pramming: !!this.pramming, riding: !!this.riding });
   }
-  private colliders(): Colliders {
-    if (this.mode === 'house') return this.interior.collidersFor(this.playerFloor());
+  private worldColliders(): Colliders {
     const sky = useSkyColliders(this.player.pos.y) ? skyColliders() : null;
     if (this.driving || this.pramming) {
       return {
@@ -1490,13 +1521,17 @@ export class Game {
     if (!sky) return this.town;
     return { rects: [...this.town.rects, ...sky.rects], circles: [...this.town.circles, ...sky.circles] };
   }
+  private colliders(): Colliders {
+    if (this.mode === 'house') return this.interior.collidersFor(this.playerFloor());
+    const base = this.worldColliders();
+    return seamColliders(base, this.town.size, this.player.pos.x, this.player.pos.z);
+  }
   /** Settle the player after jumping/placing furniture: push out of anything solid. */
   private collide() {
     const pos = this.player.pos;
     if (this.mode === 'town') {
-      const half = this.town.size / 2 - 2;
-      pos.x = THREE.MathUtils.clamp(pos.x, -half, half);
-      pos.z = THREE.MathUtils.clamp(pos.z, -half, half);
+      pos.x = wrapCoord(pos.x, this.town.size);
+      pos.z = wrapCoord(pos.z, this.town.size);
     }
     resolve(pos, this.playerRadius(), this.colliders());
     if (this.mode === 'house') this.clampPlayerToRoom();
@@ -1734,8 +1769,12 @@ export class Game {
           }
           target = a.wanderTarget;
         }
-        const dx = target.x - a.pos.x;
-        const dz = target.z - a.pos.z;
+        let dx = target.x - a.pos.x;
+        let dz = target.z - a.pos.z;
+        if (!inHouse && this.mode === 'town') {
+          dx = wrapDelta(a.pos.x, target.x, this.town.size);
+          dz = wrapDelta(a.pos.z, target.z, this.town.size);
+        }
         const d = Math.hypot(dx, dz);
         const flyingPet = pet.flyable && equipped && this.flying;
         // stuck against a wall/obstacle: same idea outdoors and indoors
@@ -1784,8 +1823,12 @@ export class Game {
         // same collision as the avatar (town + house) — skip while lying on a raised care bed (vet mattress)
         const onCareBed = !!(a.care && (a.care.y ?? 0) > 0.4 && Math.hypot(a.care.x - a.pos.x, a.care.z - a.pos.z) < 1.5);
         if (!flyingPet && !onCareBed) resolve(a.pos, 0.5, this.colliders());
+        if (!inHouse && this.mode === 'town') {
+          a.pos.x = wrapCoord(a.pos.x, this.town.size);
+          a.pos.z = wrapCoord(a.pos.z, this.town.size);
+        }
         const near = a.care && Math.hypot(a.care.x - a.pos.x, a.care.z - a.pos.z) < 1.2;
-        let targetY = near ? (a.care!.y ?? 0) : equipped && p.pos.y > SKY_COLLIDE_MIN_Y && !inHouse ? p.pos.y : equipped && p.pos.y > 1 && !inHouse ? Math.max(0, p.pos.y - 0.5) : 0;
+        let targetY = near ? (a.care!.y ?? 0) : equipped && p.pos.y > SKY_COLLIDE_MIN_Y && !inHouse ? p.pos.y : equipped && p.pos.y > 1 && !inHouse ? Math.max(hillHeight(a.pos.x, a.pos.z), p.pos.y - 0.5) : hillHeight(a.pos.x, a.pos.z);
         if (inHouse && !near) targetY = groundHeight(lay, a.pos.x, a.pos.z, floorOfY(a.pos.y));
         if (inHouse && !near && onStairs(lay.stairs, a.pos.x, a.pos.z)) a.pos.y = targetY;
         else a.pos.y += (targetY - a.pos.y) * Math.min(1, dt * 4);
@@ -1828,6 +1871,12 @@ export class Game {
     }
   }
 
+  /** Distance on the town, taking the short way across the edge. */
+  private flatDist(x: number, z: number, ox: number, oz: number): number {
+    if (this.mode !== 'town') return Math.hypot(x - ox, z - oz);
+    return Math.hypot(wrapDelta(x, ox, this.town.size), wrapDelta(z, oz, this.town.size));
+  }
+
   private updateZones(dt: number, moved: number, now: number) {
     const p = this.player.pos;
     let near: Game['nearZone'] = null;
@@ -1836,7 +1885,7 @@ export class Game {
     if (this.mode === 'town') {
       let best = Infinity;
       for (const z of this.town.zones) {
-        const d = Math.hypot(p.x - z.x, p.z - z.z);
+        const d = this.flatDist(p.x, p.z, z.x, z.z);
         if (z.kind === 'vet' && d < z.r + 1.5) inVet = true;
         if (z.kind === 'play' && d < z.r) inPlay = true;
         if (d < z.r && d < best && z.kind !== 'play') {
@@ -1915,7 +1964,7 @@ export class Game {
       if (!near && this.mode === 'town' && !this.driving && !this.petJob) {
         const pet = this.equippedPets()[0];
         if (pet) {
-          const tree = this.town.appleTrees.find((tr) => Math.hypot(tr.x - p.x, tr.z - p.z) < 3.2);
+          const tree = this.town.appleTrees.find((tr) => this.flatDist(p.x, p.z, tr.x, tr.z) < 3.2);
           if (tree) near = { kind: 'pet-apple', label: `Plukk epler med ${pet.name} 🍎`, uid: pet.uid, x: tree.x, z: tree.z };
         }
       }
@@ -1948,7 +1997,7 @@ export class Game {
       const high = this.player.pos.y > SKY_COLLIDE_MIN_Y;
       for (const z of skyZones()) {
         if (z.kind === 'sky-info' ? high : !high) continue;
-        if (Math.hypot(p.x - z.x, p.z - z.z) < z.r) near = { kind: z.kind, label: z.label };
+        if (this.flatDist(p.x, p.z, z.x, z.z) < z.r) near = { kind: z.kind, label: z.label };
       }
     }
     this.nearZone = near;

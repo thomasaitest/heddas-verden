@@ -33,10 +33,10 @@ export const FLY_CEILING = 64;
 export const SKY_COLLIDE_MIN_Y = 30;
 
 export const CLOUDS: readonly CloudDef[] = [
-  { id: 'badeland', name: 'Badeland', emoji: '💦', x: -52, z: -18, r: 13, blurb: 'Skli og plask' },
-  { id: 'egg', name: 'Regnbueegg', emoji: '🥚', x: 52, z: -18, r: 12, blurb: 'Kjøp og klekk et regnbueegg' },
-  { id: 'fjell', name: 'Fjellskyen', emoji: '⛰️', x: 18, z: 52, r: 14, blurb: 'Hule med klatretau' },
-  { id: 'skog', name: 'Regnbueskog', emoji: '🌈', x: -18, z: 52, r: 15, blurb: 'Her regner det bucks' },
+  { id: 'badeland', name: 'Badeland', emoji: '💦', x: -34, z: -12, r: 17, blurb: 'Skli og plask' },
+  { id: 'egg', name: 'Regnbueegg', emoji: '🥚', x: 34, z: -12, r: 16, blurb: 'Kjøp og klekk et regnbueegg' },
+  { id: 'fjell', name: 'Fjellskyen', emoji: '⛰️', x: 22, z: 30, r: 20, blurb: 'Hule med klatretau' },
+  { id: 'skog', name: 'Regnbueskog', emoji: '🌈', x: -24, z: 30, r: 18, blurb: 'Her regner det bucks' },
 ];
 
 export const CLOUD_BY_ID: Record<CloudId, CloudDef> = Object.fromEntries(CLOUDS.map((c) => [c.id, c])) as Record<CloudId, CloudDef>;
@@ -70,6 +70,18 @@ export const FOREST_TREES: readonly [number, number][] = [
 ];
 
 export const SPLASH_COOLDOWN_MS = 2_500;
+
+/** Local spot where the slide starts, on the platform above the ladder. */
+export const SLIDE_START = { lx: -5.2, lz: -1.2 };
+/** Height of that platform above the cloud floor. */
+export const PLATFORM_TOP = 3.15;
+/** Foot of the ladder, on the cloud floor beside the tower. */
+export const LADDER_BASE = { lx: -7.05, lz: -1.15 };
+/** Sunbeds beside the pool. rot is yaw. */
+export const SUNBEDS: readonly { lx: number; lz: number; rot: number }[] = [
+  { lx: 7.5, lz: 0.6, rot: 0.5 },
+  { lx: -0.4, lz: 6.2, rot: -0.3 },
+];
 
 export function cloudById(id: CloudId): CloudDef {
   return CLOUD_BY_ID[id];
@@ -156,12 +168,16 @@ export function skySolids(): SkySolid[] {
   const out: SkySolid[] = [];
   for (const c of CLOUDS) out.push(...rimSolids(c));
 
-  // Badeland: slide tower legs. The chute and pool stay open.
+  // Badeland: the tower is solid. The ladder foot, the platform and the pool stay open.
+  out.push(solid('slide-tower', 'badeland', -7.05, -2.85, 0.85, 0.85, 3.5));
   out.push(solid('slide-leg-a', 'badeland', -6.3, -2.4, 0.35, 0.35, 3.4));
-  out.push(solid('slide-leg-b', 'badeland', -4.0, -2.3, 0.35, 0.35, 2.4));
+  out.push(solid('umbrella-pole', 'badeland', 6.2, -0.4, 0.22, 0.22, 2.2));
+  for (const bed of SUNBEDS) out.push(solid(`sunbed-${bed.lx}`, 'badeland', bed.lx, bed.lz, 0.75, 0.38, 0.55, bed.rot));
 
-  // Egg stall counter.
+  // Egg stall counter and the two posts.
   out.push(solid('egg-counter', 'egg', 0, 2.4, 1.6, 0.7, 1.2));
+  out.push(circ('egg-post-l', 'egg', -1.7, 1.6, 0.28, 1.2));
+  out.push(circ('egg-post-r', 'egg', 1.7, 1.6, 0.28, 1.2));
 
   // Mountain cave: a room with a door toward the cloud centre (−z).
   out.push(solid('cave-back', 'fjell', 0, 7.4, 4.2, 0.4, 3.2));
@@ -173,6 +189,10 @@ export function skySolids(): SkySolid[] {
   out.push(solid('rope-counter', 'fjell', 0, 6.4, 1.3, 0.55, 1.15));
   // The peak itself, behind the cave, so you walk around it to the climb spot.
   out.push(circ('peak', 'fjell', 0, 8.6, 2.4, 8));
+  out.push(circ('ridge-l', 'fjell', -6.2, 7.2, 1.7, 6));
+  out.push(circ('ridge-r', 'fjell', 6.4, 6.8, 1.8, 5.5));
+  // Climbing face. The climb spot just east of it stays open.
+  out.push(solid('climb-face', 'fjell', -7.3, 0.3, 0.55, 1.3, 4.2));
 
   // Rainbow trees. The middle of the cloud, and every rain coin, stays open.
   FOREST_TREES.forEach(([lx, lz], i) => out.push(circ(`tree-${i}`, 'skog', lx, lz, 0.55, 4.2)));
@@ -193,7 +213,7 @@ export function skySurfaces(): Surface[] {
   return CLOUDS.map((c) => ({ x: c.x, z: c.z, r: c.r - 0.3, top: CLOUD_FLOOR_Y }));
 }
 
-export type SkyZoneKind = 'sky-info' | 'slide' | 'splash' | 'egg' | 'rope' | 'climb';
+export type SkyZoneKind = 'sky-info' | 'slide' | 'splash' | 'egg' | 'rope' | 'climb' | 'ladder';
 
 export interface SkyZone {
   kind: SkyZoneKind;
@@ -205,14 +225,16 @@ export interface SkyZone {
 }
 
 export function skyZones(): SkyZone[] {
-  const slide = worldOnCloud('badeland', -5.2, -1.2);
+  const slide = worldOnCloud('badeland', SLIDE_START.lx, SLIDE_START.lz);
+  const ladder = worldOnCloud('badeland', LADDER_BASE.lx, LADDER_BASE.lz);
   const pool = worldOnCloud('badeland', 3.2, 2.6);
   const egg = worldOnCloud('egg', 0, 1.2);
   const rope = worldOnCloud('fjell', 0, 5.2);
   const climb = worldOnCloud('fjell', -5.2, 1.2);
   return [
     { kind: 'sky-info', cloud: null, x: SKY_GATE.x, z: SKY_GATE.z, r: SKY_GATE.r, label: 'Skyverden ☁️' },
-    { kind: 'slide', cloud: 'badeland', x: slide.x, z: slide.z, r: 1.6, label: 'Ta sklien 🛝' },
+    { kind: 'ladder', cloud: 'badeland', x: ladder.x, z: ladder.z, r: 1.35, label: 'Klatre opp stigen 🪜' },
+    { kind: 'slide', cloud: 'badeland', x: slide.x, z: slide.z, r: 1.45, label: 'Ta sklien 🛝' },
     { kind: 'splash', cloud: 'badeland', x: pool.x, z: pool.z, r: 2.6, label: 'Plask 💦' },
     { kind: 'egg', cloud: 'egg', x: egg.x, z: egg.z, r: 2.2, label: 'Kjøp regnbueegg 🌈' },
     { kind: 'rope', cloud: 'fjell', x: rope.x, z: rope.z, r: 1.8, label: 'Kjøp klatretau 🪢' },
@@ -229,15 +251,42 @@ export function groundShopEggs(starterClaimed: boolean): EggType[] {
   return EGGS.filter((e) => e.id !== RAINBOW_EGG_ID && (e.price > 0 || !starterClaimed));
 }
 
-/** 0 at the top of the slide, 1 in the pool. */
-export function slidePose(u: number): { lx: number; ly: number; lz: number; done: boolean } {
+/** 0 at the top of the slide, 1 in the pool. yaw faces along the chute, tilt leans with the slope. */
+export function slidePose(u: number): { lx: number; ly: number; lz: number; yaw: number; tilt: number; done: boolean } {
   const t = Math.max(0, Math.min(1, u));
+  const runX = 8.4;
+  const runZ = 3.8;
+  const drop = 3.0;
+  const horiz = Math.hypot(runX, runZ);
   return {
-    lx: -5.2 + t * 8.4,
-    lz: -1.2 + t * 3.8,
-    ly: (1 - t) * 3.1 + 0.15,
+    lx: SLIDE_START.lx + t * runX,
+    lz: SLIDE_START.lz + t * runZ,
+    ly: (1 - t) * drop + 0.2,
+    yaw: Math.atan2(runX, runZ),
+    tilt: Math.atan2(drop, horiz),
     done: t >= 1,
   };
+}
+
+/** 0 at the foot of the ladder, 1 standing on the slide platform. */
+export function ladderPose(u: number): { lx: number; ly: number; lz: number; yaw: number; done: boolean } {
+  const t = Math.max(0, Math.min(1, u));
+  const dx = SLIDE_START.lx - LADDER_BASE.lx;
+  const dz = SLIDE_START.lz - LADDER_BASE.lz;
+  return {
+    lx: LADDER_BASE.lx + t * dx,
+    lz: LADDER_BASE.lz + t * dz,
+    ly: t * PLATFORM_TOP,
+    yaw: Math.atan2(dx, dz),
+    done: t >= 1,
+  };
+}
+
+/** Deck you stand on after climbing the ladder, before the chute drops away. */
+export function skyPlatformTop(x: number, z: number): number | null {
+  const p = worldOnCloud('badeland', SLIDE_START.lx, SLIDE_START.lz);
+  if (Math.hypot(x - p.x, z - p.z) <= 1.35) return CLOUD_FLOOR_Y + PLATFORM_TOP;
+  return null;
 }
 
 /** Climb up the outside of the mountain, then come back down. ly is above the floor. */

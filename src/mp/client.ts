@@ -30,6 +30,7 @@ export interface MpHost {
     seatWorld(id: string, u: number): { x: number; y: number; z: number; yaw: number };
     housePlots: { x: number; z: number; rot: number }[];
     setPlotHouse(plot: number, style: HouseStyle | null, label?: string, locked?: boolean): void;
+    size: number;
   };
   mainPet(): PetState | null;
   activeHouseStyle(): HouseStyle;
@@ -155,6 +156,7 @@ export class MpClient {
       },
       place,
       area,
+      place === 'town' ? { x: g.player.pos.x, z: g.player.pos.z, size: g.town.size } : null,
     );
     this.syncHousePlots();
   }

@@ -5,6 +5,7 @@ import { newHouse, type House, type PlacedItem } from '../logic/house.ts';
 import { installDomStub } from '../test/domStub.ts';
 import type { Interior } from './interior.ts';
 import type { Town } from './town.ts';
+import { GROUND_HILLS, hillHeight, treeOnHill } from '../logic/terrain.ts';
 import { PLACES as LAYOUT_PLACES, faceStreet } from '../logic/townLayout.ts';
 
 const R = 0.55; // walking player radius in the town
@@ -195,6 +196,20 @@ describe('town colliders', () => {
       movePlayer(pos, p.x - out.x, p.z - out.z, R, col());
       expect(Math.hypot(pos.x - p.x, pos.z - p.z), `fence angle ${a.toFixed(2)}`).toBeGreaterThan(10.3);
     }
+  });
+
+  it('ground hills rise under your feet and have no trees on the upper slope', () => {
+    for (const hill of GROUND_HILLS) {
+      expect(hillHeight(hill.x, hill.z)).toBeGreaterThan(4);
+      for (const tree of town.trees) {
+        expect(treeOnHill(tree.x, tree.z), `${tree.x},${tree.z}`).toBe(false);
+        expect(Math.hypot(tree.x - hill.x, tree.z - hill.z)).toBeGreaterThan(hill.r * 0.7);
+      }
+    }
+    const hill = GROUND_HILLS[0];
+    const low = { x: hill.x + hill.r + 4, y: 0, z: hill.z };
+    const high = { x: hill.x, y: 0, z: hill.z };
+    expect(hillHeight(high.x, high.z)).toBeGreaterThan(hillHeight(low.x, low.z) + 4);
   });
 
   it('trees and bushes block', () => {

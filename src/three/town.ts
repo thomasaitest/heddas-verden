@@ -17,6 +17,7 @@ import {
 import { collectColliders, solid } from './colliders.ts';
 import { fillCarShop, fillHospital, fillPetShop, fillShop } from './buildings.ts';
 import { EQUIPMENT, MERRY, SEESAW, SLIDE, SWING_PIVOT_Y, SWING_ROPE, SWING_XS, SWING_Z, TRAMP, merryAngle, seatAt, seesawAngle, swingAngle, type EquipDef, type Seat } from '../logic/playground.ts';
+import { GROUND_HILLS, treeOnHill } from '../logic/terrain.ts';
 import { box, cone, cyl, G, mergeStatic, part, rbox, shadowAll, sph, textTexture } from './kit.ts';
 
 export type ZoneKind = 'home' | 'shop' | 'vet' | 'eggs' | 'doors' | 'play' | 'cars' | 'pets';
@@ -71,6 +72,8 @@ export interface Town {
   vehicleCircles: CircleCollider[];
   /** Trees pets can pick apples from. */
   appleTrees: { x: number; z: number }[];
+  /** Every planted tree, including ones without apples. */
+  trees: { x: number; z: number }[];
   /** Road centre-line segments (for tests and props). */
   roads: RoadSeg[];
   /** Neighbourhood house plots (each multiplayer player gets one). */
@@ -300,7 +303,8 @@ export function buildTown(): Town {
   const circles: CircleCollider[] = [];
 
   // ground
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(SIZE * 2, SIZE * 2), new THREE.MeshLambertMaterial({ color: GRASS }));
+  // One grass sheet covers the town and the copies across each edge, so the ground has no seam.
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(SIZE * 3, SIZE * 3), new THREE.MeshLambertMaterial({ color: GRASS }));
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
   group.add(ground);
@@ -704,6 +708,7 @@ export function buildTown(): Town {
     return { ...e, wx: c.x, wz: c.z, exitX: x.x, exitZ: x.z, exitYaw: e.exit.yaw + playRot };
   });
 
+  const trees: { x: number; z: number }[] = [];
   // trees, bushes, flowers, lamps, benches (deterministic positions)
   let seed = 7;
   const rnd = () => {
@@ -721,18 +726,23 @@ export function buildTown(): Town {
     const x = (rnd() - 0.5) * SIZE * 0.95;
     const z = (rnd() - 0.5) * SIZE * 0.95;
     const s = 0.8 + rnd() * 0.6;
-    if (blocked(x, z) || tooClose(x, z, 0.9 * s)) continue;
+    if (blocked(x, z) || tooClose(x, z, 0.9 * s) || treeOnHill(x, z)) continue;
     const kind = Math.floor(rnd() * 4);
     tree(stat, x, z, s, kind, true);
+    trees.push({ x, z });
     solids.push({ x, z, r: 0.9 * s });
     if (kind === 0 || kind === 2) appleTrees.push({ x, z }); // deciduous / blossom
     vehicleCircles.push({ x, z, r: Math.max(1.1, 1.0 * s), h: 8 * s });
   }
-  // a ring of trees on the edge
+  // a ring of trees inside the edge, never on a hill
   for (let i = 0; i < 70; i++) {
     const a = (i / 70) * Math.PI * 2;
-    const r = SIZE / 2 + 4 + (i % 3) * 3;
-    tree(stat, Math.cos(a) * r, Math.sin(a) * r, 1.3, i % 4);
+    const r = SIZE / 2 - 10 - (i % 3) * 2;
+    const x = Math.cos(a) * r;
+    const z = Math.sin(a) * r;
+    if (treeOnHill(x, z) || blocked(x, z)) continue;
+    tree(stat, x, z, 1.3, i % 4);
+    trees.push({ x, z });
   }
   const flowerCols = ['#ff8fb1', '#ffe066', '#ffffff', '#c88bff', '#ff6f6f'];
   for (let i = 0; i < 160; i++) {
@@ -790,10 +800,11 @@ export function buildTown(): Town {
     // Cars (and prams) collide with the whole bench footprint — walkers still use tiny leg solids only.
     vehicleRects.push({ x: seatX, z: seatZ, hw: 1.5, hd: 0.55, rot: sitYaw, h: 1.15 });
   }
-  // hills at the edge
-  for (let i = 0; i < 10; i++) {
-    const a = (i / 10) * Math.PI * 2;
-    sph(stat, '#6cc65a', [Math.cos(a) * (SIZE / 2 + 25), 0, Math.sin(a) * (SIZE / 2 + 25)], [50, 26, 50]);
+  // Walkable mounds. The mesh crest matches hillHeight; trees are kept off the upper slope.
+  for (const hill of GROUND_HILLS) {
+    const bury = hill.r * 0.55;
+    sph(stat, '#7dcc62', [hill.x, -bury, hill.z], [hill.r * 2, (hill.h + bury) * 2, hill.r * 2]);
+    sph(stat, '#8ed872', [hill.x, hill.h * 0.45, hill.z], [hill.r * 0.72, hill.h * 0.9, hill.r * 0.72]);
   }
 
   // colliders come from the real meshes that were marked solid()
@@ -803,6 +814,15 @@ export function buildTown(): Town {
 
   const merged = mergeStatic(stat, { cast: true, receive: true });
   group.add(merged);
+  // Copies of the static town so the far side is already there when you reach an edge.
+  for (const dx of [-1, 0, 1]) {
+    for (const dz of [-1, 0, 1]) {
+      if (dx === 0 && dz === 0) continue;
+      const copy = merged.clone();
+      copy.position.set(dx * SIZE, 0, dz * SIZE);
+      group.add(copy);
+    }
+  }
 
   // clouds (separate so they can drift)
   const clouds = new THREE.Group();
@@ -931,6 +951,7 @@ export function buildTown(): Town {
     vehicleRects,
     vehicleCircles,
     appleTrees,
+    trees,
     shopSigns,
     roads,
     housePlots,
