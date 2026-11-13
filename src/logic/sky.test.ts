@@ -17,6 +17,7 @@ import {
   RAINBOW_EGG_ID,
   ROPE_PRICE,
   cloudAtXZ,
+  CAVE_MOUTH,
   cloudFloorAt,
   collectRainCoin,
   FOREST_TREES,
@@ -33,7 +34,6 @@ import {
   skyColliders,
   mountainLedgeTop,
   MOUNTAIN_LEDGES,
-  skyHeadroom,
   skyPlatformTop,
   skyZones,
   SLIDE_START,
@@ -51,7 +51,11 @@ describe('sky clouds', () => {
     expect(CLOUDS.map((c) => c.id)).toEqual(['badeland', 'egg', 'fjell', 'skog']);
     expect(new Set(CLOUDS.map((c) => `${c.x},${c.z}`)).size).toBe(4);
     expect(CLOUD_FLOOR_Y).toBeGreaterThan(30);
-    expect(Math.min(...CLOUDS.map((c) => c.r))).toBeGreaterThanOrEqual(16);
+    const wide = CLOUDS.filter((c) => c.id !== 'fjell');
+    expect(Math.min(...wide.map((c) => c.r))).toBeGreaterThanOrEqual(16);
+    const fjell = CLOUDS.find((c) => c.id === 'fjell')!;
+    expect(fjell.r).toBeLessThan(11);
+    expect(fjell.r).toBeGreaterThan(7);
     expect(Math.max(...CLOUDS.map((c) => Math.hypot(c.x, c.z)))).toBeLessThan(48);
     for (let i = 0; i < CLOUDS.length; i++) {
       for (let j = i + 1; j < CLOUDS.length; j++) {
@@ -83,27 +87,18 @@ describe('sky clouds', () => {
     }
   });
 
-  it('the cave is a tunnel into a lit room, and the rock stops you', () => {
+  it('the little peak blocks you, and the mouth that opens the inner world stays clear', () => {
     const fjell = CLOUDS.find((c) => c.id === 'fjell')!;
-    const door = { x: fjell.x, y: CLOUD_FLOOR_Y, z: fjell.z + 0.6 };
-    const room = { x: fjell.x, y: CLOUD_FLOOR_Y, z: fjell.z + 7.6 };
-    const pos = { ...door };
-    movePlayer(pos, room.x - door.x, room.z - door.z, R, cols);
-    expect(Math.hypot(pos.x - room.x, pos.z - room.z)).toBeLessThan(1.2);
-    expect(blocked(fjell.x, fjell.z + 2.2, R, cols, CLOUD_FLOOR_Y)).toBe(false);
-    expect(blocked(fjell.x, fjell.z + 9.3, R, cols, CLOUD_FLOOR_Y)).toBe(true);
-    expect(blocked(fjell.x - 2.35, fjell.z + 4.3, R, cols, CLOUD_FLOOR_Y)).toBe(true);
-    expect(skyHeadroom(fjell.x, fjell.z + 4.3)).toBe(CLOUD_FLOOR_Y + 2.5);
-    expect(skyHeadroom(fjell.x, fjell.z + 8)).toBe(CLOUD_FLOOR_Y + 2.75);
-    expect(skyHeadroom(fjell.x, fjell.z - 2)).toBeNull();
-    const rock = { x: fjell.x - 9.2, y: CLOUD_FLOOR_Y, z: fjell.z + 4.2 };
-    movePlayer(rock, 4, 0, R, cols);
-    expect(rock.x).toBeLessThan(fjell.x - 7.6);
+    expect(blocked(fjell.x + CAVE_MOUTH.lx, fjell.z + CAVE_MOUTH.lz, R, cols, CLOUD_FLOOR_Y)).toBe(false);
+    const rock = { x: fjell.x, y: CLOUD_FLOOR_Y, z: fjell.z + 6 };
+    movePlayer(rock, 0, -4, R, cols);
+    expect(rock.z).toBeGreaterThan(fjell.z + 3.6);
     const low = MOUNTAIN_LEDGES[0];
     const high = MOUNTAIN_LEDGES[1];
     expect(mountainLedgeTop(fjell.x + high.lx, fjell.z + high.lz)!).toBeGreaterThan(
       mountainLedgeTop(fjell.x + low.lx, fjell.z + low.lz)!,
     );
+    expect(skyZones().some((z) => z.kind === 'cave-enter')).toBe(true);
   });
 
   it('the water park slide start and pool are walkable, tower legs are not', () => {

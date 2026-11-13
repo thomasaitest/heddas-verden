@@ -1,0 +1,14 @@
+---
+description: Collision is mandatory for every solid object in Heddas verden
+alwaysApply: true
+---
+
+# Kollisjon
+
+Ingenting skal gå gjennom et fast objekt: spiller, kjæledyr, biler og nye ting.
+
+- Merk hver nye mesh med `withCollision('solid' | 'passable' | 'surface')`.
+- `passable` er bare for ting man skal kunne gå gjennom, som gress, blomster, lys og skilt.
+- `solid()` gjør en mesh om til en collider. Hulen leser disse i tillegg til veggene i `caveColliders()`.
+- By og skyer har egne lister. Et nytt fast objekt der trenger både en mesh og en collider, og en test som prøver å gå gjennom det.
+- Tester som dekker dette ligger i `src/logic/cave.test.ts`, `src/logic/sky.test.ts` og `src/three/cave.collision.test.ts`, og de kjører med `npm test` i CI.

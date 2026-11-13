@@ -16,7 +16,7 @@ import {
   slidePose,
   type CloudId,
 } from '../logic/sky.ts';
-import { G, box, cone, cyl, part, rbox, sph, textTexture } from './kit.ts';
+import { box, cone, cyl, rbox, sph, textTexture, setDefaultCollision } from './kit.ts';
 
 export interface SkyWorld {
   group: THREE.Group;
@@ -204,67 +204,27 @@ function eggShop(parent: THREE.Group) {
 function mountain(parent: THREE.Group) {
   const g = cloudGroup('fjell');
   cloudMass(g, cloudById('fjell').r, '#e7eef8', '#d5dbe6');
-  cyl(g, '#d7dee8', [0, 0.06, 1.2], [14, 0.12, 12]);
-  const rock = '#7e8794';
-  const rockDark = '#5e6774';
-  // One sloping mass. The mouth is a gap in the front slope, not a hut stood in front.
-  const lobes: [number, number, number, number, number, number, string][] = [
-    [-4.8, 2.6, 4.2, 5.6, 5.2, 6.8, rock],
-    [5.1, 2.8, 4.8, 5.8, 5.6, 7.0, rockDark],
-    [0.1, 4.7, 3.5, 4.4, 2.0, 2.6, rock],
-    [0.4, 4.6, 9.2, 9.2, 8.2, 7.6, '#6d7684'],
-    [-2.2, 6.2, 11.0, 5.4, 6.4, 5.2, rock],
-    [3.2, 6.8, 11.6, 4.8, 7.4, 4.6, '#8b93a0'],
-    [-0.4, 9.4, 12.2, 3.2, 3.6, 3.0, '#f7fbff'],
-    [-2.6, 8.2, 11.6, 2.4, 2.2, 2.2, '#ffffff'],
-    [2.8, 8.6, 12.4, 2.2, 2.0, 2.0, '#f4f7fb'],
-  ];
-  cone(g, rock, [-1.6, 6.5, 8.5], [6.5, 13, 6.2]);
-  cone(g, rockDark, [3.4, 5.2, 9.2], [5.2, 10.5, 5]);
-  cone(g, '#f7fbff', [-1.6, 12.2, 8.5], [2.4, 2.6, 2.2]);
-  cone(g, '#ffffff', [3.4, 9.8, 9.2], [1.8, 2.2, 1.8]);
-  for (const [x, y, z, sx, sy, sz, col] of lobes) sph(g, col, [x, y, z], [sx, sy, sz]);
-  // Stone shelves you can walk up, west of the mouth.
-  rbox(g, '#9aa3b0', [-3.4, 0.42, -4.4], [3.6, 0.85, 2.8]);
-  rbox(g, '#8b93a0', [-2.4, 0.82, -2.3], [3.4, 1.65, 2.6]);
-  // Tunnel and room dug into the slope. Walls sit where the colliders are.
-  box(g, '#c4a574', [0, 0.08, 6.4], [3.1, 0.12, 9.2], undefined, 0.08);
-  box(g, rockDark, [-2.35, 1.45, 4.3], [1.1, 2.9, 3.8]);
-  box(g, rockDark, [2.35, 1.45, 4.3], [1.1, 2.9, 3.8]);
-  box(g, rock, [-3.9, 1.55, 8.7], [1.0, 3.1, 4.3]);
-  box(g, rock, [3.9, 1.55, 8.7], [1.0, 3.1, 4.3]);
-  box(g, rockDark, [0, 1.6, 11.15], [8.2, 3.2, 0.9]);
-  box(g, '#4a4038', [0, 2.55, 4.3], [3.0, 0.28, 3.6]);
-  box(g, '#4a4038', [0, 2.8, 8.6], [6.4, 0.28, 4.4]);
-  for (const [x, z] of [[-1.35, 3.2], [1.35, 5.4], [-2.6, 7.6], [2.6, 9.4]] as const) {
-    cyl(g, '#6a4a32', [x, 1.15, z], [0.08, 1.1, 0.08]);
-    sph(g, '#ff9a3c', [x, 1.85, z], [0.22, 0.28, 0.22], undefined, 0.85);
-  }
-  sph(g, '#9af6ff', [-1.6, 0.55, 8.2], [0.35, 0.55, 0.35], undefined, 0.55);
-  sph(g, '#d7b4ff', [1.7, 0.4, 9.6], [0.28, 0.42, 0.28], undefined, 0.45);
-  sph(g, '#fff4c2', [0.4, 0.35, 7.4], [0.22, 0.32, 0.22], undefined, 0.4);
-  rbox(g, '#e0a15c', [0, 0.62, 9.3], [2.3, 1.15, 0.95], undefined, 0.08);
-  for (const x of [-0.65, 0, 0.65]) {
-    part(g, G.torus(), '#f0b14a', [x, 1.35, 9.05], [0.8, 0.8, 0.55], [Math.PI / 2, 0, 0], 0.25);
-  }
-  const lamp = new THREE.PointLight('#ffd2a1', 2.8, 18, 1.2);
-  lamp.position.set(0, 2.1, 8.4);
-  g.add(lamp);
-  const mouth = new THREE.PointLight('#ffb26b', 1.2, 8, 1.4);
-  mouth.position.set(0, 1.6, 2.4);
-  g.add(mouth);
-  // Climbing face with holds, outside the cave. Matches the solid in logic/sky.ts.
-  box(g, '#9aa4b5', [-7.3, 2.1, 0.3], [1.2, 4.2, 2.6]);
-  for (const [x, y, z, col] of [
-    [-5.7, 1.1, -0.5, '#ff5b6e'],
-    [-5.7, 1.9, 0.4, '#ffe14d'],
-    [-5.7, 2.7, 1.2, '#5cc3f2'],
-    [-5.7, 3.5, 0.1, '#7dff8a'],
-  ] as const) {
-    sph(g, col, [x + 0.5, y, z], [0.28, 0.22, 0.28]);
-  }
-  cyl(g, '#e6b15a', [-6.7, 2.4, 0.3], [0.08, 3.2, 0.08]);
-  sign(g, 'Fjellskyen', 5.4, -7.4, '#6b7c93');
+  cyl(g, '#d7dee8', [0, 0.05, -0.4], [6.2, 0.1, 5.4]);
+  // A little peak, set back so the dark mouth sits in front of the rock.
+  cone(g, '#6d7684', [0, 3.2, 4.6], [4.6, 6.2, 4.4]);
+  cone(g, '#5c6572', [-2.4, 2.1, 3.4], [2.6, 3.6, 2.4]);
+  cone(g, '#8b93a0', [2.3, 1.9, 3.2], [2.4, 3.2, 2.2]);
+  cone(g, '#f7fbff', [0, 6.5, 4.6], [1.5, 1.4, 1.4]);
+  rbox(g, '#8b93a0', [-3.4, 0.42, -4.4], [3.4, 0.85, 2.6]);
+  rbox(g, '#7d8694', [-2.4, 0.82, -2.3], [3.2, 1.6, 2.4]);
+  box(g, '#1a1420', [0, 1.2, 1.05], [2.4, 2.3, 0.55]);
+  box(g, '#9aa4b5', [-1.55, 1.2, 0.85], [0.45, 2.4, 0.7]);
+  box(g, '#9aa4b5', [1.55, 1.2, 0.85], [0.45, 2.4, 0.7]);
+  box(g, '#6d7684', [0, 2.45, 0.85], [3.5, 0.4, 0.7]);
+  sph(g, '#ffb26b', [0, 1.85, 0.7], [0.18, 0.18, 0.18], undefined, 0.9);
+  box(g, '#9aa4b5', [-5.2, 1.6, -1.6], [0.9, 3.2, 1.8]);
+  sign(g, 'Fjellskyen', 2.6, -4.6, '#6b7c93');
+  const fjellSign = g.children[g.children.length - 1] as THREE.Object3D;
+  fjellSign.rotation.y = 0;
+  const fjellSignBack = fjellSign.clone();
+  fjellSignBack.rotation.y = Math.PI;
+  fjellSignBack.position.z -= 0.06;
+  g.add(fjellSignBack);
   parent.add(g);
 }
 
@@ -333,6 +293,7 @@ function gate(parent: THREE.Group) {
 }
 
 export function buildSky(): SkyWorld {
+  setDefaultCollision('passable');
   const group = new THREE.Group();
   group.name = 'skyverden';
   const coins: THREE.Object3D[] = [];

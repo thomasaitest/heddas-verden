@@ -18,7 +18,7 @@ import { collectColliders, solid } from './colliders.ts';
 import { fillCarShop, fillHospital, fillPetShop, fillShop } from './buildings.ts';
 import { EQUIPMENT, MERRY, SEESAW, SLIDE, SWING_PIVOT_Y, SWING_ROPE, SWING_XS, SWING_Z, TRAMP, merryAngle, seatAt, seesawAngle, swingAngle, type EquipDef, type Seat } from '../logic/playground.ts';
 import { GROUND_HILLS, treeOnHill } from '../logic/terrain.ts';
-import { box, cone, cyl, G, mergeStatic, part, rbox, shadowAll, sph, textTexture } from './kit.ts';
+import { box, cone, cyl, G, mergeStatic, part, rbox, shadowAll, sph, textTexture, setDefaultCollision } from './kit.ts';
 
 export type ZoneKind = 'home' | 'shop' | 'vet' | 'eggs' | 'doors' | 'play' | 'cars' | 'pets';
 export interface Zone {
@@ -296,6 +296,7 @@ function tree(g: THREE.Group, x: number, z: number, s: number, kind: number, col
 }
 
 export function buildTown(): Town {
+  setDefaultCollision('passable');
   const group = new THREE.Group();
   const stat = new THREE.Group();
   const zones: Zone[] = [];

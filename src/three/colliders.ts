@@ -8,7 +8,37 @@ import type { CircleCollider, Colliders, RectCollider } from '../logic/collision
  */
 export function solid<T extends THREE.Object3D>(o: T, shape: 'rect' | 'circle' = 'rect', pad = 0, top?: number): T {
   o.userData.solid = { shape, pad, top };
+  o.userData.collision = 'solid';
   return o;
+}
+
+/** Explicitly not a blocker: flowers, signs, cotton, glow. */
+export function passable<T extends THREE.Object3D>(o: T): T {
+  o.userData.collision = 'passable';
+  return o;
+}
+
+/** Walkable ground or a shelf. It is not a wall. */
+export function markSurface<T extends THREE.Object3D>(o: T): T {
+  o.userData.collision = 'surface';
+  return o;
+}
+
+export function collisionKind(o: THREE.Object3D): string | undefined {
+  const k = o.userData.collision;
+  return typeof k === 'string' ? k : undefined;
+}
+
+/** Meshes that were never tagged solid, passable, or surface. */
+export function unmarkedMeshes(root: THREE.Object3D): string[] {
+  const out: string[] = [];
+  root.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh) return;
+    const k = m.userData.collision;
+    if (k !== 'solid' && k !== 'passable' && k !== 'surface') out.push(m.name || m.uuid.slice(0, 8));
+  });
+  return out;
 }
 
 const _corner = new THREE.Vector3();

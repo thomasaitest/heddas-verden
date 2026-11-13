@@ -19,7 +19,8 @@ body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none
 :where(#ui > *) { pointer-events: auto; }
 button { font: inherit; color: inherit; cursor: pointer; border: 0; background: none; touch-action: manipulation; }
 h2, h3, h4 { margin: 0; font-weight: 700; }
-.hidden { display: none !important; }
+.realm-fade { position: fixed; inset: 0; background: #140e1c; opacity: 0; pointer-events: none; z-index: 40; transition: opacity 0.35s ease; }
+.realm-fade.on { opacity: 1; }
 .row { display: flex; gap: 10px; justify-content: center; align-items: center; flex-wrap: wrap; margin-top: 12px; }
 
 #loading { position: fixed; inset: 0; display: grid; place-content: center; gap: 20px; background: linear-gradient(#9fdcff, #ffd6ec); z-index: 10; text-align: center; }
