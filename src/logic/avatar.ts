@@ -168,6 +168,12 @@ export const OUTFIT_PRESETS: { id: string; name: string; patch: Partial<Avatar> 
 
 /** Standing body, arm included: shoulder at 0.72 plus half a sleeve (0.22). */
 export const AVATAR_BODY_R = 0.96;
+/** A following pet is about this wide. It must not share the avatar's circle. */
+export const PET_BODY_R = 0.8;
+/** How far behind the avatar a following pet stands, clear of both bodies. */
+export function petFollowDistance(): number {
+  return AVATAR_BODY_R + PET_BODY_R + 0.65;
+}
 
 export function randomAvatar(rng: Rng): Avatar {
   return {

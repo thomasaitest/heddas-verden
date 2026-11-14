@@ -36,4 +36,18 @@ describe('cave meshes are classified and solid', () => {
     expect(Math.hypot(crystal.x - CAVE_CRYSTAL.x, crystal.z - CAVE_CRYSTAL.z)).toBeGreaterThan(0.8);
     expect(blocked(CAVE_ROPE.x, CAVE_ROPE.z + 1.6, 0.4, cols), 'rope counter').toBe(true);
   });
+
+  it('the rendered boulder stops a body-sized walker outside the mesh', async () => {
+    const { buildCave } = await import('./cave.ts');
+    const cave = buildCave();
+    const seen = collectColliders(cave.group);
+    const base = caveColliders();
+    const cols = { rects: [...base.rects, ...seen.rects], circles: [...base.circles, ...seen.circles] };
+    for (const rock of CAVE_ROCKS) {
+      const pos = { x: rock.x - 10, y: 0, z: rock.z };
+      movePlayer(pos, 20, 0, AVATAR_BODY_R, cols);
+      // The old test used radius 0.55 against the logical circle only, so a wider body could still sit inside the mesh.
+      expect(Math.hypot(pos.x - rock.x, pos.z - rock.z), `${rock.x}`).toBeGreaterThanOrEqual(rock.r + AVATAR_BODY_R - 0.05);
+    }
+  });
 });

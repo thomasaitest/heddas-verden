@@ -148,6 +148,7 @@ export class Hud {
 
   setPrompt(label: string | null) {
     if (!label) {
+      this.prompt.textContent = '';
       this.prompt.classList.add('hidden');
       return;
     }

@@ -26,6 +26,7 @@ import { miniReward, startMini, stepMini, type MiniState } from './logic/minigam
 import { buildCar, buildPram, CAR_DRIVER_LAT, CAR_SEAT_Y } from './three/vehicles.ts';
 import { Input } from './input.ts';
 import { animateAvatar, buildAvatar, type AvatarPose, type AvatarRig } from './three/avatarModel.ts';
+import { AVATAR_BODY_R, PET_BODY_R, petFollowDistance } from './logic/avatar.ts';
 import { createInterior, type Interior } from './three/interior.ts';
 import { FLOOR_H, floorOfY, groundHeight, onStairs, roomAt } from './logic/layout.ts';
 import { blobShadow } from './three/kit.ts';
@@ -627,12 +628,16 @@ export class Game {
   }
 
   private veilEl: HTMLDivElement | null = null;
+  private veilMesh: THREE.Mesh | null = null;
   private veil = 0;
   private veilTo = 0;
   private veilSwap: (() => void) | null = null;
+  private veilHold = 0;
+  private promptQuietUntil = 0;
 
-  /** Black veil driven by game time, so a frame-by-frame recording still shows the fade. */
+  /** Black veil driven by game time, held fully black so a recording cannot miss it. */
   private fade(then: () => void) {
+    if (this.veilSwap || this.veilHold > 0) return;
     if (!this.veilEl) {
       const veil = document.createElement('div');
       veil.className = 'realm-fade';
@@ -641,21 +646,37 @@ export class Game {
       document.body.append(veil);
       this.veilEl = veil;
     }
+    this.hud.setPrompt(null);
     this.veilTo = 1;
+    this.veilHold = 0;
     this.veilSwap = then;
   }
 
   private stepVeil(dt: number) {
     if (!this.veilEl && this.veil <= 0 && this.veilTo <= 0) return;
-    const step = dt / 0.55;
+    const step = dt / 0.7;
+    if (this.veilHold > 0) {
+      this.veil = 1;
+      this.veilHold = Math.max(0, this.veilHold - dt);
+      if (this.veilEl) this.veilEl.style.opacity = '1';
+      if (this.veilHold === 0 && this.veilSwap) {
+        const job = this.veilSwap;
+        this.veilSwap = null;
+        this.veilTo = 0;
+        this.promptQuietUntil = this.time + 2.2;
+        this.hud.setPrompt(null);
+        job();
+      }
+      return;
+    }
     if (this.veil < this.veilTo) this.veil = Math.min(this.veilTo, this.veil + step);
     else this.veil = Math.max(this.veilTo, this.veil - step);
     if (this.veilEl) this.veilEl.style.opacity = String(this.veil);
-    if (this.veilSwap && this.veil >= 0.98) {
-      const job = this.veilSwap;
-      this.veilSwap = null;
-      this.veilTo = 0;
-      job();
+    if (this.veilSwap && this.veil >= 0.99) {
+      this.veil = 1;
+      this.veilHold = 0.7;
+      if (this.veilEl) this.veilEl.style.opacity = '1';
+      return;
     }
     if (this.veilEl && this.veil < 0.02 && this.veilTo === 0 && !this.veilSwap) {
       this.veilEl.remove();
@@ -682,8 +703,8 @@ export class Game {
       this.town.group.visible = false;
       this.sky.group.visible = false;
       this.cave.group.visible = true;
-      this.scene.background = new THREE.Color('#6d5c68');
-      this.scene.fog = new THREE.Fog('#6d5c68', 45, 130);
+      this.scene.background = new THREE.Color('#5c5148');
+      this.scene.fog = new THREE.Fog('#5c5148', 36, 88);
       const spot = at && inCave(at.x, at.z, 2) ? at : CAVE_SPAWN;
       this.player.pos.set(spot.x, 0, spot.z);
       this.player.vy = 0;
@@ -702,7 +723,7 @@ export class Game {
   }
 
   exitCave() {
-    const back = worldOnCloud('fjell', CAVE_MOUTH.lx, CAVE_MOUTH.lz - CAVE_MOUTH.r - 1.1);
+    const back = worldOnCloud('fjell', CAVE_MOUTH.lx, CAVE_MOUTH.lz - CAVE_MOUTH.r - 2.6);
     this.fade(() => {
       this.mode = 'town';
       this.cave.group.visible = false;
@@ -731,6 +752,7 @@ export class Game {
 
   private tryEnterCave() {
     if (this.flying || !this.player.grounded || this.skyAction) return;
+    if (this.veil > 0.02 || this.veilSwap || this.veilHold > 0) return;
     if (this.time < this.caveCooldown) return;
     if (this.player.pos.y < CLOUD_FLOOR_Y - 0.3 || this.player.pos.y > CLOUD_FLOOR_Y + 2.4) return;
     const mouth = worldOnCloud('fjell', CAVE_MOUTH.lx, CAVE_MOUTH.lz);
@@ -1506,6 +1528,13 @@ export class Game {
     this.avatarShadow.visible = !ride && !this.driving;
     this.updateVehicleMesh();
 
+    if (this.mode === 'cave') {
+      this.town.group.visible = false;
+      this.sky.group.visible = false;
+      this.cave.group.visible = true;
+      if (this.rain) this.rain.visible = false;
+    }
+
     // day/night + weather outdoors
     if (this.mode === 'town') {
       const sky = skyAt((performance.now() / 1000) - this.weatherT0);
@@ -1619,6 +1648,26 @@ export class Game {
     // sun follows the player for crisp shadows nearby
     this.sun.position.set(p.pos.x + 20, 45, p.pos.z + 14);
     this.sun.target.position.set(p.pos.x, 0, p.pos.z);
+    this.placeVeil();
+  }
+
+  /** Full-screen black in the 3D view, so a canvas recording includes the fade. */
+  private placeVeil() {
+    if (!this.veilMesh) {
+      const mat = new THREE.MeshBasicMaterial({ color: '#120e16', transparent: true, opacity: 0, depthTest: false, depthWrite: false });
+      this.veilMesh = new THREE.Mesh(new THREE.PlaneGeometry(8, 8), mat);
+      this.veilMesh.frustumCulled = false;
+      this.veilMesh.renderOrder = 10000;
+      this.scene.add(this.veilMesh);
+    }
+    const mat = this.veilMesh.material as THREE.MeshBasicMaterial;
+    mat.opacity = this.veil;
+    this.veilMesh.visible = this.veil > 0.01;
+    if (!this.veilMesh.visible) return;
+    const dir = new THREE.Vector3();
+    this.camera.getWorldDirection(dir);
+    this.veilMesh.position.copy(this.camera.position).addScaledVector(dir, 0.35);
+    this.veilMesh.quaternion.copy(this.camera.quaternion);
   }
 
   /** Ground under any point (for shadows). */
@@ -1703,6 +1752,15 @@ export class Game {
     if (this.mode === 'house') return this.interior.collidersFor(this.playerFloor());
     const base = this.worldColliders();
     return seamColliders(base, this.town.size, this.player.pos.x, this.player.pos.z);
+  }
+  /** World solids plus the avatar, so a pet cannot walk through the player. */
+  private petColliders(): Colliders {
+    const base = this.colliders();
+    if (this.holding) return base;
+    return {
+      rects: base.rects,
+      circles: [...base.circles, { x: this.player.pos.x, z: this.player.pos.z, r: AVATAR_BODY_R, h: 2.2 }],
+    };
   }
   /** Settle the player after jumping/placing furniture: push out of anything solid. */
   private collide() {
@@ -1922,10 +1980,10 @@ export class Game {
           target = new THREE.Vector3(a.care.x, 0, a.care.z);
           stopDist = 0.5;
         } else if (equipped) {
-          const ang = p.yaw + Math.PI + (followIdx === 0 ? -0.5 : 0.5);
-          const off = 2.6 + followIdx * 0.6;
+          const ang = p.yaw + Math.PI + (followIdx === 0 ? -0.45 : 0.45);
+          const off = petFollowDistance() + followIdx * 0.7;
           target = new THREE.Vector3(p.pos.x + Math.sin(ang) * off, 0, p.pos.z + Math.cos(ang) * off);
-          stopDist = 0.6;
+          stopDist = 0.45;
           followIdx++;
           if (inHouse && petFloor !== this.playerFloor()) {
             // on another floor: walk to the foot of the stairs, then up (or down) them
@@ -1962,8 +2020,8 @@ export class Game {
         a.lastX = a.pos.x;
         a.lastZ = a.pos.z;
         if ((d > 25 && equipped) || ((a.stuck ?? 0) > 2.5 && equipped)) {
-          a.pos.set(p.pos.x - Math.sin(p.yaw) * 1.6, inHouse ? p.pos.y : 0, p.pos.z - Math.cos(p.yaw) * 1.6);
-          resolve(a.pos, 0.5, this.colliders());
+          a.pos.set(p.pos.x - Math.sin(p.yaw) * petFollowDistance(), inHouse ? p.pos.y : 0, p.pos.z - Math.cos(p.yaw) * petFollowDistance());
+          resolve(a.pos, PET_BODY_R, this.petColliders());
           a.stuck = 0;
         } else if (d > stopDist) {
           const sp = Math.min(d * (a.play ? 5 : 3), a.play ? WALK * 1.2 : equipped ? (this.riding ? RIDE : WALK) * 1.15 : 3);
@@ -1972,14 +2030,14 @@ export class Game {
           a.pos.z += (dz / d) * sp * dt;
           // if still blocked toward the target, nudge perpendicular so the pet paths around
           const before = { x: a.pos.x, z: a.pos.z };
-          resolve(a.pos, 0.5, this.colliders());
+          resolve(a.pos, PET_BODY_R, this.petColliders());
           const slid = Math.hypot(a.pos.x - before.x, a.pos.z - before.z);
           if (slid > 0.01 && d > stopDist + 0.8) {
             const px = -dz / d;
             const pz = dx / d;
             for (const side of [1, -1]) {
               const tryPos = { x: before.x + px * side * sp * dt * 0.9, y: a.pos.y, z: before.z + pz * side * sp * dt * 0.9 };
-              resolve(tryPos, 0.5, this.colliders());
+              resolve(tryPos, PET_BODY_R, this.petColliders());
               const closer = Math.hypot(target.x - tryPos.x, target.z - tryPos.z) < Math.hypot(target.x - a.pos.x, target.z - a.pos.z) - 0.05;
               if (closer) {
                 a.pos.x = tryPos.x;
@@ -2000,7 +2058,7 @@ export class Game {
         }
         // same collision as the avatar (town + house) — skip while lying on a raised care bed (vet mattress)
         const onCareBed = !!(a.care && (a.care.y ?? 0) > 0.4 && Math.hypot(a.care.x - a.pos.x, a.care.z - a.pos.z) < 1.5);
-        if (!flyingPet && !onCareBed) resolve(a.pos, 0.5, this.colliders());
+        if (!flyingPet && !onCareBed) resolve(a.pos, PET_BODY_R, this.petColliders());
         if (!inHouse && this.mode === 'town') {
           a.pos.x = wrapCoord(a.pos.x, this.town.size);
           a.pos.z = wrapCoord(a.pos.z, this.town.size);
@@ -2013,7 +2071,7 @@ export class Game {
         if (inHouse && !near && onStairs(lay.stairs, a.pos.x, a.pos.z)) a.pos.y = targetY;
         else a.pos.y += (targetY - a.pos.y) * Math.min(1, dt * 4);
         if (playPose && pose !== 'walk') pose = playPose;
-        if (a.pos.y > 1 && (flyingPet || pet.flyable) && !near) pose = 'fly';
+        if (a.pos.y > 1 && flyingPet && !near) pose = 'fly';
         if (allNeeds(pet).some((n) => n.kind === 'syk') && pose === 'idle') pose = 'sick';
       }
       if (t < a.happyUntil && pose !== 'held' && pose !== 'sit' && pose !== 'sleep') pose = 'happy';
@@ -2187,6 +2245,7 @@ export class Game {
       }
     }
     this.nearZone = near;
+    if (this.time < this.promptQuietUntil && near && (near.kind === 'cave-exit' || near.kind === 'cave-enter')) near = null;
     if (near) {
       this.stickyNear = near;
       this.stickyNearUntil = performance.now() + 800;

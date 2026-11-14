@@ -37,7 +37,7 @@ export const CAVE_CRYSTAL = { x: -16, z: 22 };
 
 export function caveColliders(): Colliders {
   const rects: RectCollider[] = [];
-  const circles = CAVE_ROCKS.map((rock) => ({ x: rock.x, z: rock.z, r: rock.r, h: rock.h }));
+  const circles = CAVE_ROCKS.map((rock) => ({ x: rock.x, z: rock.z, r: rock.r + 0.45, h: rock.h }));
   const n = 56;
   for (let i = 0; i < n; i++) {
     const a = (i / n) * Math.PI * 2;
