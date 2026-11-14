@@ -78,13 +78,19 @@ function cloudMass(g: THREE.Object3D, radius: number, tint: string, deck: string
 
 function sign(parent: THREE.Object3D, text: string, y: number, z: number, bg: string) {
   const tex = textTexture(text, { bg, fg: '#ffffff', w: 512, h: 128 });
-  const m = new THREE.Mesh(
-    new THREE.PlaneGeometry(4.4, 1.1),
-    new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide }),
-  );
-  m.position.set(0, y, z);
-  m.rotation.y = Math.PI;
-  parent.add(m);
+  const geo = new THREE.PlaneGeometry(4.4, 1.1);
+  const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true });
+  const front = new THREE.Mesh(geo, mat);
+  front.position.set(0, y, z);
+  front.rotation.y = Math.PI;
+  front.userData.collision = 'passable';
+  parent.add(front);
+  // A second plate, not DoubleSide: the back of one texture reads mirrored.
+  const back = new THREE.Mesh(geo, mat);
+  back.position.set(0, y, z + 0.06);
+  back.rotation.y = 0;
+  back.userData.collision = 'passable';
+  parent.add(back);
 }
 
 function cloudGroup(id: CloudId): THREE.Group {
@@ -219,13 +225,8 @@ function mountain(parent: THREE.Group) {
   sph(g, '#ffb26b', [0, 1.85, 0.7], [0.18, 0.18, 0.18], undefined, 0.9);
   box(g, '#9aa4b5', [-5.2, 1.6, -1.6], [0.9, 3.2, 1.8]);
   sign(g, 'Fjellskyen', 2.4, -3.2, '#6b7c93');
-  // Off to the side, facing the path you walk up. The copy faces the other way so the back is not mirrored text.
-  const fjellSign = g.children[g.children.length - 1];
-  fjellSign.position.x = -3.6;
-  const fjellBack = fjellSign.clone();
-  fjellBack.rotation.y = 0;
-  fjellBack.position.z += 0.08;
-  g.add(fjellBack);
+  const plates = g.children.filter((c) => (c as THREE.Mesh).isMesh && (c as THREE.Mesh).geometry?.type === 'PlaneGeometry').slice(-2);
+  for (const plate of plates) plate.position.x = -3.6;
   parent.add(g);
 }
 

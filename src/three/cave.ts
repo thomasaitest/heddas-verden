@@ -41,6 +41,16 @@ export function buildCave(): CaveWorld {
   });
 
   withCollision('passable', () => {
+    const shell = new THREE.Mesh(
+      new THREE.BoxGeometry(CAVE_R * 2.02, CAVE_CEILING + 2, CAVE_R * 2.02),
+      new THREE.MeshLambertMaterial({ color: '#5c5148', side: THREE.BackSide }),
+    );
+    shell.position.y = (CAVE_CEILING + 2) / 2;
+    shell.userData.collision = 'passable';
+    group.add(shell);
+  });
+
+  withCollision('passable', () => {
     // Inner wall. BackSide so you see rock when you look outward, not a void.
     const wall = new THREE.Mesh(
       new THREE.CylinderGeometry(CAVE_R - 0.6, CAVE_R - 0.6, CAVE_CEILING, 64, 1, true),
@@ -137,18 +147,22 @@ export function buildCave(): CaveWorld {
   });
 
   withCollision('solid', () => {
-    solid(box(group, '#8d96a3', [CAVE_EXIT.x - 2.6, 1.6, CAVE_EXIT.z], [0.9, 3.4, 0.9]), 'rect', 0, 3.4);
-    solid(box(group, '#8d96a3', [CAVE_EXIT.x + 2.6, 1.6, CAVE_EXIT.z], [0.9, 3.4, 0.9]), 'rect', 0, 3.4);
-    solid(box(group, '#6d7684', [CAVE_EXIT.x, 3.4, CAVE_EXIT.z], [6.2, 0.6, 0.9]), 'rect', 0, 4);
+    solid(rbox(group, '#c4a484', [CAVE_EXIT.x - 2.7, 1.7, CAVE_EXIT.z], [1.05, 3.5, 1.05]), 'rect', 0, 3.6);
+    solid(rbox(group, '#c4a484', [CAVE_EXIT.x + 2.7, 1.7, CAVE_EXIT.z], [1.05, 3.5, 1.05]), 'rect', 0, 3.6);
+    solid(rbox(group, '#8d6b4a', [CAVE_EXIT.x, 3.55, CAVE_EXIT.z], [6.6, 0.7, 1.15]), 'rect', 0, 4.1);
   });
   withCollision('passable', () => {
+    sph(group, '#ffb15a', [CAVE_EXIT.x - 2.7, 3.15, CAVE_EXIT.z + 0.15], [0.22, 0.28, 0.22], undefined, 0.8);
+    sph(group, '#ffb15a', [CAVE_EXIT.x + 2.7, 3.15, CAVE_EXIT.z + 0.15], [0.22, 0.28, 0.22], undefined, 0.8);
     const tex = textTexture('Ut av hulen', { bg: '#6b7c93', fg: '#fff', w: 512, h: 128 });
-    const plate = new THREE.Mesh(new THREE.PlaneGeometry(3.6, 0.9), new THREE.MeshBasicMaterial({ map: tex, transparent: true }));
-    plate.position.set(CAVE_EXIT.x, 2.35, CAVE_EXIT.z + 0.55);
+    const geo = new THREE.PlaneGeometry(3.6, 0.9);
+    const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true });
+    const plate = new THREE.Mesh(geo, mat);
+    plate.position.set(CAVE_EXIT.x, 2.45, CAVE_EXIT.z + 0.62);
     plate.userData.collision = 'passable';
     group.add(plate);
-    const back = plate.clone();
-    back.position.z = CAVE_EXIT.z - 0.55;
+    const back = new THREE.Mesh(geo, mat);
+    back.position.set(CAVE_EXIT.x, 2.45, CAVE_EXIT.z - 0.62);
     back.rotation.y = Math.PI;
     back.userData.collision = 'passable';
     group.add(back);

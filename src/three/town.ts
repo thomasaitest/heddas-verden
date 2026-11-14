@@ -92,10 +92,18 @@ const SIZE = 240;
 /** Flat text plate (kept for house labels). */
 function sign(parent: THREE.Object3D, text: string, y: number, z: number, bg: string, w = 7) {
   const tex = textTexture(text, { bg, fg: '#ffffff', stroke: '#00000033', w: 512, h: 128 });
-  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, w / 4), new THREE.MeshBasicMaterial({ map: tex, transparent: true }));
-  m.position.set(0, y, z);
-  parent.add(m);
-  return m;
+  const geo = new THREE.PlaneGeometry(w, w / 4);
+  const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true });
+  const front = new THREE.Mesh(geo, mat);
+  front.position.set(0, y, z);
+  front.userData.collision = 'passable';
+  parent.add(front);
+  const back = new THREE.Mesh(geo, mat);
+  back.position.set(0, y, z - 0.04);
+  back.rotation.y = Math.PI;
+  back.userData.collision = 'passable';
+  parent.add(back);
+  return front;
 }
 
 /**
@@ -127,6 +135,11 @@ function shopSign3d(
   plate.position.set(0, boardY, z + 0.22);
   plate.name = `shop-sign-plate-${opts.id}`;
   g.add(plate);
+  const plateBack = new THREE.Mesh(plate.geometry, plate.material);
+  plateBack.position.set(0, boardY, z - 0.22);
+  plateBack.rotation.y = Math.PI;
+  plateBack.userData.collision = 'passable';
+  g.add(plateBack);
   const logo = new THREE.Group();
   // Sit the logo on the top edge of the board, sharing the same posts.
   logo.position.set(0, boardY + 0.62, z);

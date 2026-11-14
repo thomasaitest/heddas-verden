@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ACCESSORIES, BOTTOMS, CLOTH_COLORS, cleanAvatar, DEFAULT_AVATAR, FACES, HAIR_COLORS, HAIR_STYLES, HATS, randomAvatar, SHIRT_PRINTS, SHOES, SKIN } from './avatar.ts';
+import { ACCESSORIES, AVATAR_BODY_R, BOTTOMS, CLOTH_COLORS, cleanAvatar, DEFAULT_AVATAR, FACES, HAIR_COLORS, HAIR_STYLES, HATS, PET_BODY_R, petFollowDistance, randomAvatar, SHIRT_PRINTS, SHOES, SKIN } from './avatar.ts';
 import { seeded } from './rng.ts';
 
 const lists = { HAIR_STYLES, FACES, SHIRT_PRINTS, BOTTOMS, SHOES, HATS, ACCESSORIES };
@@ -49,5 +49,16 @@ describe('avatar options', () => {
     }
     expect(seen.has('afro') || seen.has('totter') || seen.has('hanekam')).toBe(true);
     expect(seen.has('skjort')).toBe(true);
+  });
+});
+
+describe('a pet stays off the player', () => {
+  it('the follow spot is outside both bodies', () => {
+    expect(petFollowDistance()).toBeGreaterThan(AVATAR_BODY_R + PET_BODY_R);
+    const yaw = 0.4;
+    const back = petFollowDistance();
+    const x = -Math.sin(yaw) * back;
+    const z = -Math.cos(yaw) * back;
+    expect(Math.hypot(x, z)).toBeGreaterThanOrEqual(AVATAR_BODY_R + PET_BODY_R);
   });
 });
